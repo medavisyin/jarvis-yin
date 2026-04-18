@@ -220,10 +220,11 @@ One-click pipeline that runs the full daily briefing workflow from the Jarvis UI
 2. **Topic deduplication:** Runs `filter_topics.py` in aggressive mode to remove stale items.
 3. **Commit report:** Calls `tool_commit_summary(hours=48)` for the last 2 days of Git activity across all configured repos.
 4. **Jira daily report:** Runs `atlassian-report.ps1` from the Jira skill for team activity.
-5. **Wiki Fetch:** Runs `index_confluence_user.py` for each team member (configurable `_WIKI_USERS` list) with `--date-from` set to yesterday. Parses stdout for page/chunk counts (`"Indexed N chunks from M wiki pages"`) and writes `wiki-fetch-YYYY-MM-DD.md` with per-user breakdowns and totals.
-6. **AI Briefing audio (segmented):** Splits `per_source_data` by source, generates per-source narrations using the fast narration model (`qwen3:1.7b`). Language is determined by `_GLOBAL_SETTINGS["audio_lang_ai"]`.
-7. **World News audio (segmented):** Filters to **international-only** items (excludes China source), generates per-category narrations → `world-news.mp3`. Language: `_GLOBAL_SETTINGS["audio_lang_world"]`.
-8. **Chinese News audio (segmented):** Filters to **China-only** items (Sina, People's Daily), up to 6 items per category → `china-news.mp3`. Language: `_GLOBAL_SETTINGS["audio_lang_china"]`.
+5. **Wiki Fetch:** Runs `index_confluence_user.py` for each team member (configurable `_WIKI_USERS` list) with `--date-from` set to yesterday and `--report-json`. Parses stdout for page/chunk counts and page detail JSON (`REPORT_JSON:{...}`). Writes `wiki-fetch-YYYY-MM-DD.md` with per-user breakdowns, totals, and a **Page Details** section with clickable Confluence links, space names, content summaries (first 200 chars), and section headings.
+6. **World News merge recovery:** If individual source JSONs exist (e.g., `ap-news.json`, `china-news.json`) but the merged `world-news-data.json` is missing, attempts to merge via `run-world-news.py --no-fetch --no-translate` (or direct `merge_news()` call). This handles cases where the translation step failed during the initial pipeline run.
+7. **AI Briefing audio (segmented):** Splits `per_source_data` by source, generates per-source narrations using the fast narration model (`qwen3:1.7b`) with `think: false`. Chinese prompts explicitly instruct: no English reproduction, only proper nouns in English. Language is determined by `_GLOBAL_SETTINGS["audio_lang_ai"]`.
+8. **World News audio (segmented):** Filters to **international-only** items (excludes China source), generates per-category narrations → `world-news.mp3`. Language: `_GLOBAL_SETTINGS["audio_lang_world"]`.
+9. **Chinese News audio (segmented):** Filters to **China-only** items (Sina, People's Daily), up to 6 items per category → `china-news.mp3`. Language: `_GLOBAL_SETTINGS["audio_lang_china"]`.
 
 **Segmented audio generation (introduced April 2026):**
 
@@ -239,7 +240,7 @@ Previously, audio narration used a single large LLM call to `qwen3.5:4b` with `n
 | Target audio length | ~8-15 min | ~15 min (sum of all segments) |
 
 Key functions:
-- `_ollama_narration_call()` — Low-level Ollama call using `OLLAMA_MODEL_NARRATION`
+- `_ollama_narration_call()` — Low-level Ollama call using `OLLAMA_MODEL_NARRATION` with `think: false` (thinking disabled to prevent cross-language leakage in narration output)
 - `_generate_segmented_narrations(segments, content_type, lang)` — Iterates segments, generates narration with language-aware prompts (Chinese or English) and intro/outro on first/last
 - `_tts_segments_to_mp3()` — Edge-TTS each segment's narration, chunk at 2000 chars, merge via ffmpeg
 - `_pick_wn_text(it, prefer_zh)` — Helper to select `title_zh`/`summary_zh` or `title`/`summary` based on language preference
@@ -266,7 +267,9 @@ Key functions:
 | `confluence_pages` | `jira-report-*.md` | Confluence pages (parsed from report) |
 | `wiki_pages` | `wiki-fetch-*.md` | Wiki pages fetched in Wiki Fetch step (parsed from `**Total: N pages**`) |
 
-**Missing steps:** The history endpoint computes `missing_steps[]` — pipeline steps whose output files are absent for the selected date. The UI shows these as badges and enables a "Continue" button to re-run only the missing steps. Tracked steps: `fetch_sources`, `topic_dedup`, `commit_report`, `jira_daily`, `wiki_fetch`, `ai_audio`, `world_audio`, `china_audio`.
+**Missing steps:** The history endpoint computes `missing_steps[]` — pipeline steps whose output files are absent for the selected date. The UI shows these as badges and enables a "Continue" button to re-run only the missing steps. Tracked steps: `fetch_sources`, `topic_dedup`, `commit_report`, `jira_daily`, `wiki_fetch`, `world_news_merge`, `ai_audio`, `world_audio`, `china_audio`.
+
+**Merge recovery in missing_steps:** When individual world news source JSONs exist but `world-news-data.json` is missing, `world_news_merge` is added. Additionally, `world_audio` and `china_audio` are added even before the merge exists (they will run after the merge step completes during Continue), so a single Continue press can merge → generate both audio files in one operation.
 
 ## Global Settings
 

@@ -75,7 +75,11 @@ python index_confluence.py --index-only <path>  # Index existing report Markdown
 
 python index_confluence_user.py "Display Name"
 python index_confluence_user.py "Display Name" --limit 200
+python index_confluence_user.py "Display Name" --date-from 2026-04-17
+python index_confluence_user.py "Display Name" --date-from 2026-04-17 --report-json
 ```
+
+The `--report-json` flag outputs a `REPORT_JSON:{...}` line to stdout containing page details (title, URL, space, summary, headings, modified date) for each page. This is used by the Daily Fetch wiki fetch step to generate rich reports with clickable links and content summaries.
 
 ## Security Notes
 

@@ -30,8 +30,10 @@ run-all-sources.py (main orchestrator)
   │
   ├── Phase 0: preflight-check.py (check URLs reachable)
   │
-  ├── Phase 1: Parallel Fetch (9 AI fetchers)
-  │   └── All fetch-*.py in fetchers/ai/
+  ├── Phase 1: Parallel Fetch (AI fetchers, currently 3 active)
+  │   └── Active: fetch-anthropic, fetch-rundown, fetch-github-trending
+  │   └── Disabled: fetch-arxiv-ml, fetch-arxiv, fetch-openai-blog,
+  │                  fetch-deepmind, fetch-techcrunch, fetch-mit-review
   │
   ├── Phase 2: merge-sources.py → briefing-data.json
   │
