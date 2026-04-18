@@ -41,14 +41,15 @@ docs/
 │   └── know-how/                # Beginner tech guides (14 topics)
 │
 ├── learning/                    # RAG & ML learning chapters
-│   ├── ch1-rag-concepts.md
-│   ├── ch2-architecture-assessment.md
-│   ├── ch3-vector-search-explained.md
-│   ├── ch4-framework-comparison.md
-│   ├── ch5-ml-roadmap.md
-│   ├── ch6-advanced-rag-techniques.md
-│   ├── ch7-ml-for-retrieval.md
-│   └── ch8-learning-roadmap.md
+│   └── rag/                    # All RAG/retrieval learning content
+│       ├── ch1-rag-concepts.md
+│       ├── ch2-architecture-assessment.md
+│       ├── ch3-vector-search-explained.md
+│       ├── ch4-framework-comparison.md
+│       ├── ch5-ml-roadmap.md
+│       ├── ch6-advanced-rag-techniques.md
+│       ├── ch7-ml-for-retrieval.md
+│       └── ch8-learning-roadmap.md
 │
 ├── plans/                       # Implementation plans & roadmaps
 │   ├── 2026-04-17-jarvis-next.md    # Enhancement roadmap (Tier 0–5)
@@ -144,14 +145,14 @@ Read in order to understand the concepts behind the system:
 
 | # | Chapter | What You'll Learn |
 |:-:|---------|-------------------|
-| 1 | [RAG Concepts](learning/ch1-rag-concepts.md) | What is RAG, the 3-stage pipeline, embeddings, chunking |
-| 2 | [Architecture Assessment](learning/ch2-architecture-assessment.md) | 5-level RAG taxonomy, where Jarvis sits |
-| 3 | [Vector Search Explained](learning/ch3-vector-search-explained.md) | Embeddings, cosine similarity, HNSW indexing |
-| 4 | [Framework Comparison](learning/ch4-framework-comparison.md) | Jarvis vs LangChain vs LlamaIndex vs Haystack |
-| 5 | [ML Roadmap](learning/ch5-ml-roadmap.md) | 6-phase evolution from basic to agentic RAG |
-| 6 | [Advanced RAG](learning/ch6-advanced-rag-techniques.md) | Hybrid search, reranking, semantic chunking, HyDE |
-| 7 | [ML for Retrieval](learning/ch7-ml-for-retrieval.md) | Neural embeddings, fine-tuning, learning-to-rank |
-| 8 | [Learning Roadmap](learning/ch8-learning-roadmap.md) | 3-track plan (RAG, LLM, HuggingFace) with resources |
+| 1 | [RAG Concepts](learning/rag/ch1-rag-concepts.md) | What is RAG, the 3-stage pipeline, embeddings, chunking |
+| 2 | [Architecture Assessment](learning/rag/ch2-architecture-assessment.md) | 5-level RAG taxonomy, where Jarvis sits |
+| 3 | [Vector Search Explained](learning/rag/ch3-vector-search-explained.md) | Embeddings, cosine similarity, HNSW indexing |
+| 4 | [Framework Comparison](learning/rag/ch4-framework-comparison.md) | Jarvis vs LangChain vs LlamaIndex vs Haystack |
+| 5 | [ML Roadmap](learning/rag/ch5-ml-roadmap.md) | 6-phase evolution from basic to agentic RAG |
+| 6 | [Advanced RAG](learning/rag/ch6-advanced-rag-techniques.md) | Hybrid search, reranking, semantic chunking, HyDE |
+| 7 | [ML for Retrieval](learning/rag/ch7-ml-for-retrieval.md) | Neural embeddings, fine-tuning, learning-to-rank |
+| 8 | [Learning Roadmap](learning/rag/ch8-learning-roadmap.md) | 3-track plan (RAG, LLM, HuggingFace) with resources |
 
 ## Plans & Roadmaps
 

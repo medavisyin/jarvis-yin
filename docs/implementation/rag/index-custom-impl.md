@@ -2,7 +2,7 @@
 
 ## Overview
 
-This script indexes personal knowledge files (Markdown and PDF) from a dedicated knowledge tree into the shared RAG vector store. It lives at `scripts/rag/index_custom.py` (approximately 451 lines). Content is labeled with `source: custom` and folder-derived types so it can be searched alongside briefings, code, and wiki chunks.
+This script indexes personal knowledge files (Markdown and PDF) from a dedicated knowledge tree into the shared RAG vector store. It lives at `scripts/rag/index_custom.py` (approximately 451 lines). Content is labeled with subfolder-based `source` values (e.g. `knowledge/books`, `knowledge/notes`) and folder-derived types so it can be searched alongside briefings, code, and wiki chunks.
 
 ## Technologies
 
@@ -27,6 +27,7 @@ This script indexes personal knowledge files (Markdown and PDF) from a dedicated
 - **`_chunk_by_sections()`** — Splits Markdown (or PDF text) on heading boundaries using `\n(?=#{1,3}\s)`; oversized sections are further split with `_chunk_text`.
 - **`_parse_frontmatter()`** — If the file starts with `---`, parses YAML between delimiters and returns `(meta_dict, body)`. Falls back to simple line parsing when PyYAML is unavailable.
 - **`_infer_item_type()`** — Maps the first path segment under `KNOWLEDGE_ROOT` to an `item_type` via `FOLDER_TYPE_MAP` (`books` → `book_chapter`, `projects` → `project_doc`, `notes` → `personal_note`, `tasks` → `task`); unknown locations default to `personal_note`.
+- **`_infer_source()`** — Derives a descriptive `source` label from the subfolder path: `knowledge/books`, `knowledge/notes`, `knowledge/projects`, `knowledge/tasks`, or `knowledge` for files directly under the root. Replaces the former generic `custom` label.
 - **`_extract_pdf_sections()`** — Concatenates page text, builds chunks with `_chunk_by_sections`, derives per-chunk titles from headings or “Chapter N” patterns when present.
 - **`_extract_markdown()`** — Combines frontmatter fields (title, tags, difficulty, etc.) with inferred type and default difficulty per type.
 
@@ -71,4 +72,5 @@ The implementation copies `title`, `tags`, `difficulty`, and `url` from frontmat
 - **Heading-first chunking** — `_chunk_by_sections` keeps sections aligned with Markdown structure (and PDF text that mirrors headings) for better semantic retrieval than blind paragraph cuts alone.
 - **Folder-based types** — Encourages a predictable layout; `item_type` and default difficulty stay consistent without manual tagging in every file.
 - **Optional PyYAML** — Keeps installs minimal when users only need simple frontmatter; full YAML when available.
-- **Unified collection** — Custom notes live in the same store as briefings and code so a single query interface can rank across all sources (filtering by `source` or `item_type` in application code).
+- **Unified collection** — Knowledge notes live in the same store as briefings and code so a single query interface can rank across all sources (filtering by `source` or `item_type` in application code).
+- **Subfolder-based source labels** — Source is `knowledge/<subfolder>` (e.g. `knowledge/books`, `knowledge/notes`) rather than a generic `custom`, making the Chunk Analysis "By Source" chart meaningful and distinguishing book content from personal notes at a glance.

@@ -527,6 +527,6 @@ Now that Jarvis is running, explore further:
 
 1. This guide (you are here)
 2. [Tech Stack Overview](implementation/tech-stack-overview.md) — what each technology does
-3. [Ch. 1: RAG Concepts](ch1-rag-concepts.md) — how the AI search works
-4. [Ch. 3: Vector Search Explained](ch3-vector-search-explained.md) — the math behind it
+3. [Ch. 1: RAG Concepts](learning/rag/ch1-rag-concepts.md) — how the AI search works
+4. [Ch. 3: Vector Search Explained](learning/rag/ch3-vector-search-explained.md) — the math behind it
 5. [Backend Overview](backend-overview.md) — the full system reference

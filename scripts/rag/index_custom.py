@@ -194,6 +194,15 @@ def _infer_item_type(filepath: str) -> str:
     return FOLDER_TYPE_MAP.get(folder, "personal_note")
 
 
+def _infer_source(filepath: str) -> str:
+    """Infer a descriptive source label from the subfolder under knowledge/."""
+    rel = os.path.relpath(filepath, KNOWLEDGE_ROOT).replace("\\", "/")
+    folder = rel.split("/")[0] if "/" in rel else ""
+    if folder and folder in FOLDER_TYPE_MAP:
+        return f"knowledge/{folder}"
+    return "knowledge"
+
+
 def _extract_pdf_sections(filepath: str) -> List[dict]:
     """Extract sections from a PDF file."""
     try:
@@ -215,6 +224,7 @@ def _extract_pdf_sections(filepath: str) -> List[dict]:
     item_type = _infer_item_type(filepath)
     difficulty = DEFAULT_DIFFICULTY.get(item_type, "intermediate")
 
+    source = _infer_source(filepath)
     chunks = _chunk_by_sections(full_text)
     items = []
     for i, chunk in enumerate(chunks):
@@ -225,7 +235,7 @@ def _extract_pdf_sections(filepath: str) -> List[dict]:
             "text": chunk,
             "metadata": {
                 "date": date.today().isoformat(),
-                "source": "custom",
+                "source": source,
                 "title": chunk_title,
                 "item_type": item_type,
                 "difficulty": difficulty,
@@ -263,6 +273,7 @@ def _extract_markdown(filepath: str) -> List[dict]:
     if isinstance(tags, str):
         tags = [t.strip() for t in tags.split(",")]
 
+    source = _infer_source(filepath)
     chunks = _chunk_by_sections(body)
     items = []
     for i, chunk in enumerate(chunks):
@@ -275,7 +286,7 @@ def _extract_markdown(filepath: str) -> List[dict]:
             "text": chunk,
             "metadata": {
                 "date": date.today().isoformat(),
-                "source": "custom",
+                "source": source,
                 "title": chunk_title,
                 "item_type": item_type,
                 "difficulty": difficulty,
@@ -376,7 +387,8 @@ def cmd_list():
     with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    custom_points = [p for p in data["points"] if p["payload"].get("source") == "custom"]
+    custom_points = [p for p in data["points"]
+                     if (p["payload"].get("source") or "").startswith("knowledge") or p["payload"].get("source") == "custom"]
     if not custom_points:
         print("No custom content indexed yet.")
         return
@@ -409,7 +421,7 @@ def cmd_remove(pattern: str):
     pattern_lower = pattern.lower()
     data["points"] = [
         p for p in data["points"]
-        if not (p["payload"].get("source") == "custom"
+        if not (((p["payload"].get("source") or "").startswith("knowledge") or p["payload"].get("source") == "custom")
                 and pattern_lower in (p["payload"].get("parent_title", "") + p["payload"].get("title", "")).lower())
     ]
     after = len(data["points"])

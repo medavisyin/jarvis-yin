@@ -161,7 +161,7 @@ The 16 fetch scripts (10 AI + 6 world news including Chinese political/financial
 Hybrid search (BM25 + vector + RRF), cross-encoder re-ranking, chunk overlap, LLM query rewriting, and feedback collection with weighted ranking are **implemented**. See [Chapter 6 — Advanced RAG Techniques](ch6-advanced-rag-techniques.md) and the implementation status note there.
 
 ### Gap 1: No Embedding Fine-Tuning
-**Impact: High (for domain-specific lift).** Embeddings remain off-the-shelf MiniLM. Domain fine-tuning (200–500 pairs) is the next high-impact ML step; see [Chapter 5](ch5-ml-roadmap.md) and the [ML Integration Plan](plan-ml-integration.md).
+**Impact: High (for domain-specific lift).** Embeddings remain off-the-shelf MiniLM. Domain fine-tuning (200–500 pairs) is the next high-impact ML step; see [Chapter 5](ch5-ml-roadmap.md) and the [ML Integration Plan](../../plans/plan-ml-integration.md).
 
 ### Gap 2: No Retrieval Validation
 **Impact: Medium.** If search returns weak results, the agent still injects them. A validation step could trigger rewrite, alternate retrieval, or abstention—Corrective RAG (CRAG).

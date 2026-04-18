@@ -2,7 +2,7 @@
 
 ## Overview
 
-`search_ui.py` is the Flask-based semantic search interface for the Jarvis RAG store. It lives at `scripts/rag/search_ui.py` (about 1020 lines). The app serves a single-page UI with **embedded HTML/CSS/JS** in the `HTML_TEMPLATE` string (not a separate templates folder), loads the same embedding model and Qdrant snapshot as the indexers, and exposes JSON APIs for search, library browsing, maintenance, and background “index new briefings” jobs. Default listen address: **`127.0.0.1:18888`** (override with `python search_ui.py <port>`).
+`search_ui.py` is the Flask-based semantic search interface for the Jarvis RAG store. It lives at `scripts/rag/search_ui.py` The app serves a single-page UI with **embedded HTML/CSS/JS** in the `HTML_TEMPLATE` string (not a separate templates folder), loads the same embedding model and Qdrant snapshot as the indexers, and exposes JSON APIs for search, library browsing, maintenance, background “index new briefings” jobs, and **knowledge document refresh**. Default listen address: **`127.0.0.1:18888`** (override with `python search_ui.py <port>`).
 
 ## Technologies
 
@@ -132,6 +132,18 @@ Polls job state from an in-memory `_jobs` dict.
 
 **Response:** `{ status, result, new_items }` or 404 if unknown job.
 
+### `POST /api/refresh-knowledge`
+
+Starts a **background thread** (`_run_refresh_knowledge`) that re-indexes all supported files (`.md`, `.txt`, `.pdf`) under `KNOWLEDGE_ROOT` (`C:/reports/ai/knowledge/`). Uses `index_custom.index_file` for each file, then saves the snapshot. This covers books, notes, projects, tasks, and any other files in the knowledge tree — unlike "Index New Briefings" which only handles daily date-folder briefings.
+
+**Response:** `{ job_id, status: "started" }`.
+
+### `GET /api/refresh-knowledge/<job_id>`
+
+Polls job state for a knowledge refresh job.
+
+**Response:** `{ status, result, new_items }` where each item includes `file` (relative path), `chunks` (count), `new` (boolean — whether the file was previously unknown), and optionally `error`.
+
 ## Search flow
 
 1. Client sends `GET /api/search?query=...` with optional filters.
@@ -148,6 +160,7 @@ Polls job state from an in-memory `_jobs` dict.
 - Chunk analysis view backed by `/api/chunk-analysis`.
 - Document drill-down via `/api/document`.
 - Delete and “index new” operations for operators maintaining the store.
+- **“Refresh Knowledge Docs”** button to re-index all files under C:/reports/ai/knowledge/ (books, notes, projects, tasks).
 - Stats line on the home page from snapshot metadata.
 
 ## Configuration

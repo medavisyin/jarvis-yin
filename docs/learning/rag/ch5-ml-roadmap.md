@@ -430,4 +430,4 @@ The current system uses **pre-trained ML** (the embedding model) plus **feedback
 
 ---
 
-*Back to: [Documentation Index](docs-index.md)*
+*Back to: [Documentation Index](../../README.md)*

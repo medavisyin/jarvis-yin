@@ -21,7 +21,7 @@ This chapter is a **hands-on learning map** for a Java developer in healthcare I
 **Topics**
 
 - **What is RAG?** Pipeline: chunk → embed → index → retrieve → (optional) re-rank → prompt LLM. Start with **[Chapter 1: RAG concepts](ch1-rag-concepts.md)** in this repo.
-- **Vector databases:** dense vectors, collections, filters, distance metrics (cosine vs dot vs L2). Compare design goals of **[Qdrant](https://qdrant.tech/documentation/)**, **[Pinecone](https://docs.pinecone.io/)**, **[Weaviate](https://weaviate.io/developers/weaviate)**, **[Chroma](https://docs.trychroma.com/)**. **`[Jarvis]`** uses Qdrant (see **[Qdrant know-how](implementation/know-how/qdrant-vector-db.md)** and **[vector search explained](ch3-vector-search-explained.md)**).
+- **Vector databases:** dense vectors, collections, filters, distance metrics (cosine vs dot vs L2). Compare design goals of **[Qdrant](https://qdrant.tech/documentation/)**, **[Pinecone](https://docs.pinecone.io/)**, **[Weaviate](https://weaviate.io/developers/weaviate)**, **[Chroma](https://docs.trychroma.com/)**. **`[Jarvis]`** uses Qdrant (see **[Qdrant know-how](../../implementation/know-how/qdrant-vector-db.md)** and **[vector search explained](ch3-vector-search-explained.md)**).
 - **Embedding models:** turn text into vectors; same model at index and query time; domain mismatch hurts recall. **[Sentence Transformers documentation](https://sbert.net/)**; model selection **[MTEB leaderboard](https://huggingface.co/spaces/mteb/leaderboard)** (when you want numbers).
 - **Chunking:** fixed-size windows, paragraph/section boundaries, semantic chunking (split when embedding similarity drops). Trade recall vs context pollution.
 
@@ -41,7 +41,7 @@ This chapter is a **hands-on learning map** for a Java developer in healthcare I
 
 **Topics**
 
-- **Hybrid search (sparse + dense):** BM25/keyword recall + vector semantic recall; fusion (e.g. RRF). **`[Jarvis]`** — hybrid BM25 + vector with RRF; see **[search UI implementation](implementation/rag/search-ui-impl.md)**.
+- **Hybrid search (sparse + dense):** BM25/keyword recall + vector semantic recall; fusion (e.g. RRF). **`[Jarvis]`** — hybrid BM25 + vector with RRF; see **[search UI implementation](../../implementation/rag/search-ui-impl.md)**.
 - **Re-ranking:** bi-encoder (fast, candidate generation) vs cross-encoder (slow, pairwise scoring). **`[Jarvis]`** — cross-encoder re-ranking on top candidates; same doc as above.
 - **Query rewriting & HyDE:** rewrite vague queries; *Hypothetical Document Embeddings* embed a synthetic answer as the query vector. **[HyDE (Gao et al., 2022)](https://arxiv.org/abs/2212.10496)**. **`[Jarvis]`** — optional Ollama-based rewrite for vague queries (not full HyDE unless you add it).
 - **Evaluation:** MRR, NDCG, Recall@K; build a small labeled set (even 50 queries) for your domain. **[BEIR benchmark paper](https://arxiv.org/abs/2104.08663)** for metric context.
@@ -65,7 +65,7 @@ This chapter is a **hands-on learning map** for a Java developer in healthcare I
 - **Domain-adapted embeddings:** contrastive training on (query, relevant doc) pairs from *your* logs (privacy/consent first in healthcare).
 - **RLHF / RL for retrieval:** reward models ranking helpful passages; research-heavy, not default for internal tools.
 - **Multi-hop:** decompose question → sub-queries → merge evidence; higher complexity and failure modes.
-- **Agentic RAG:** tool-calling loops (search again, refine query, summarize). See **[advanced RAG techniques](ch6-advanced-rag-techniques.md)** and **[RAG agent design](rag-agent-design.md)** in this repo.
+- **Agentic RAG:** tool-calling loops (search again, refine query, summarize). See **[advanced RAG techniques](ch6-advanced-rag-techniques.md)** and **[RAG agent design](../../design/rag-agent-design.md)** in this repo.
 - **Production:** horizontal scaling of vector DB, index versioning, latency SLOs, content freshness, **A/B tests** on retrieval params, observability (trace ID per query).
 
 **Resources**
@@ -88,7 +88,7 @@ This chapter is a **hands-on learning map** for a Java developer in healthcare I
 - **Transformers & attention:** self-attention as soft lookup; positional information; encoder vs decoder stacks. **[Attention Is All You Need](https://arxiv.org/abs/1706.03762)** (skim with a guide).
 - **Tokenization:** BPE, SentencePiece; why “same words” can split differently; context length is in **tokens**, not characters.
 - **Inference:** prefill vs decode, sampling (temperature, top-p), stop tokens; each API call is matrix math + memory bandwidth.
-- **Local vs cloud:** latency, cost, data residency (critical in healthcare), ops burden. **`[Jarvis]`** — local **[Ollama](https://ollama.com/)** for optional query rewrite; see **[Ollama know-how](implementation/know-how/ollama-local-llm.md)**.
+- **Local vs cloud:** latency, cost, data residency (critical in healthcare), ops burden. **`[Jarvis]`** — local **[Ollama](https://ollama.com/)** for optional query rewrite; see **[Ollama know-how](../../implementation/know-how/ollama-local-llm.md)**.
 - **Local serving options:** **[vLLM](https://docs.vllm.ai/)** (throughput), **[llama.cpp](https://github.com/ggerganov/llama.cpp)** (CPU/GGUF-friendly), Ollama (simple packaging).
 
 **Resources**
@@ -150,7 +150,7 @@ This chapter is a **hands-on learning map** for a Java developer in healthcare I
 
 - **Hub:** model repos, dataset repos, **Spaces** (Gradio/Streamlit demos), versioning, licensing (check labels before internal use).
 - **`transformers`:** `AutoModel`, `AutoTokenizer`, pipelines for quick experiments.
-- **`sentence-transformers`:** `encode()` for embeddings; training hooks later. **`[Jarvis]`** — see **[Sentence Transformers know-how](implementation/know-how/sentence-transformers.md)**.
+- **`sentence-transformers`:** `encode()` for embeddings; training hooks later. **`[Jarvis]`** — see **[Sentence Transformers know-how](../../implementation/know-how/sentence-transformers.md)**.
 - **Model cards:** intended use, training data, limitations, bias — read these the way you read vendor DPA annexes.
 
 **Resources**
@@ -279,10 +279,10 @@ Healthcare IT often forces a move from a **personal Jarvis-style stack** to **ma
 |-------|----------------------|
 | RAG concepts | [ch1-rag-concepts.md](ch1-rag-concepts.md) |
 | Vector search | [ch3-vector-search-explained.md](ch3-vector-search-explained.md) |
-| Hybrid + rerank + rewrite | [implementation/rag/search-ui-impl.md](implementation/rag/search-ui-impl.md) |
-| Qdrant | [implementation/know-how/qdrant-vector-db.md](implementation/know-how/qdrant-vector-db.md) |
-| Sentence Transformers | [implementation/know-how/sentence-transformers.md](implementation/know-how/sentence-transformers.md) |
-| Ollama | [implementation/know-how/ollama-local-llm.md](implementation/know-how/ollama-local-llm.md) |
+| Hybrid + rerank + rewrite | [search-ui-impl.md](../../implementation/rag/search-ui-impl.md) |
+| Qdrant | [qdrant-vector-db.md](../../implementation/know-how/qdrant-vector-db.md) |
+| Sentence Transformers | [sentence-transformers.md](../../implementation/know-how/sentence-transformers.md) |
+| Ollama | [ollama-local-llm.md](../../implementation/know-how/ollama-local-llm.md) |
 | ML + retrieval roadmap (earlier chapter) | [ch5-ml-roadmap.md](ch5-ml-roadmap.md), [ch7-ml-for-retrieval.md](ch7-ml-for-retrieval.md) |
 
 ---

@@ -21,7 +21,7 @@ import uuid
 from flask import Flask, request, jsonify, render_template_string
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from config import REPORTS_ROOT, SNAPSHOT_PATH
+from config import REPORTS_ROOT, SNAPSHOT_PATH, KNOWLEDGE_ROOT
 
 COLLECTION = "ai_briefings"
 VECTOR_SIZE = 384
@@ -171,11 +171,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <button id="btn-index-new" onclick="indexNew()" style="padding:10px 22px;background:#2e7d32;color:white;border:none;border-radius:8px;font-size:0.95em;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background 0.2s">
         <span style="font-size:1.2em">&#8635;</span> Index New Briefings
       </button>
+      <button id="btn-refresh-knowledge" onclick="refreshKnowledge()" style="padding:10px 22px;background:#1565c0;color:white;border:none;border-radius:8px;font-size:0.95em;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background 0.2s">
+        <span style="font-size:1.2em">&#128218;</span> Refresh Knowledge Docs
+      </button>
       <span id="index-status" style="color:#666;font-size:0.9em"></span>
     </div>
     <div id="index-results" style="display:none;margin-bottom:20px;padding:16px;background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #2e7d32">
       <h3 style="font-size:1em;color:#2e7d32;margin-bottom:10px" id="index-results-title">Newly Indexed</h3>
       <div id="index-results-list"></div>
+    </div>
+    <div id="knowledge-results" style="display:none;margin-bottom:20px;padding:16px;background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #1565c0">
+      <h3 style="font-size:1em;color:#1565c0;margin-bottom:10px" id="knowledge-results-title">Knowledge Docs</h3>
+      <div id="knowledge-results-list"></div>
     </div>
     <div style="margin-bottom:16px">
       <p id="analysis-total" style="font-size:1.1em;font-weight:600;color:#1a1a2e;margin-bottom:16px">Loading...</p>
@@ -486,6 +493,75 @@ async function indexNew() {
                 return '<div style="padding:8px 12px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px">'
                   + icon
                   + ' <span style="font-weight:600;min-width:100px">' + item.date + '</span> '
+                  + detail
+                  + '</div>';
+              }).join('');
+              resultsBox.style.display = 'block';
+            }
+            loadAnalysis();
+          } else {
+            statusEl.innerHTML = '<span style="color:#e53935">Error: ' + (sd.result || 'Unknown error').substring(0, 200) + '</span>';
+          }
+        }
+      } catch (pollErr) {
+        clearInterval(poll);
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        statusEl.innerHTML = '<span style="color:#e53935">Poll error: ' + pollErr.message + '</span>';
+      }
+    }, 2000);
+  } catch (err) {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    statusEl.innerHTML = '<span style="color:#e53935">Error: ' + err.message + '</span>';
+  }
+}
+
+async function refreshKnowledge() {
+  const btn = document.getElementById('btn-refresh-knowledge');
+  const statusEl = document.getElementById('index-status');
+  const resultsBox = document.getElementById('knowledge-results');
+  const resultsList = document.getElementById('knowledge-results-list');
+  const resultsTitle = document.getElementById('knowledge-results-title');
+  if (btn.disabled) return;
+
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+  statusEl.textContent = 'Scanning knowledge docs...';
+  resultsBox.style.display = 'none';
+
+  try {
+    const r = await fetch('/api/refresh-knowledge', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Failed to start');
+
+    const jobId = d.job_id;
+    statusEl.innerHTML = 'Refreshing knowledge docs... <span style="display:inline-block;width:14px;height:14px;border:2px solid #1565c0;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle"></span>';
+
+    const poll = setInterval(async function() {
+      try {
+        const sr = await fetch('/api/refresh-knowledge/' + encodeURIComponent(jobId));
+        const sd = await sr.json();
+        if (sd.status === 'done' || sd.status === 'error') {
+          clearInterval(poll);
+          btn.disabled = false;
+          btn.style.opacity = '1';
+
+          if (sd.status === 'done') {
+            statusEl.innerHTML = '<span style="color:#1565c0;font-weight:600">&#10003; ' + (sd.result || 'Done').substring(0, 200) + '</span>';
+            if (sd.new_items && sd.new_items.length > 0) {
+              var newCount = sd.new_items.filter(function(x) { return x.new; }).length;
+              resultsTitle.textContent = 'Knowledge Docs (' + sd.new_items.length + ' file' + (sd.new_items.length > 1 ? 's' : '') + (newCount > 0 ? ', ' + newCount + ' new' : '') + ')';
+              resultsList.innerHTML = sd.new_items.map(function(item) {
+                var icon = item.error ? '<span style="color:#e53935">&#10007;</span>'
+                  : item.new ? '<span style="color:#1565c0;font-weight:700">NEW</span>'
+                  : '<span style="color:#2e7d32">&#10003;</span>';
+                var detail = item.error
+                  ? '<span style="color:#e53935">' + item.error + '</span>'
+                  : '<span style="color:#666">' + item.chunks + ' chunks</span>';
+                return '<div style="padding:8px 12px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px">'
+                  + icon
+                  + ' <span style="font-weight:600;min-width:200px">' + item.file + '</span> '
                   + detail
                   + '</div>';
               }).join('');
@@ -1064,6 +1140,108 @@ def api_index_new():
 @app.route("/api/index-new/<job_id>")
 def api_index_new_status(job_id: str):
     """Poll the status of an index-new job."""
+    with _jobs_lock:
+        j = _jobs.get(job_id)
+    if not j:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify({
+        "status": j["status"],
+        "result": j["result"],
+        "new_items": j.get("new_items", []),
+    })
+
+
+def _run_refresh_knowledge(job_id: str) -> None:
+    """Re-index all documents under the knowledge/ folder. Runs in a background thread."""
+    status = "error"
+    msg = ""
+    new_items = []
+    try:
+        if not os.path.isdir(KNOWLEDGE_ROOT):
+            status = "error"
+            msg = f"Knowledge folder not found: {KNOWLEDGE_ROOT}"
+        else:
+            rag_dir = SCRIPT_DIR
+            sys.path.insert(0, rag_dir)
+            from index_custom import index_file, _save_snapshot as _save_snap_custom
+
+            client = _get_client()
+            model = _get_model()
+
+            existing_knowledge = set()
+            offset = None
+            while True:
+                result = client.scroll(
+                    collection_name=COLLECTION, limit=500, offset=offset,
+                    with_payload=["source", "filename"], with_vectors=False,
+                )
+                points, next_offset = result
+                for p in points:
+                    src = p.payload.get("source", "")
+                    if src.startswith("knowledge") or src == "custom":
+                        fn = p.payload.get("filename", "")
+                        if fn:
+                            existing_knowledge.add(fn)
+                if next_offset is None:
+                    break
+                offset = next_offset
+
+            total_chunks = 0
+            total_files = 0
+            new_files = 0
+            for root, _, files in os.walk(KNOWLEDGE_ROOT):
+                for fname in sorted(files):
+                    ext = os.path.splitext(fname)[1].lower()
+                    if ext not in (".md", ".markdown", ".txt", ".pdf"):
+                        continue
+                    fpath = os.path.join(root, fname)
+                    total_files += 1
+                    try:
+                        count = index_file(fpath, client, model)
+                        total_chunks += count
+                        is_new = fname not in existing_knowledge
+                        if is_new:
+                            new_files += 1
+                        rel = os.path.relpath(fpath, KNOWLEDGE_ROOT).replace("\\", "/")
+                        new_items.append({"file": rel, "chunks": count, "new": is_new})
+                    except Exception as e:
+                        rel = os.path.relpath(fpath, KNOWLEDGE_ROOT).replace("\\", "/")
+                        new_items.append({"file": rel, "chunks": 0, "error": str(e)})
+
+            _save_snap_custom(client)
+            global _client
+            _client = None
+
+            status = "done"
+            msg = f"Scanned {total_files} files ({new_files} new), {total_chunks} chunks total."
+    except Exception as e:
+        msg = f"Error: {e}\n{traceback.format_exc()}"
+    with _jobs_lock:
+        j = _jobs.get(job_id)
+        if j:
+            j["status"] = status
+            j["result"] = msg
+            j["new_items"] = new_items
+
+
+@app.route("/api/refresh-knowledge", methods=["POST"])
+def api_refresh_knowledge():
+    """Start re-indexing knowledge documents in a background thread."""
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {
+            "status": "running",
+            "started": time.time(),
+            "result": "",
+            "new_items": [],
+        }
+    threading.Thread(target=_run_refresh_knowledge, args=(job_id,), daemon=True).start()
+    return jsonify({"job_id": job_id, "status": "started"})
+
+
+@app.route("/api/refresh-knowledge/<job_id>")
+def api_refresh_knowledge_status(job_id: str):
+    """Poll the status of a refresh-knowledge job."""
     with _jobs_lock:
         j = _jobs.get(job_id)
     if not j:
