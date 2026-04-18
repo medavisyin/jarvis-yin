@@ -22,33 +22,21 @@ docs/implementation/
 │   ├── output-generation-impl.md    # briefing-template, audio, video
 │   ├── topic-dedup-impl.md          # topic_index, filter_topics, raw_saver
 │   └── world-news-impl.md          # World news pipeline, China fetcher, translation
-├── stock/
-│   ├── README.md                    # Stock module index (17 modules)
-│   ├── stock-prediction-impl.md     # Architecture overview + anti-overfitting
-│   ├── config-impl.md              # Config, paths, Ollama models
-│   ├── data-layer-impl.md          # Data acquisition + watchlist + hot sectors
-│   ├── analysis-engines-impl.md    # TA + fundamental + sentiment engines
-│   ├── ml-pipeline-impl.md         # XGBoost classifier/regressor + tracker
-│   ├── market-signals-impl.md      # Fear & Greed, VIX, black swan
-│   ├── scanner-impl.md             # 3-layer market scanner
-│   ├── llm-synthesis-impl.md       # Ollama narrative synthesis
-│   └── api-routes-impl.md          # Stock API routes
-└── know-how/
-    ├── sentence-transformers.md      # Embeddings & SentenceTransformer
-    ├── qdrant-vector-db.md           # Qdrant vector database
-    ├── flask-web-server.md           # Flask basics
-    ├── playwright-scraping.md        # Playwright web scraping
-    ├── ollama-local-llm.md           # Ollama local LLM
-    ├── pypdf-reportlab.md            # PDF reading & generation
-    ├── rag-architecture.md           # RAG concepts & Jarvis retrieval pipeline
-    ├── hybrid-search-reranking.md    # BM25, RRF, cross-encoder reranking
-    ├── xgboost-gradient-boosting.md  # ML, gradient boosting, walk-forward validation
-    ├── feature-engineering-ta.md     # Feature engineering & technical indicators
-    ├── edge-tts-speech.md            # Text-to-speech & audio generation
-    ├── llm-prompt-engineering.md     # Prompt design & LLM application patterns
-    ├── testing-python-apps.md        # pytest, mocking, coverage, CI patterns
-    └── async-concurrency-python.md   # Threading, asyncio, ProcessPool patterns
+└── stock/
+    ├── README.md                    # Stock module index (17 modules)
+    ├── stock-prediction-impl.md     # Architecture overview + anti-overfitting
+    ├── config-impl.md              # Config, paths, Ollama models
+    ├── data-layer-impl.md          # Data acquisition + watchlist + hot sectors
+    ├── analysis-engines-impl.md    # TA + fundamental + sentiment engines
+    ├── ml-pipeline-impl.md         # XGBoost classifier/regressor + tracker
+    ├── market-signals-impl.md      # Fear & Greed, VIX, black swan
+    ├── scanner-impl.md             # 3-layer market scanner
+    ├── llm-synthesis-impl.md       # Ollama narrative synthesis
+    └── api-routes-impl.md          # Stock API routes
 ```
+
+> **Beginner guides** (formerly `know-how/`) have moved to [docs/learning/](../learning/) organized by topic.
+> See [learning/README.md](../learning/README.md) for the full index.
 
 ## Table of contents
 
@@ -76,25 +64,6 @@ docs/implementation/
 | [output-generation-impl.md](./briefing-pipeline/output-generation-impl.md) | `briefing-template`, audio, and video output generation. |
 | [topic-dedup-impl.md](./briefing-pipeline/topic-dedup-impl.md) | `topic_index`, `filter_topics`, and `raw_saver` for topic handling and deduplication. |
 
-### Know-How Guides
-
-| Document | Description |
-|----------|-------------|
-| [sentence-transformers.md](./know-how/sentence-transformers.md) | Embeddings and the SentenceTransformer API as used in Jarvis. |
-| [qdrant-vector-db.md](./know-how/qdrant-vector-db.md) | Qdrant collections, search, and persistence patterns. |
-| [flask-web-server.md](./know-how/flask-web-server.md) | Flask routes, apps, and deployment notes for Jarvis services. |
-| [playwright-scraping.md](./know-how/playwright-scraping.md) | Headless browser scraping with Playwright. |
-| [ollama-local-llm.md](./know-how/ollama-local-llm.md) | Local LLM inference via Ollama HTTP API. |
-| [pypdf-reportlab.md](./know-how/pypdf-reportlab.md) | PDF text extraction with pypdf and PDF creation with ReportLab. |
-| [rag-architecture.md](./know-how/rag-architecture.md) | Retrieval-Augmented Generation: chunking, retrieval, context augmentation, and Jarvis's 6-indexer RAG pipeline. |
-| [hybrid-search-reranking.md](./know-how/hybrid-search-reranking.md) | BM25 keyword search, Reciprocal Rank Fusion, cross-encoder reranking, and hybrid retrieval. |
-| [xgboost-gradient-boosting.md](./know-how/xgboost-gradient-boosting.md) | Supervised ML, gradient boosting, XGBoost, walk-forward validation, and data leakage prevention. |
-| [feature-engineering-ta.md](./know-how/feature-engineering-ta.md) | Feature engineering from OHLCV data, technical indicators (RSI, MACD, Bollinger, KDJ), and pandas-ta. |
-| [edge-tts-speech.md](./know-how/edge-tts-speech.md) | Neural text-to-speech with Edge TTS, voice selection, chunking, and audio merging. |
-| [llm-prompt-engineering.md](./know-how/llm-prompt-engineering.md) | Prompt design patterns: role assignment, structured output, temperature control, and Jarvis LLM applications. |
-| [testing-python-apps.md](./know-how/testing-python-apps.md) | Automated testing with pytest: fixtures, mocking, parametrize, Flask endpoint testing, coverage. |
-| [async-concurrency-python.md](./know-how/async-concurrency-python.md) | Threading, asyncio, ProcessPool — background jobs, parallel I/O, SSE streaming patterns in Jarvis. |
-
 ### Stock Prediction
 
 | Document | Description |
@@ -119,10 +88,10 @@ docs/implementation/
 ## Reading order
 
 1. **[tech-stack-overview.md](./tech-stack-overview.md)** — Start here for architecture, data flow, and which scripts touch which systems.
-2. **Know-how** — If any stack piece is unfamiliar, read the matching guide under [know-how/](./know-how/) before deep-diving into scripts.
+2. **Learning guides** — If any stack piece is unfamiliar, read the matching guide under [docs/learning/](../learning/) before deep-diving into scripts.
 3. **Briefing pipeline** — Follow [fetcher-pattern-impl.md](./briefing-pipeline/fetcher-pattern-impl.md), then [pipeline-orchestration-impl.md](./briefing-pipeline/pipeline-orchestration-impl.md), then [topic-dedup-impl.md](./briefing-pipeline/topic-dedup-impl.md) and [output-generation-impl.md](./briefing-pipeline/output-generation-impl.md) if you work on sources, merge, or PDF/audio/video output.
 4. **RAG** — Read [reindex-all-impl.md](./rag/reindex-all-impl.md) for orchestration, then the specific indexer doc (`index-*-impl.md`) you are changing; finish with [search-ui-impl.md](./rag/search-ui-impl.md) and [agent-impl.md](./rag/agent-impl.md) for query paths.
 
 ## Prerequisites
 
-New to embeddings, vector search, Flask, Playwright, local LLMs, or PDF tooling? Use the **[know-how](./know-how/)** guides first. They are written to support the implementation docs and reduce the need to read upstream documentation from scratch. After that, [tech-stack-overview.md](./tech-stack-overview.md) ties those concepts to Jarvis-specific paths, ports, and filenames.
+New to embeddings, vector search, Flask, Playwright, local LLMs, or PDF tooling? The **[learning guides](../learning/)** are organized by topic (RAG, LLM, ML, Hugging Face, Python Web, Data Acquisition). They are written to support the implementation docs and reduce the need to read upstream documentation from scratch. After that, [tech-stack-overview.md](./tech-stack-overview.md) ties those concepts to Jarvis-specific paths, ports, and filenames.

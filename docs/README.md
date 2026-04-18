@@ -37,19 +37,16 @@ docs/
 │   ├── tech-stack-overview.md   # All technologies explained
 │   ├── rag/                     # RAG system (agent, indexers, search, settings)
 │   ├── briefing-pipeline/       # Daily briefing (fetchers, merge, audio, world news)
-│   ├── stock/                   # Stock module (10 docs: TA, ML, scanner, APIs)
-│   └── know-how/                # Beginner tech guides (14 topics)
+│   └── stock/                   # Stock module (10 docs: TA, ML, scanner, APIs)
 │
-├── learning/                    # RAG & ML learning chapters
-│   └── rag/                    # All RAG/retrieval learning content
-│       ├── ch1-rag-concepts.md
-│       ├── ch2-architecture-assessment.md
-│       ├── ch3-vector-search-explained.md
-│       ├── ch4-framework-comparison.md
-│       ├── ch5-ml-roadmap.md
-│       ├── ch6-advanced-rag-techniques.md
-│       ├── ch7-ml-for-retrieval.md
-│       └── ch8-learning-roadmap.md
+├── learning/                    # Structured learning paths by topic
+│   ├── rag/                    # RAG concepts & retrieval (Ch. 1–8)
+│   ├── llm/                    # LLM, Ollama, prompt engineering
+│   ├── machine-learning/       # XGBoost, embeddings, feature engineering
+│   ├── huggingface/            # Sentence Transformers, HF Hub, fine-tuning
+│   ├── python-web/             # Flask, async/concurrency, testing
+│   ├── data-acquisition/       # Playwright, PDF, TTS, pipeline patterns
+│   └── devops-tools/           # Git, PowerShell, Atlassian integration
 │
 ├── plans/                       # Implementation plans & roadmaps
 │   ├── 2026-04-17-jarvis-next.md    # Enhancement roadmap (Tier 0–5)
@@ -120,24 +117,16 @@ Detailed developer documentation. See [Implementation Index](implementation/READ
 | [Scanner](implementation/stock/scanner-impl.md) | 3-layer market scanner with LLM ranking |
 | [API Routes](implementation/stock/api-routes-impl.md) | All stock API endpoints |
 
-**Know-How (Beginner Guides):**
+**Beginner Guides** (organized by learning track under `learning/`):
 
-| Document | Technology |
-|----------|------------|
-| [RAG Architecture](implementation/know-how/rag-architecture.md) | Retrieval-Augmented Generation |
-| [LLM Prompt Engineering](implementation/know-how/llm-prompt-engineering.md) | System/user prompts, structured output |
-| [Hybrid Search & Reranking](implementation/know-how/hybrid-search-reranking.md) | BM25, vector search, RRF, cross-encoder |
-| [XGBoost & Gradient Boosting](implementation/know-how/xgboost-gradient-boosting.md) | Supervised ML for stock prediction |
-| [Edge TTS & Speech](implementation/know-how/edge-tts-speech.md) | Neural TTS for audio podcasts |
-| [Async & Concurrency](implementation/know-how/async-concurrency-python.md) | Threading, asyncio, SSE |
-| [Testing Python Apps](implementation/know-how/testing-python-apps.md) | pytest, fixtures, mocking |
-| [Feature Engineering & TA](implementation/know-how/feature-engineering-ta.md) | Technical indicators for ML |
-| [Sentence Transformers](implementation/know-how/sentence-transformers.md) | Text embeddings, MiniLM |
-| [Qdrant Vector DB](implementation/know-how/qdrant-vector-db.md) | Vector database, in-memory + snapshots |
-| [Flask Web Server](implementation/know-how/flask-web-server.md) | Routes, JSON APIs, SSE |
-| [Ollama Local LLM](implementation/know-how/ollama-local-llm.md) | Running LLMs locally |
-| [Playwright Scraping](implementation/know-how/playwright-scraping.md) | Headless browser automation |
-| [PDF Processing](implementation/know-how/pypdf-reportlab.md) | pypdf + ReportLab |
+| Track | Guides |
+|-------|--------|
+| [RAG](learning/rag/) | [RAG Architecture](learning/rag/rag-architecture.md), [Qdrant Vector DB](learning/rag/qdrant-vector-db.md), [Hybrid Search & Reranking](learning/rag/hybrid-search-reranking.md) |
+| [LLM](learning/llm/) | [Ollama Local LLM](learning/llm/ollama-local-llm.md), [Prompt Engineering](learning/llm/llm-prompt-engineering.md) |
+| [Machine Learning](learning/machine-learning/) | [ML Fundamentals](learning/machine-learning/ch1-ml-fundamentals.md), [Training & Evaluation](learning/machine-learning/ch2-model-training-evaluation.md), [XGBoost](learning/machine-learning/xgboost-gradient-boosting.md), [Feature Engineering](learning/machine-learning/feature-engineering-ta.md) |
+| [Hugging Face](learning/huggingface/) | [Sentence Transformers](learning/huggingface/sentence-transformers.md) |
+| [Python Web](learning/python-web/) | [Flask Web Server](learning/python-web/flask-web-server.md), [Async & Concurrency](learning/python-web/async-concurrency-python.md), [Testing](learning/python-web/testing-python-apps.md) |
+| [Data Acquisition](learning/data-acquisition/) | [Playwright Scraping](learning/data-acquisition/playwright-scraping.md), [PDF Processing](learning/data-acquisition/pypdf-reportlab.md), [Edge TTS](learning/data-acquisition/edge-tts-speech.md) |
 
 ## Learning Chapters
 

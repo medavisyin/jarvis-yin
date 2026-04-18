@@ -126,7 +126,7 @@
 
 **Complexity:** Medium (2-3 days for framework + first 30 tests)
 **Dependencies:** None
-**Know-how:** [testing-python-apps.md](../implementation/know-how/testing-python-apps.md)
+**Know-how:** [testing-python-apps.md](../learning/python-web/testing-python-apps.md)
 
 ---
 
@@ -204,7 +204,7 @@
 
 **Complexity:** High (1-2 weeks)
 **Dependencies:** Feedback data collection (partially implemented), GPU helpful but CPU trainable
-**Know-how:** See [sentence-transformers.md](../implementation/know-how/sentence-transformers.md)
+**Know-how:** See [sentence-transformers.md](../learning/huggingface/sentence-transformers.md)
 
 ---
 

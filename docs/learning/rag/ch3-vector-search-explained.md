@@ -218,25 +218,27 @@ Sweet spot (300-500 chars):
 
 | Content Type | Strategy | Max Size | Overlap |
 |-------------|----------|:--------:|:-------:|
-| Raw articles (MD) | Paragraph accumulation | 500 chars | None |
-| PDF sections | Regex split on `\d+\.` | 1500 chars | None |
-| Learning guides | Single blob | 2000 chars | None |
-| Java code | Class/method structure | ~1000 chars | None |
-| Wiki pages | Paragraph accumulation | 500 chars | None |
-| Custom (PDF) | Page-based | ~2000 chars | None |
+| Raw articles (MD) | Paragraph accumulation | 500 chars | 100 chars |
+| PDF sections | Regex split on `\d+\.` | 1500 chars | 100 chars |
+| Learning guides | Single blob | 2000 chars | 100 chars |
+| Java code | Class/method structure | ~1000 chars | 100 chars |
+| Wiki pages | Paragraph accumulation | 500 chars | 100 chars |
+| Custom (PDF) | Page-based | ~2000 chars | 100 chars |
 
-### What Overlap Would Add
+### How chunk overlap works in Jarvis
+
+Jarvis **implements** a **100-character overlap** between consecutive chunks in all indexers. Each new chunk starts by repeating the last 100 characters of the previous chunk before adding fresh text. That **preserves context at boundaries** so a sentence or definition is less often split across chunks with no shared wording, and **reduces “mid-thought” cuts** where neither chunk alone would embed the full idea.
 
 ```
-Without overlap:
-  Chunk 1: "...FHIR resources are the fundamental unit of"
-  Chunk 2: "interoperability. Each resource represents..."
-  ← The concept is split! Neither chunk has the full idea.
-
-With 100-char overlap:
+With 100-char overlap (Jarvis behavior):
   Chunk 1: "...FHIR resources are the fundamental unit of interoperability. Each resource"
   Chunk 2: "the fundamental unit of interoperability. Each resource represents a clinical..."
-  ← Both chunks contain the key concept. Search will find it.
+  ← Both chunks carry the bridging phrase; semantic search is more likely to surface the right passage.
+
+Without overlap (hypothetical):
+  Chunk 1: "...FHIR resources are the fundamental unit of"
+  Chunk 2: "interoperability. Each resource represents..."
+  ← The same idea straddles the cut; each chunk’s embedding is weaker for queries about the full phrase.
 ```
 
 ---

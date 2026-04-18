@@ -1,5 +1,7 @@
 # Know-How: Retrieval-Augmented Generation (RAG)
 
+> This is a quick-reference guide for Jarvis's RAG architecture. If you're new to RAG, start with [Chapter 1: Core RAG Concepts](ch1-rag-concepts.md) first.
+
 A beginner-friendly guide to **RAG** — the architecture pattern that lets Jarvis answer questions using real, up-to-date data instead of relying solely on the LLM's training knowledge. No prior AI systems background required.
 
 ## The LLM knowledge problem
@@ -42,7 +44,7 @@ flowchart LR
 ```
 
 1. **Collect** documents from various sources
-2. **Chunk** each document into passages (typically 200–500 words)
+2. **Chunk** each document into passages (typically 500–1500 characters)
 3. **Embed** each chunk using a sentence transformer model
 4. **Store** the vector + metadata in Qdrant
 
@@ -74,7 +76,7 @@ You can't embed an entire 50-page wiki article as one vector — the meaning get
 | **Semantic** | Split on topic/section boundaries | Best quality but complex |
 | **With overlap** | Chunks share some text at boundaries | Reduces information loss at edges |
 
-Jarvis uses text splitting with overlap, keeping chunks around 300–500 words.
+Jarvis uses text splitting with overlap, keeping chunks around 500–1500 characters.
 
 **Granularity matters:** Too large = diluted meaning, poor matches. Too small = lost context, fragmented answers.
 
@@ -82,7 +84,7 @@ Jarvis uses text splitting with overlap, keeping chunks around 300–500 words.
 
 The embedding model converts text to vectors. The **same model** must be used at both index time and query time — otherwise vectors live in different spaces and similarity is meaningless.
 
-Jarvis uses `all-MiniLM-L6-v2` (384 dimensions). See [sentence-transformers.md](./sentence-transformers.md) for details.
+Jarvis uses `all-MiniLM-L6-v2` (384 dimensions). See [sentence-transformers.md](../huggingface/sentence-transformers.md) for details.
 
 ## Vector similarity
 
