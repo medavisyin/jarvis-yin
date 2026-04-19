@@ -13,6 +13,8 @@
 | **Understand the code** | [Implementation Index](implementation/README.md) |
 | **Learn RAG concepts** | [Learning Chapters](learning/) (Ch. 1–8) |
 | **Use stock features** | [Stock Usage Guide (中文)](guides/stock-usage-guide.md) |
+| **Learn stock investing** | [Stock Learning Track (中文)](learning/stock/) — 从零到合格投资者 |
+| **Use Telegram remote** | [Telegram Bot Guide](guides/telegram-bot-guide.md) |
 | **See the roadmap** | [Enhancement Plan](plans/2026-04-17-jarvis-next.md) |
 
 ---
@@ -30,7 +32,8 @@ docs/
 │
 ├── guides/                      # User-facing guides
 │   ├── stock-usage-guide.md     # 股票使用指南 (Chinese)
-│   └── stock-knowledge-guide.md # 股票知识入门 (Chinese)
+│   ├── stock-knowledge-guide.md # 股票知识入门 (Chinese)
+│   └── telegram-bot-guide.md    # Telegram remote control guide
 │
 ├── implementation/              # Developer implementation docs
 │   ├── README.md                # Implementation navigation hub
@@ -44,6 +47,7 @@ docs/
 │   ├── llm/                    # LLM, Ollama, prompt engineering
 │   ├── machine-learning/       # XGBoost, embeddings, feature engineering
 │   ├── huggingface/            # Sentence Transformers, HF Hub, fine-tuning
+│   ├── stock/                  # A-share investing: basics → valuation → risk → Jarvis workflow (8 ch.)
 │   ├── python-web/             # Flask, async/concurrency, testing
 │   ├── data-acquisition/       # Playwright, PDF, TTS, pipeline patterns
 │   └── devops-tools/           # Git, PowerShell, Atlassian integration
@@ -79,6 +83,7 @@ docs/
 |----------|-------------|
 | [股票知识入门](guides/stock-knowledge-guide.md) | A股基础、K线、技术指标、基本面、情绪分析、机器学习预测 (中文) |
 | [股票使用指南](guides/stock-usage-guide.md) | 关注列表、数据获取、分析报告、ML预测、决策参考 (中文) |
+| [Telegram 远程控制](guides/telegram-bot-guide.md) | Telegram Bot 远程命令指南: 每日抓取、搜索、AI问答、股票分析 |
 
 ## Implementation Docs
 
@@ -127,6 +132,7 @@ Detailed developer documentation. See [Implementation Index](implementation/READ
 | [Hugging Face](learning/huggingface/) | [Sentence Transformers](learning/huggingface/sentence-transformers.md) |
 | [Python Web](learning/python-web/) | [Flask Web Server](learning/python-web/flask-web-server.md), [Async & Concurrency](learning/python-web/async-concurrency-python.md), [Testing](learning/python-web/testing-python-apps.md) |
 | [Data Acquisition](learning/data-acquisition/) | [Playwright Scraping](learning/data-acquisition/playwright-scraping.md), [PDF Processing](learning/data-acquisition/pypdf-reportlab.md), [Edge TTS](learning/data-acquisition/edge-tts-speech.md) |
+| [Stock Investing (中文)](learning/stock/) | [市场基础](learning/stock/ch1-stock-market-basics.md), [财务报表](learning/stock/ch2-financial-statements.md), [估值方法](learning/stock/ch3-valuation-methods.md), [技术分析](learning/stock/ch4-technical-analysis.md), [风险管理](learning/stock/ch5-risk-management.md), [策略体系](learning/stock/ch6-investment-strategies.md), [量化与ML](learning/stock/ch7-quantitative-methods.md), [Jarvis实战](learning/stock/ch8-jarvis-workflow.md), [增强路线图](learning/stock/ch9-enhancement-roadmap.md), [A股深度解析](learning/stock/ch10-astock-deep-dive.md) |
 
 ## Learning Chapters
 
@@ -172,6 +178,7 @@ Read in order to understand the concepts behind the system:
 │                                                              │
 │  Port 18888: Search UI (Library, Chunk Analysis)             │
 │  Port 18889: Jarvis Agent (Chat, Tools, Audio, Stock)        │
+│  Telegram Bot: Remote command interface (polling)              │
 │                                                              │
 │  Embedding: all-MiniLM-L6-v2 (384-dim)                      │
 │  Vector DB: Qdrant in-memory + JSON snapshot                 │

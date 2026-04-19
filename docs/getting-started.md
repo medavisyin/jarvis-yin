@@ -153,7 +153,7 @@ C:\jarvis\
 Open a terminal and run this single command to install everything Jarvis needs:
 
 ```
-pip install flask qdrant-client sentence-transformers pypdf reportlab edge-tts playwright requests pyyaml feedparser ollama rank-bm25
+pip install flask qdrant-client sentence-transformers pypdf reportlab edge-tts playwright requests pyyaml feedparser ollama rank-bm25 python-telegram-bot httpx
 ```
 
 **What each package does:**
@@ -172,6 +172,8 @@ pip install flask qdrant-client sentence-transformers pypdf reportlab edge-tts p
 | `feedparser` | Parses RSS news feeds (BBC, AP News, etc.) |
 | `ollama` | Python client that talks to the Ollama AI model server |
 | `rank-bm25` | Keyword search engine used alongside vector search |
+| `python-telegram-bot` | Controls a Telegram bot for remote Jarvis access from your phone |
+| `httpx` | Async HTTP client with SOCKS proxy support for Telegram connectivity |
 
 > **What is pip?** `pip` is Python's package installer. It downloads libraries from the internet and installs them so your Python scripts can use them.
 
@@ -373,7 +375,7 @@ Instead of opening two terminals every time, use the batch launchers in the `bin
 
 | Launcher | What It Does |
 |----------|-------------|
-| `bin\jarvis-start.bat` | Starts both servers (Search UI + Agent) in minimized windows |
+| `bin\jarvis-start.bat` | Starts all three services (Search UI + Agent + Telegram Bot) in minimized windows |
 | `bin\jarvis-stop.bat` | Stops both servers |
 | `bin\jarvis-restart.bat` | Restarts both servers |
 | `bin\jarvis-servers.bat` | Interactive menu: start, stop, restart, check status |
@@ -381,6 +383,7 @@ Instead of opening two terminals every time, use the batch launchers in the `bin
 Double-click `bin\jarvis-start.bat` from File Explorer. Wait ~15 seconds, then open:
 - http://localhost:18888 (Search UI)
 - http://localhost:18889 (Chat Agent)
+- Telegram Bot: active (message @your_bot on Telegram)
 
 ---
 
@@ -398,6 +401,7 @@ Run through this checklist:
 | 6 | Search UI responds | Open http://localhost:18888 | Search page loads |
 | 7 | Agent responds | Open http://localhost:18889 | Chat page loads |
 | 8 | Agent can answer | Ask "hello" in the chat | Gets a response |
+| 9 | Telegram bot running | Send /start to your bot | Gets a welcome response |
 
 ---
 
@@ -446,6 +450,7 @@ Once everything is set up, your daily routine is simple:
 1. **Start the servers** — double-click `bin\jarvis-start.bat`
 2. **Run the briefing pipeline** — `python scripts/pipeline/run-all-sources.py`
 3. **Open the Agent** — http://localhost:18889 and ask "daily briefing" to trigger synthesis
+4. **Telegram available** — if the bot is running, you can also do steps 2-3 from your phone via Telegram
 
 ### Anytime
 

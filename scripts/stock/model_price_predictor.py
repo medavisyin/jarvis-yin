@@ -24,13 +24,40 @@ from config import STOCK_DATA_DIR, STOCK_MODELS_DIR
 log = logging.getLogger(__name__)
 warnings.filterwarnings("ignore", category=UserWarning)
 
-_TRAIN_WINDOW = 250
+_TRAIN_WINDOW = 500
 _TEST_WINDOW = 5
-_N_ROUNDS = 10
+_N_ROUNDS = 15
 _MAX_FEATURES = 40
 _EARLY_STOPPING_ROUNDS = 15
 
 _TARGETS = ["close", "high", "low"]
+
+# A-stock daily price limits by board
+_LIMIT_PCT = {
+    "main":      0.10,   # 主板 (60xxxx, 00xxxx)
+    "chinext":   0.20,   # 创业板 (300xxx)
+    "star":      0.20,   # 科创板 (688xxx)
+    "bse":       0.30,   # 北交所 (8xxxxx, 4xxxxx)
+}
+
+
+def _get_price_limit(symbol: str) -> float:
+    """Return the daily price limit ratio for a given A-stock symbol."""
+    s = str(symbol).strip()
+    if s.startswith("300"):
+        return _LIMIT_PCT["chinext"]
+    if s.startswith("688"):
+        return _LIMIT_PCT["star"]
+    if s.startswith(("8", "4")):
+        return _LIMIT_PCT["bse"]
+    return _LIMIT_PCT["main"]
+
+
+def _clamp_prediction(pred_price: float, current_price: float, limit: float) -> float:
+    """Clamp predicted price within the daily price limit range."""
+    lo = current_price * (1 - limit)
+    hi = current_price * (1 + limit)
+    return max(lo, min(hi, pred_price))
 
 
 def _build_price_features(symbol: str) -> pd.DataFrame | None:
@@ -59,7 +86,9 @@ def _build_price_features(symbol: str) -> pd.DataFrame | None:
 
     for target in _TARGETS:
         if target in feature_df.columns:
-            feature_df[f"target_{target}"] = feature_df[target].shift(-1)
+            feature_df[f"target_{target}"] = (
+                feature_df[target].shift(-1) / feature_df["close"] - 1
+            ) * 100  # percentage return relative to today's close
 
     new_feat_cols = [
         c for c in feature_df.columns
@@ -143,6 +172,43 @@ def _impute_fold(X_train: np.ndarray, X_test: np.ndarray,
     train_df.fillna(medians, inplace=True)
     test_df.fillna(medians, inplace=True)
     return train_df.values, test_df.values, medians
+
+
+def _compute_confidence(wf_results: dict, change_pct: dict) -> dict:
+    """Derive a confidence assessment from walk-forward metrics."""
+    close_wf = wf_results.get("close", {})
+    mae = close_wf.get("overall_mae", 99)
+    dir_acc = close_wf.get("direction_accuracy")
+    pred_pct = abs(change_pct.get("close", 0))
+
+    if mae < 1.0 and dir_acc and dir_acc > 0.60:
+        level = "medium"
+    elif mae < 1.5 and dir_acc and dir_acc > 0.55:
+        level = "low-medium"
+    elif mae > 2.5 or (dir_acc and dir_acc < 0.45):
+        level = "very_low"
+    else:
+        level = "low"
+
+    signal_strength = "weak"
+    if pred_pct > 2.0 and mae < 1.5:
+        signal_strength = "moderate"
+    elif pred_pct > 3.0 and mae < 2.0:
+        signal_strength = "moderate"
+    elif pred_pct < mae:
+        signal_strength = "noise"
+
+    return {
+        "level": level,
+        "signal_strength": signal_strength,
+        "mae_pct": round(mae, 2),
+        "direction_accuracy": dir_acc,
+        "note": (
+            "Prediction within noise range; treat as directional hint only"
+            if signal_strength in ("weak", "noise")
+            else "Signal exceeds noise; consider with other analysis"
+        ),
+    }
 
 
 def train_price_prediction(symbol: str) -> dict:
@@ -249,11 +315,12 @@ def train_price_prediction(symbol: str) -> dict:
 
             preds = model.predict(X_te)
             errors = np.abs(preds - y_te)
-            pct_errors = errors / np.where(y_te != 0, np.abs(y_te), 1) * 100
+            denom = np.maximum(np.abs(y_te), 0.5)
+            pct_errors = errors / denom * 100
 
-            if target_name == "close" and len(y_te) > 1:
-                actual_dir = np.sign(np.diff(np.concatenate([[y_all[test_start - 1]], y_te])))
-                pred_dir = np.sign(np.diff(np.concatenate([[y_all[test_start - 1]], preds])))
+            if target_name == "close":
+                actual_dir = np.sign(y_te)
+                pred_dir = np.sign(preds)
                 dir_correct = int((actual_dir == pred_dir).sum())
                 dir_total = len(actual_dir)
             else:
@@ -287,8 +354,8 @@ def train_price_prediction(symbol: str) -> dict:
 
         latest_raw = X_all.iloc[[-1]].copy()
         latest_raw.fillna(final_medians, inplace=True)
-        pred_val = float(final_model.predict(latest_raw.values)[0])
-        predictions[target_name] = round(pred_val, 2)
+        pred_pct = float(final_model.predict(latest_raw.values)[0])
+        predictions[target_name] = pred_pct  # store raw % temporarily
 
         overall_mae = np.mean([r["mae"] for r in rounds]) if rounds else 0
         overall_mape = np.mean([r["mape"] for r in rounds]) if rounds else 0
@@ -317,20 +384,34 @@ def train_price_prediction(symbol: str) -> dict:
         return {"error": "所有目标训练失败", "symbol": symbol}
 
     current_close = float(df["close"].iloc[-1]) if "close" in df.columns else None
+    limit = _get_price_limit(symbol)
+
     change_pct = {}
     if current_close and current_close > 0:
-        for k, v in predictions.items():
-            change_pct[k] = round((v - current_close) / current_close * 100, 2)
+        for k in list(predictions.keys()):
+            raw_pct = predictions[k]  # model output is % return
+            clamped_pct = max(-limit * 100, min(limit * 100, raw_pct))
+            change_pct[k] = round(clamped_pct, 2)
+            pred_price = current_close * (1 + clamped_pct / 100)
+            predictions[k] = round(pred_price, 2)
+
+        if "high" in predictions and "low" in predictions:
+            if predictions["high"] < predictions["low"]:
+                predictions["high"], predictions["low"] = predictions["low"], predictions["high"]
+                change_pct["high"], change_pct["low"] = change_pct["low"], change_pct["high"]
 
     latest_date = ""
     if "date" in df.columns:
         latest_date = str(df["date"].iloc[-1])[:10]
+
+    confidence = _compute_confidence(wf_results, change_pct)
 
     result = {
         "symbol": symbol,
         "predictions": predictions,
         "current_close": current_close,
         "change_pct": change_pct,
+        "confidence": confidence,
         "walk_forward": wf_results,
         "feature_importance": best_importances or [],
         "model_info": {
@@ -413,13 +494,26 @@ def generate_price_report(symbol: str, result: dict | None = None) -> str:
         lines.append(f"> 预测波动区间: **¥{preds['low']:.2f} ~ ¥{preds['high']:.2f}**")
         lines.append("")
 
+    conf = result.get("confidence", {})
+    if conf:
+        level_map = {
+            "medium": "⚠️ 中等", "low-medium": "⚠️ 中低",
+            "low": "❗ 低", "very_low": "🚫 极低",
+        }
+        lines.append("## 置信度评估")
+        lines.append("")
+        lines.append(f"- **置信等级:** {level_map.get(conf.get('level', ''), conf.get('level', 'N/A'))}")
+        lines.append(f"- **信号强度:** {conf.get('signal_strength', 'N/A')}")
+        lines.append(f"- **说明:** {conf.get('note', '')}")
+        lines.append("")
+
     for target_name in ["close", "high", "low"]:
         if target_name not in wf:
             continue
         tw = wf[target_name]
         lines.append(f"## Walk-Forward 验证 — {label_map[target_name]}")
         lines.append("")
-        lines.append(f"- **平均绝对误差 (MAE):** ¥{tw['overall_mae']:.2f}")
+        lines.append(f"- **平均绝对误差 (MAE):** {tw['overall_mae']:.2f} 个百分点")
         lines.append(f"- **平均百分比误差 (MAPE):** {tw['overall_mape']:.2f}%")
         if tw.get("direction_accuracy") is not None:
             lines.append(f"- **方向准确率:** {tw['direction_accuracy']:.1%}")

@@ -62,9 +62,9 @@ Walk-forward **XGBoost 3-class classifier** predicting 5-day direction (涨/平/
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| `_TRAIN_WINDOW` | 250 | Training window (trading days) |
+| `_TRAIN_WINDOW` | **500** | Training window (~2 years of trading days) |
 | `_TEST_WINDOW` | 5 | Test window per round |
-| `_N_ROUNDS` | 10 | Walk-forward rounds (increased from 5) |
+| `_N_ROUNDS` | **15** | Walk-forward rounds (75 test days total) |
 | `_MIN_DATA_ROWS` | 300 | Minimum data requirement |
 | `_EARLY_STOPPING_ROUNDS` | 15 | Stop if no improvement |
 
@@ -86,9 +86,10 @@ Walk-forward **XGBoost 3-class classifier** predicting 5-day direction (涨/平/
 ### Anti-Overfitting Measures
 
 1. **Early stopping** (15 rounds) — prevents training all 200 trees when validation loss plateaus
-2. **Increased walk-forward rounds** (10 vs 5) — 50 test days vs 25 for more reliable OOS estimate
-3. **Stronger regularization** — deeper L1/L2, lower subsample ratios, shallower trees
-4. **Final model uses best iteration** — if early stopping found optimal at N trees, final refit uses N
+2. **Extended walk-forward** (15 rounds × 5 days = 75 test days) — more reliable OOS estimate
+3. **Larger training window** (500 days) — captures more market regimes
+4. **Stronger regularization** — deeper L1/L2, lower subsample ratios, shallower trees
+5. **Final model uses best iteration** — if early stopping found optimal at N trees, final refit uses N
 
 ### Walk-Forward Procedure
 
@@ -123,13 +124,20 @@ for round in range(n_rounds):
 
 Three independent **XGBoost regressors** for next-day **close**, **high**, and **low** prices.
 
+### Prediction Target: Percentage Returns (not absolute prices)
+
+The regressor predicts **next-day percentage return** relative to today's close, not the absolute price. This is critical because:
+- Absolute price prediction suffers from distribution shift: when a stock rallies from ¥200 to ¥400, a model trained on historical ¥200-range data cannot extrapolate to ¥400
+- Percentage returns are scale-invariant and stationary, making the model work across any price level
+- The raw model output (percentage) is converted back to price at prediction time: `predicted_price = current_close * (1 + predicted_pct / 100)`
+
 ### Constants
 
 | Constant | Value | Purpose |
 |----------|-------|---------|
-| `_TRAIN_WINDOW` | 250 | Training window |
+| `_TRAIN_WINDOW` | **500** | Training window (~2 years) |
 | `_TEST_WINDOW` | 5 | Test window per round |
-| `_N_ROUNDS` | 10 | Walk-forward rounds |
+| `_N_ROUNDS` | **15** | Walk-forward rounds (75 test days total) |
 | `_MAX_FEATURES` | 40 | Feature cap to prevent p >> n |
 | `_EARLY_STOPPING_ROUNDS` | 15 | Early stopping patience |
 
@@ -161,7 +169,7 @@ When feature count exceeds `_MAX_FEATURES` (40):
 
 ### XGBoost Hyperparameters
 
-Same anti-overfitting design as classifier:
+Same anti-overfitting design as classifier. The `objective` **reg:squarederror** minimizes squared error on **percentage-return** targets (next-day move vs today's close as %), not absolute price levels.
 
 | Parameter | Value |
 |-----------|-------|
@@ -179,9 +187,36 @@ Same anti-overfitting design as classifier:
 ### Walk-Forward Metrics
 
 Per target (close/high/low):
-- **MAE** — Mean Absolute Error
+- **MAE** — Mean Absolute Error (in percentage points, since target is % return)
 - **MAPE** — Mean Absolute Percentage Error
 - **Direction accuracy** (close only) — predicted vs actual direction
+
+### A-Stock Price Limit Clamping
+
+All predictions are clamped to the legal daily price limits for Chinese A-stocks:
+
+| Board | Symbol Prefix | Daily Limit |
+|-------|---------------|-------------|
+| 主板 (Main) | 00xxxx, 60xxxx | ±10% |
+| 创业板 (ChiNext) | 300xxx | ±20% |
+| 科创板 (STAR) | 688xxx | ±20% |
+| 北交所 (BSE) | 8xxxxx, 4xxxxx | ±30% |
+
+Functions: `_get_price_limit(symbol)` returns the limit ratio; `_clamp_prediction()` enforces the range.
+
+Additionally, if predicted high < predicted low, they are automatically swapped to maintain logical consistency.
+
+### Confidence / Uncertainty Output
+
+`_compute_confidence(wf_results, change_pct)` assesses prediction reliability:
+
+| Field | Values | Meaning |
+|-------|--------|---------|
+| `level` | `medium`, `low-medium`, `low`, `very_low` | Based on MAE and direction accuracy from walk-forward |
+| `signal_strength` | `moderate`, `weak`, `noise` | Whether predicted change exceeds the model's own error margin |
+| `note` | text | Human-readable explanation |
+
+**Key logic:** If the predicted percentage change is smaller than the walk-forward MAE, the signal is classified as `noise` — meaning the model's uncertainty is larger than what it's predicting. This prevents users from acting on predictions that are statistically indistinguishable from zero.
 
 ### Final Model
 

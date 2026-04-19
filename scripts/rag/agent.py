@@ -7881,8 +7881,14 @@ async function pollScanStatus() {
 }
 function renderScanResult(picks) {
   const el = document.getElementById('scanResult');
-  if (!picks || picks.length === 0) { el.innerHTML = '<p style="color:#6b7280">暂无推荐结果</p>'; return; }
-  let h = '<div style="margin-bottom:12px"><h3 style="color:#fbbf24;margin:0 0 8px">🏆 TOP ' + picks.length + ' 推荐</h3></div>';
+  if (!picks || picks.length === 0) {
+    el.innerHTML = '<div style="text-align:center;padding:24px">' +
+      '<p style="color:#fbbf24;font-size:1.1em;font-weight:600">本次扫描：暂无推荐</p>' +
+      '<p style="color:#8b8fa4;font-size:0.85em;margin-top:8px">经过三层筛选，没有找到估值合理且值得买入的股票。</p>' +
+      '<p style="color:#6b7280;font-size:0.8em">这是正常的 — "不推荐" 本身就是最好的建议。</p></div>';
+    return;
+  }
+  let h = '<div style="margin-bottom:12px"><h3 style="color:#fbbf24;margin:0 0 8px">✅ 推荐买入: ' + picks.length + ' 只</h3></div>';
   picks.forEach((p, i) => {
     const chgColor = (p.change_pct||0) > 0 ? '#ef4444' : (p.change_pct||0) < 0 ? '#22c55e' : '#c4c8f0';
     h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:12px;margin-bottom:8px">';
@@ -7890,21 +7896,32 @@ function renderScanResult(picks) {
     h += '<div><span style="color:#fbbf24;font-weight:700;font-size:1.1em">#' + (i+1) + '</span> ';
     h += '<span style="color:#60a5fa;font-weight:600">' + p.name + '</span> ';
     h += '<span style="color:#8b8fa4">(' + p.symbol + ')</span></div>';
-    h += '<div style="text-align:right"><span style="color:#fbbf24;font-size:1.1em;font-weight:700">' + (p.final_score||0).toFixed(1) + '</span><span style="color:#8b8fa4;font-size:0.8em">/100</span></div>';
-    h += '</div>';
-    h += '<div style="display:flex;gap:16px;margin-top:8px;font-size:0.85em">';
+    h += '<div style="display:flex;align-items:center;gap:8px">';
+    h += '<button onclick="addScanPickToWatchlist(\'' + p.symbol + '\',\'' + (p.name||'').replace(/'/g,"\\'") + '\')" style="background:#1e3a5f;border:1px solid #3b82f6;color:#60a5fa;border-radius:6px;padding:3px 10px;cursor:pointer;font-size:0.8em" title="加入自选股">⭐ 自选</button>';
+    h += '<span style="color:#fbbf24;font-size:1.1em;font-weight:700">' + (p.final_score||0).toFixed(1) + '</span><span style="color:#8b8fa4;font-size:0.8em">/100</span>';
+    h += '</div></div>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:0.85em">';
     h += '<span>¥' + (p.price||'-') + '</span>';
     h += '<span style="color:' + chgColor + '">' + ((p.change_pct||0)>0?'+':'') + (p.change_pct||0).toFixed(2) + '%</span>';
     h += '<span>PE: ' + (p.pe||'-') + '</span>';
+    if (p.fund_score != null) h += '<span>基本面: ' + p.fund_score + '</span>';
     h += '<span>技术: ' + (p.tech_score||'-') + '</span>';
     h += '<span>情绪: ' + (p.sentiment_score||'-') + '</span>';
     if (p.is_hot) h += '<span style="color:#f59e0b">🔥 热门</span>';
     h += '</div>';
-    if (p.reasoning) h += '<div style="margin-top:6px;color:#a3e635;font-size:0.85em">💡 ' + p.reasoning + '</div>';
+    if (p.buy_low && p.buy_high) h += '<div style="margin-top:6px;color:#38bdf8;font-size:0.83em">📊 建议买入区间: ¥' + p.buy_low + ' ~ ¥' + p.buy_high + '</div>';
+    if (p.reasoning) h += '<div style="margin-top:4px;color:#a3e635;font-size:0.85em">💡 ' + p.reasoning + '</div>';
     if (p.risk) h += '<div style="margin-top:2px;color:#f87171;font-size:0.8em">⚠️ ' + p.risk + '</div>';
     h += '</div>';
   });
   el.innerHTML = h;
+}
+async function addScanPickToWatchlist(sym, name) {
+  try {
+    const r = await fetch('/api/stock/watchlist', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({symbol:sym, name:name})});
+    const d = await r.json();
+    if (d.error) showToast(d.error); else showToast('已加入自选: ' + sym + ' ' + name);
+  } catch(e) { showToast('加入自选失败'); }
 }
 function renderPartialResults(results) {
   const el = document.getElementById('scanResult');

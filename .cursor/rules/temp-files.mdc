@@ -1,0 +1,34 @@
+---
+description: Rules for temporary files, debug scripts, and log output placement
+globs: 
+  - "**/_debug*"
+  - "**/_temp*"
+  - "**/*.log"
+alwaysApply: true
+---
+
+# Temporary & Debug File Policy
+
+## Rule: No temp files in project root
+
+Never create debug scripts, temp files, or scratch files in the project root (`c:\jarvis\`).
+
+## Designated directories
+
+| File type | Location | Example |
+|-----------|----------|---------|
+| Debug / scratch scripts | `tmp/` | `tmp/_debug_sources.py` |
+| Runtime logs | `logs/` | `logs/jarvis-start.log` |
+| One-off data dumps | `tmp/` | `tmp/export_2026-04-19.json` |
+| Test fixtures | `tests/fixtures/` | `tests/fixtures/sample.json` |
+
+## Naming convention
+
+- Prefix temp files with `_` (e.g. `_debug_`, `_temp_`, `_scratch_`)
+- Include date if relevant: `_debug_scanner_2026-04-19.py`
+
+## Cleanup
+
+- `tmp/` contents are disposable — never commit them
+- Add `tmp/` and `logs/` to `.gitignore` if not already present
+- Delete temp files after the debugging session ends

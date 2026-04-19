@@ -25,10 +25,10 @@ log = logging.getLogger(__name__)
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-_TRAIN_WINDOW = 250
+_TRAIN_WINDOW = 500
 _TEST_WINDOW = 5
 _MIN_DATA_ROWS = 300
-_N_ROUNDS = 10
+_N_ROUNDS = 15
 _EARLY_STOPPING_ROUNDS = 15
 
 _LABEL_MAP = {-1: "跌", 0: "平", 1: "涨"}

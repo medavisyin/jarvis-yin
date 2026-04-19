@@ -16,6 +16,7 @@
 | [**python-web/**](python-web/) | Flask, async/concurrency, testing, REST API patterns | Reference guides |
 | [**data-acquisition/**](data-acquisition/) | Playwright scraping, RSS feeds, PDF processing, TTS | Reference guides |
 | [**devops-tools/**](devops-tools/) | Git, PowerShell, Atlassian integration, development workflow | Reference guides |
+| [**stock/**](stock/) | A 股投资从零到合格投资者 — 市场规则、财报、估值、TA、风控、策略、量化、Jarvis 实战、路线图、A股深度解析 | 10 chapters: basics → financials → valuation → TA → risk → strategies → quant/ML → workflow → roadmap → A-share deep dive |
 
 ## Recommended Reading Order
 
@@ -42,6 +43,21 @@ If you want to learn everything from scratch, follow this path:
 12. [RAG Ch. 7 — Advanced Techniques](rag/ch6-advanced-rag-techniques.md) — semantic chunking, HyDE, rewriting
 13. [LLM — Temperature & Inference](llm/) — how LLMs generate text
 14. Continue with remaining chapters in each track
+
+### Stock Investing Track (独立学习路径)
+
+Can be read independently of the tech tracks above:
+
+15. [Stock Ch. 1 — 市场基础](stock/ch1-stock-market-basics.md) — A股规则、代码、指数、涨跌停
+16. [Stock Ch. 2 — 读懂财报](stock/ch2-financial-statements.md) — 三张表、关键比率
+17. [Stock Ch. 3 — 估值方法](stock/ch3-valuation-methods.md) — PE/PB/DCF/安全边际
+18. [Stock Ch. 4 — 技术分析](stock/ch4-technical-analysis.md) — K线、均线、MACD、量价
+19. [Stock Ch. 5 — 风险管理](stock/ch5-risk-management.md) — 仓位、止损、投资心理
+20. [Stock Ch. 6 — 策略体系](stock/ch6-investment-strategies.md) — 价值/成长/动量/指数
+21. [Stock Ch. 7 — 量化与ML](stock/ch7-quantitative-methods.md) — 模型能做什么、不能做什么
+22. [Stock Ch. 8 — Jarvis实战](stock/ch8-jarvis-workflow.md) — 构建你的分析工作流
+23. [Stock Ch. 9 — 增强路线图](stock/ch9-enhancement-roadmap.md) — 6阶段工程计划：估值重建、Regime检测、集成模型、风控组合、回测框架
+24. [Stock Ch. 10 — A股深度解析](stock/ch10-astock-deep-dive.md) — 政策市、估值扭曲、全球联动板块、A股陷阱识别
 
 ## Guides Per Track
 

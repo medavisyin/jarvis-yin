@@ -1,11 +1,16 @@
 """
 AI Stock Scanner — 3-layer funnel that scans the entire A-share market and
-produces a TOP-N recommendation list with LLM-generated reasoning.
+produces a recommendation list filtered for **buyability** (not just momentum).
 
 Architecture:
-  Layer 1  全市场快速筛选  (~5000 → ~100)   realtime metrics
-  Layer 2  分批详细分析    (~100 → ~20)      technicals + sentiment
-  Layer 3  LLM综合评分     (~20 → TOP 5)     final scoring + reasoning
+  Layer 1  全市场快速筛选  (~5000 → ~100)   realtime metrics + basic valuation
+  Layer 2  分批详细分析    (~100 → ~30)      technicals + fundamentals + sentiment
+  Layer 3  LLM买入判断     (~30 → 0-5)       buyability verdict + reasoning
+
+Design philosophy (2026-04 rework):
+  Old: recommend top-5 by score (momentum-biased → all "don't buy" on deeper analysis)
+  New: recommend ONLY stocks that pass a buyability check (could be 0).
+       "No recommendation" is the best recommendation when nothing is cheap enough.
 
 Features:
   - Batch processing (configurable batch size)
@@ -44,7 +49,8 @@ _PROXIES = {"http": STOCK_PROXY, "https": STOCK_PROXY} if STOCK_PROXY else None
 TOP_N = 5
 LAYER2_BATCH = 20
 LAYER2_CANDIDATE_CAP = 100
-LAYER3_CAP = 20
+LAYER3_CAP = 30
+MIN_BUYABILITY_SCORE = 60
 
 _scan_lock = threading.Lock()
 _scan_thread: threading.Thread | None = None
@@ -124,22 +130,23 @@ def _layer1_quick_filter(hot_stocks: set[str]) -> tuple[list[dict], int]:
 
     mask = (
         df["名称"].apply(lambda x: "ST" not in str(x))
-        & df["涨跌幅"].between(-3, 8)
-        & (df["换手率"] >= 1)
-        & (df["成交额"] >= 50_000_000)
+        & df["涨跌幅"].between(-5, 8)
+        & (df["换手率"] >= 0.5)
+        & (df["成交额"] >= 30_000_000)
         & (df["市盈率-动态"] > 0)
-        & (df["市盈率-动态"] < 100)
+        & (df["市盈率-动态"] < 80)
     )
     candidates = df[mask].copy()
     log.info("Layer 1: 基础筛选后 %d 只", len(candidates))
 
+    pe = candidates["市盈率-动态"].clip(1, 80)
     candidates["score_l1"] = (
-        candidates["涨跌幅"].clip(-3, 8) * 2
-        + candidates["换手率"].clip(0, 20)
-        + (100 - candidates["市盈率-动态"].clip(0, 100)) * 0.3
+        (80 - pe) * 0.5
+        + candidates["涨跌幅"].clip(-5, 8) * 1.0
+        + candidates["换手率"].clip(0, 15) * 0.5
     )
     candidates["is_hot"] = candidates["代码"].isin(hot_stocks)
-    candidates.loc[candidates["is_hot"], "score_l1"] += 10
+    candidates.loc[candidates["is_hot"], "score_l1"] += 5
 
     candidates = candidates.sort_values("score_l1", ascending=False)
     result = candidates.head(LAYER2_CANDIDATE_CAP)
@@ -170,10 +177,12 @@ def _layer1_quick_filter(hot_stocks: set[str]) -> tuple[list[dict], int]:
 def _layer2_analyze_batch(batch: list[dict], progress: dict) -> list[dict]:
     """
     For a batch of candidates, fetch daily data, compute technicals,
-    and quick sentiment check.  Returns enriched candidates with scores.
+    run fundamental scoring, and quick sentiment check.
+    Returns enriched candidates with scores and a buyability flag.
     """
     from technical_analysis import load_ohlcv, compute_indicators, evaluate_signals
     from fetch_market_data import fetch_daily_ohlcv, fetch_stock_news
+    from fundamental_analysis import fetch_fundamentals, score_fundamentals
 
     scored = []
     for stock in batch:
@@ -183,9 +192,12 @@ def _layer2_analyze_batch(batch: list[dict], progress: dict) -> list[dict]:
         sym = stock["symbol"]
         log.info("Layer 2: 分析 %s (%s)...", sym, stock["name"])
 
-        tech_score = 0
-        sentiment_score = 0
+        tech_score = 50
+        sentiment_score = 50
+        fund_score = 50
         signals = {}
+        rsi_val = None
+        overbought = False
 
         try:
             fetch_daily_ohlcv(sym)
@@ -199,8 +211,25 @@ def _layer2_analyze_batch(batch: list[dict], progress: dict) -> list[dict]:
                 bearish = sum(1 for v in signals.values() if "跌" in str(v) or "死叉" in str(v) or "超卖" in str(v))
                 tech_score = (bullish - bearish) * 10 + 50
                 tech_score = max(0, min(100, tech_score))
+
+                if "RSI" in df.columns and len(df) > 0:
+                    rsi_val = df["RSI"].iloc[-1]
+                    if rsi_val and rsi_val > 75:
+                        overbought = True
+                        tech_score = max(0, tech_score - 20)
         except Exception as e:
             log.warning("  %s 技术分析失败: %s", sym, e)
+
+        try:
+            fund_data = fetch_fundamentals(sym)
+            if fund_data:
+                fs = score_fundamentals(fund_data)
+                fund_score = fs.get("total_score", 50)
+                stock["fund_dimensions"] = fs.get("dimensions", {})
+            else:
+                fund_score = 50
+        except Exception as e:
+            log.warning("  %s 基本面分析失败: %s", sym, e)
 
         try:
             news = fetch_stock_news(sym, limit=5)
@@ -218,18 +247,23 @@ def _layer2_analyze_batch(batch: list[dict], progress: dict) -> list[dict]:
             log.warning("  %s 情绪分析失败: %s", sym, e)
             sentiment_score = 50
 
-        hot_bonus = 15 if stock.get("is_hot") else 0
+        hot_bonus = 5 if stock.get("is_hot") else 0
         total_score = (
-            tech_score * 0.4
-            + sentiment_score * 0.3
-            + stock["score_l1"] * 0.3
+            fund_score * 0.35
+            + tech_score * 0.25
+            + sentiment_score * 0.15
+            + stock["score_l1"] * 0.15
+            + _valuation_bonus(stock.get("pe")) * 0.10
             + hot_bonus
         )
 
         stock.update({
             "tech_score": tech_score,
+            "fund_score": round(fund_score, 1),
             "sentiment_score": sentiment_score,
             "hot_bonus": hot_bonus,
+            "rsi": round(rsi_val, 1) if rsi_val else None,
+            "overbought": overbought,
             "score_l2": round(total_score, 2),
             "signals": signals,
         })
@@ -243,21 +277,51 @@ def _layer2_analyze_batch(batch: list[dict], progress: dict) -> list[dict]:
     return scored
 
 
+def _valuation_bonus(pe) -> float:
+    """Score bonus for reasonable valuation (lower PE = higher bonus)."""
+    if pe is None:
+        return 50
+    try:
+        pe_f = float(pe)
+    except (TypeError, ValueError):
+        return 50
+    if pe_f <= 0:
+        return 20
+    if pe_f < 10:
+        return 95
+    if pe_f < 15:
+        return 85
+    if pe_f < 25:
+        return 70
+    if pe_f < 40:
+        return 50
+    if pe_f < 60:
+        return 30
+    return 15
+
+
 # ---------------------------------------------------------------------------
 # Layer 3 — LLM comprehensive scoring + reasoning
 # ---------------------------------------------------------------------------
 
 def _layer3_llm_rank(candidates: list[dict]) -> list[dict]:
     """
-    Use LLM to produce final ranking with reasoning for top candidates.
+    Use LLM to judge **buyability** — not just rank.
+    Only returns stocks the LLM deems "worth buying NOW".
+    May return 0 stocks if nothing qualifies.
     """
-    log.info("Layer 3: LLM 综合评分 (%d 只候选)...", len(candidates))
+    log.info("Layer 3: LLM 买入判断 (%d 只候选)...", len(candidates))
 
-    candidates_sorted = sorted(candidates, key=lambda x: x.get("score_l2", 0), reverse=True)
+    overbought_rejected = [c for c in candidates if c.get("overbought")]
+    viable = [c for c in candidates if not c.get("overbought")]
+    if overbought_rejected:
+        log.info("Layer 3: 排除 %d 只超买股票 (RSI>75)", len(overbought_rejected))
+
+    candidates_sorted = sorted(viable, key=lambda x: x.get("score_l2", 0), reverse=True)
     top = candidates_sorted[:LAYER3_CAP]
 
     model = MODEL_USAGE.get("prediction_reasoning", "qwen3.5:4b")
-    final_picks = []
+    all_evaluated = []
 
     for stock in top:
         if _stop_event.is_set():
@@ -270,27 +334,44 @@ def _layer3_llm_rank(candidates: list[dict]) -> list[dict]:
                 json={
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": "你是专业A股分析师。只输出JSON，不要任何其他文字。"},
+                        {"role": "system", "content": (
+                            "你是专业A股分析师。你的任务是判断这只股票**现在是否值得买入**。"
+                            "你必须非常严格：只有估值合理、基本面良好、技术面未严重超买的股票才推荐买入。"
+                            "如果不确定或风险大于收益，必须判定为'不买入'。"
+                            "只输出JSON，不要任何其他文字。"
+                        )},
                         {"role": "user", "content": prompt},
                     ],
                     "stream": False,
                     "think": False,
-                    "options": {"temperature": 0.3, "num_predict": 500},
+                    "options": {"temperature": 0.3, "num_predict": 600},
                 },
                 timeout=120,
             )
             resp.raise_for_status()
             raw = resp.json().get("message", {}).get("content", "")
             parsed = _parse_llm_score(raw, stock)
-            final_picks.append(parsed)
+            all_evaluated.append(parsed)
         except Exception as e:
             log.warning("LLM 评分 %s 失败: %s, 使用数值评分", stock["symbol"], e)
             stock["final_score"] = stock.get("score_l2", 0)
             stock["reasoning"] = "LLM评分不可用, 基于数值分析"
-            final_picks.append(stock)
+            stock["verdict"] = "观望"
+            all_evaluated.append(stock)
 
-    final_picks.sort(key=lambda x: x.get("final_score", 0), reverse=True)
-    return final_picks[:TOP_N]
+    buyable = [s for s in all_evaluated
+               if s.get("verdict") == "买入"
+               and s.get("final_score", 0) >= MIN_BUYABILITY_SCORE]
+
+    if not buyable:
+        log.info("Layer 3: 本次扫描没有找到值得买入的股票 (这是正常的)")
+        buyable = []
+
+    buyable.sort(key=lambda x: x.get("final_score", 0), reverse=True)
+    result = buyable[:TOP_N]
+
+    log.info("Layer 3: %d 只通过买入判断 (共评估 %d 只)", len(result), len(all_evaluated))
+    return result
 
 
 def _build_scoring_prompt(stock: dict) -> str:
@@ -304,24 +385,48 @@ def _build_scoring_prompt(stock: dict) -> str:
     except (TypeError, ValueError):
         price_f = 0
 
-    return f"""你是专业A股分析师。根据以下数据对股票评分并给出买入建议。
+    fund_text = ""
+    dims = stock.get("fund_dimensions", {})
+    if dims:
+        parts = []
+        for k, v in dims.items():
+            parts.append(f"  - {k}: {v.get('score', 'N/A')}/100 ({v.get('detail', '')})")
+        fund_text = "\n".join(parts)
+    else:
+        fund_text = "  (无基本面数据)"
+
+    rsi_text = f"{stock.get('rsi', 'N/A')}"
+    if stock.get("overbought"):
+        rsi_text += " (超买警告)"
+
+    return f"""判断这只股票**现在是否值得买入**。
+
+核心原则：
+1. 被低估或估值合理的才推荐（PE合理、基本面良好）
+2. 技术面严重超买（RSI>70、连续大涨）的不推荐
+3. 必须有"安全边际"——买入价要低于你认为的合理价值
+4. 如果不确定，就判定"不买入"——错过机会比亏钱好
 
 数据:
 - 股票: {stock['name']} ({stock['symbol']})
-- 最新价: {price}
+- 最新价: ¥{price}
 - 涨跌幅: {stock.get('change_pct', 'N/A')}%
 - 换手率: {stock.get('turnover_rate', 'N/A')}%
-- 市盈率: {stock.get('pe', 'N/A')}
+- 市盈率(PE): {stock.get('pe', 'N/A')}
+- RSI: {rsi_text}
 - 成交额: {_format_amount(stock.get('amount'))}
+- 基本面评分: {stock.get('fund_score', 'N/A')}/100
+- 基本面详情:
+{fund_text}
 - 技术得分: {stock.get('tech_score', 'N/A')}/100
 - 情绪得分: {stock.get('sentiment_score', 'N/A')}/100
-- 热门板块: {'是' if stock.get('is_hot') else '否'}
 - 技术信号:
 {signals_text}
 
 要求: 直接输出一个JSON对象，不要输出任何其他文字。
-格式如下(注意buy_low和buy_high是数字，不是字符串):
-{{"score":75,"reason":"技术面强势，量价配合良好","risk":"短期涨幅较大","buy_low":{price_f * 0.95:.2f},"buy_high":{price_f * 1.0:.2f}}}
+verdict 字段必须是 "买入" 或 "不买入"。只有你确信值得买入时才填"买入"。
+格式(buy_low和buy_high是数字):
+{{"verdict":"买入","score":75,"reason":"估值处于合理区间，基本面良好，技术面未超买","risk":"行业竞争加剧","buy_low":{price_f * 0.95:.2f},"buy_high":{price_f * 1.0:.2f}}}
 
 你的回复(只输出JSON):"""
 
@@ -330,20 +435,16 @@ def _parse_llm_score(raw: str, stock: dict) -> dict:
     import re
     text = raw.strip()
 
-    # Strip <think>...</think> blocks (qwen3 thinking mode)
     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
-    # Strip markdown code fences
     m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
     if m:
         text = m.group(1)
 
-    # Find the outermost JSON object
     start = text.find("{")
     end = text.rfind("}") + 1
     if start >= 0 and end > start:
         json_str = text[start:end]
-        # Fix common LLM issues: single quotes, trailing commas
         json_str = json_str.replace("'", '"')
         json_str = re.sub(r",\s*}", "}", json_str)
         try:
@@ -353,6 +454,8 @@ def _parse_llm_score(raw: str, stock: dict) -> dict:
             stock["risk"] = parsed.get("risk", "")
             stock["buy_low"] = _safe_float(parsed.get("buy_low"))
             stock["buy_high"] = _safe_float(parsed.get("buy_high"))
+            verdict_raw = str(parsed.get("verdict", "")).strip()
+            stock["verdict"] = "买入" if "买入" in verdict_raw and "不" not in verdict_raw else "观望"
             return stock
         except (json.JSONDecodeError, ValueError) as e:
             log.warning("LLM JSON解析失败: %s | raw=%s", e, json_str[:200])
@@ -360,6 +463,7 @@ def _parse_llm_score(raw: str, stock: dict) -> dict:
     stock["final_score"] = stock.get("score_l2", 0)
     stock["reasoning"] = "LLM输出解析失败, 基于数值分析"
     stock["risk"] = ""
+    stock["verdict"] = "观望"
     stock["buy_low"] = None
     stock["buy_high"] = None
     return stock
@@ -395,31 +499,52 @@ def _generate_report(top_picks: list[dict], scan_meta: dict) -> str:
         f"**全市场股票数**: {scan_meta.get('market_total', 'N/A')}",
         f"**Layer1候选**: {scan_meta.get('layer1_count', 'N/A')}",
         f"**Layer2分析**: {scan_meta.get('layer2_count', 'N/A')}",
-        f"**最终推荐**: TOP {len(top_picks)}",
-        "",
-        "---",
-        "",
-        "## TOP 推荐",
+        f"**通过买入判断**: {len(top_picks)} 只",
         "",
     ]
 
-    for i, pick in enumerate(top_picks, 1):
+    if not top_picks:
         lines.extend([
-            f"### {i}. {pick['name']} ({pick['symbol']})",
+            "---",
             "",
-            f"- **综合得分**: {pick.get('final_score', 'N/A'):.1f}/100",
-            f"- **最新价**: {pick.get('price', 'N/A')}",
-            f"- **涨跌幅**: {pick.get('change_pct', 'N/A')}%",
-            f"- **市盈率**: {pick.get('pe', 'N/A')}",
-            f"- **换手率**: {pick.get('turnover_rate', 'N/A')}%",
-            f"- **技术得分**: {pick.get('tech_score', 'N/A')}/100",
-            f"- **情绪得分**: {pick.get('sentiment_score', 'N/A')}/100",
-            f"- **热门板块**: {'是' if pick.get('is_hot') else '否'}",
-            f"- **推荐理由**: {pick.get('reasoning', 'N/A')}",
-            f"- **主要风险**: {pick.get('risk', 'N/A')}",
-            f"- **建议买入区间**: {_buy_range_str(pick)}",
+            "## 本次扫描结果：暂无推荐",
+            "",
+            "经过三层筛选和 LLM 买入判断，本次没有找到同时满足以下条件的股票：",
+            "- 估值合理（PE 不过高）",
+            "- 基本面良好（盈利/成长/财务健康）",
+            "- 技术面未严重超买",
+            "- LLM 综合判断值得买入",
+            "",
+            "**这是正常的** — 在多数交易日，真正值得买入的标的并不多。",
+            "\"不推荐\"本身就是最好的建议。",
             "",
         ])
+    else:
+        lines.extend([
+            "---",
+            "",
+            "## 推荐买入",
+            "",
+        ])
+
+        for i, pick in enumerate(top_picks, 1):
+            lines.extend([
+                f"### {i}. {pick['name']} ({pick['symbol']})",
+                "",
+                f"- **买入判定**: ✅ 值得买入",
+                f"- **综合得分**: {pick.get('final_score', 'N/A'):.1f}/100",
+                f"- **最新价**: ¥{pick.get('price', 'N/A')}",
+                f"- **涨跌幅**: {pick.get('change_pct', 'N/A')}%",
+                f"- **市盈率(PE)**: {pick.get('pe', 'N/A')}",
+                f"- **基本面得分**: {pick.get('fund_score', 'N/A')}/100",
+                f"- **技术得分**: {pick.get('tech_score', 'N/A')}/100",
+                f"- **情绪得分**: {pick.get('sentiment_score', 'N/A')}/100",
+                f"- **RSI**: {pick.get('rsi', 'N/A')}",
+                f"- **推荐理由**: {pick.get('reasoning', 'N/A')}",
+                f"- **主要风险**: {pick.get('risk', 'N/A')}",
+                f"- **建议买入区间**: {_buy_range_str(pick)}",
+                "",
+            ])
 
     lines.extend([
         "---",

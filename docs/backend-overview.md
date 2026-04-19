@@ -93,6 +93,13 @@
 │  │  query rewrite only     │    │                                    │ │
 │  └─────────────────────────┘    └────────────────────────────────────┘ │
 │                                                                        │
+│  ┌──────────────────────────────────────────────────────────────────┐  │
+│  │  bot_telegram.py (Telegram polling)                              │  │
+│  │  • Remote command interface via Telegram                         │  │
+│  │  • Calls agent.py + search_ui.py APIs internally                 │  │
+│  │  • Owner-only access, SOCKS proxy support                        │  │
+│  └──────────────────────────────────────────────────────────────────┘  │
+│                                                                        │
 │  Both load the same .rag-store.json into separate in-memory Qdrant    │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -922,6 +929,7 @@ python -c "import json; d=json.load(open('C:/reports/ai/.rag-store.json')); prin
 │  Maturity: Advanced RAG + Agentic Shell + Stock Prediction              │
 │  ML Status: XGBoost stock + AI market scanner + RAG feedback            │
 │  Stock: A-share analysis + AI scanner (3-layer → TOP 5 with buy range) │
+│  Telegram Bot: Remote command interface (bot_telegram.py, polling)   │
 │  Toolbar: 🎯 Price Prediction button — train, forecasts, accuracy        │
 │  Next Step: Training data generation → Embedding fine-tuning            │
 └─────────────────────────────────────────────────────────────────────────┘

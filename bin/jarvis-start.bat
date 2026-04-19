@@ -25,10 +25,17 @@ echo Starting Jarvis Agent (port 18889)...
 echo [%date% %time%] Starting agent.py >> "%LOG%"
 start "Jarvis Agent" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\rag\agent.py"
 
+timeout /t 2 /nobreak >nul
+
+echo Starting Jarvis Telegram Bot...
+echo [%date% %time%] Starting bot_telegram.py >> "%LOG%"
+start "Jarvis Telegram" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\bot_telegram.py"
+
 echo.
-echo Both servers starting. Wait ~15 seconds for model loading.
-echo   Search UI: http://localhost:18888
-echo   Agent:     http://localhost:18889
+echo All servers starting. Wait ~15 seconds for model loading.
+echo   Search UI:     http://localhost:18888
+echo   Agent:         http://localhost:18889
+echo   Telegram Bot:  active (polling)
 echo.
 echo [%date% %time%] Done >> "%LOG%"
 timeout /t 5
