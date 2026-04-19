@@ -127,7 +127,7 @@ The Daily Fetch pipeline generates up to three separate MP3 files:
 |------|---------|---------------|
 | `ai-briefing.mp3` | AI/tech news narration | All AI sources |
 | `world-news.mp3` | International news | Non-China sources |
-| `china-news.mp3` | Chinese news (Sina, People's Daily) | China-tagged sources |
+| `china-news.mp3` | Chinese news (Sina, People's Daily, CLS, Toutiao, Weibo) | China-tagged sources, cross-day dedup |
 
 ## Common issues
 

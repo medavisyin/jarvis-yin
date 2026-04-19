@@ -224,7 +224,7 @@ One-click pipeline that runs the full daily briefing workflow from the Jarvis UI
 6. **World News merge recovery:** If individual source JSONs exist (e.g., `ap-news.json`, `china-news.json`) but the merged `world-news-data.json` is missing, attempts to merge via `run-world-news.py --no-fetch --no-translate` (or direct `merge_news()` call). This handles cases where the translation step failed during the initial pipeline run.
 7. **AI Briefing audio (segmented):** Splits `per_source_data` by source, generates per-source narrations using the fast narration model (`qwen3:1.7b`) with `think: false`. Chinese prompts explicitly instruct: no English reproduction, only proper nouns in English. Language is determined by `_GLOBAL_SETTINGS["audio_lang_ai"]`.
 8. **World News audio (segmented):** Filters to **international-only** items (excludes China source), generates per-category narrations → `world-news.mp3`. Language: `_GLOBAL_SETTINGS["audio_lang_world"]`.
-9. **Chinese News audio (segmented):** Filters to **China-only** items (Sina, People's Daily), up to 6 items per category → `china-news.mp3`. Language: `_GLOBAL_SETTINGS["audio_lang_china"]`.
+9. **Chinese News audio (segmented):** Filters to **China-only** items (Sina, People's Daily, CLS, Toutiao, Weibo — 5 sources with cross-day dedup), up to 6 items per category → `china-news.mp3`. Language: `_GLOBAL_SETTINGS["audio_lang_china"]`.
 
 **Segmented audio generation (introduced April 2026):**
 

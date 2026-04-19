@@ -42,7 +42,7 @@
 │                       ├── fetch-mit-review.py     (MIT Tech Review)   │
 │                       └── fetch-rundown.py        (The Rundown AI)    │
 │                                                                        │
-│  run-world-news.py ───┬── fetch-china-news.py     (中国新闻: Sina+人民日报) │
+│  run-world-news.py ───┬── fetch-china-news.py     (中国新闻: 5 sources)    │
 │                       ├── fetch-bbc-news.py       (BBC World)         │
 │                       ├── fetch-reuters.py        (Reuters)            │
 │                       ├── fetch-ap-news.py        (AP News)            │
@@ -564,7 +564,7 @@ The orchestrator runs these fetch scripts **in parallel**:
 
 | Script | Source |
 |--------|--------|
-| `fetch-china-news.py` | 中国新闻 (Sina Finance/Politics + People's Daily) — **priority 0** |
+| `fetch-china-news.py` | 中国新闻 (新浪 + 人民日报 + 财联社 + 头条 + 微博, cross-day dedup) — **priority 0** |
 | `fetch-bbc-news.py` | BBC World News |
 | `fetch-reuters.py` | Reuters |
 | `fetch-ap-news.py` | AP News |

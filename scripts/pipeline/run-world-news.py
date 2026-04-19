@@ -39,7 +39,7 @@ SOURCE_META = {
     "ap-news":     {"display": "AP News",         "priority": 3},
     "dw-news":     {"display": "Deutsche Welle",  "priority": 4},
     "guardian":    {"display": "The Guardian",    "priority": 5},
-    "china-news":  {"display": "中国新闻 (新华社/财联社)", "priority": 0},
+    "china-news":  {"display": "中国新闻 (新浪/人民日报/财联社/头条/微博)", "priority": 0},
 }
 
 CATEGORY_ORDER = ["politics", "economics", "technology", "science"]

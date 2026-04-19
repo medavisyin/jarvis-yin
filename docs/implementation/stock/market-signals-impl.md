@@ -78,7 +78,7 @@ Scan daily world news for high-impact events that may affect specific industries
 
 `world-news-data.json` from the Daily Fetch pipeline:
 - Path: `{JARVIS_REPORTS_ROOT}/{YYYY-MM-DD}/world-news/world-news-data.json`
-- Sources: 中国新闻 (Sina + People's Daily), BBC, Reuters, AP, DW, Guardian
+- Sources: 中国新闻 (Sina + People's Daily + CLS + Toutiao + Weibo), BBC, Reuters, AP, DW, Guardian
 - English titles/summaries have Chinese translations (`title_zh`/`summary_zh`)
 - Falls back to yesterday's data if today's is unavailable
 

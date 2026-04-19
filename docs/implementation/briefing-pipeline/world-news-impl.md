@@ -12,7 +12,7 @@ The world news pipeline fetches international and Chinese political/financial ne
 | `scripts/fetchers/news/fetch-ap-news.py` | AP News (Playwright scraping) |
 | `scripts/fetchers/news/fetch-dw-news.py` | Deutsche Welle (RSS + Playwright drill-down) |
 | `scripts/fetchers/news/fetch-guardian.py` | The Guardian (RSS + Playwright drill-down) |
-| `scripts/fetchers/news/fetch-china-news.py` | 中国新闻: Sina Rolling News + People's Daily RSS |
+| `scripts/fetchers/news/fetch-china-news.py` | 中国新闻: 新浪 + 人民日报 + 财联社 + 头条 + 微博 (5 sources) |
 
 ## Technologies
 
@@ -20,7 +20,7 @@ The world news pipeline fetches international and Chinese political/financial ne
 |------------|-------|
 | **asyncio** | Parallel subprocess execution for all 6 fetchers |
 | **feedparser** | RSS parsing (BBC, DW, Guardian, People's Daily) |
-| **requests** | HTTP API calls (Sina Rolling News, Ollama translation) |
+| **requests** | HTTP API calls (Sina, CLS, Toutiao, Weibo, Ollama translation) |
 | **Playwright** | Headless browser drill-down for article content |
 | **Ollama** | Batch translation via `/api/chat` endpoint |
 | **re** | Parsing numbered translation output |
@@ -39,7 +39,7 @@ run-world-news.py --output-dir <world-news-dir> [--proxy <url>]
   │   ├── fetch-ap-news.py       → ap-news.json
   │   ├── fetch-dw-news.py       → dw-news.json
   │   ├── fetch-guardian.py      → guardian.json
-  │   └── fetch-china-news.py    → china-news.json    ← NEW
+  │   └── fetch-china-news.py    → china-news.json    (5 CN sources)
   │
   ├── Merge (merge_news)
   │   ├── Read all {source}.json files
@@ -60,12 +60,25 @@ run-world-news.py --output-dir <world-news-dir> [--proxy <url>]
 
 ## Chinese News Fetcher (`fetch-china-news.py`)
 
-### Data Sources
+### Data Sources (5 sources, all mainland-reachable)
 
-| Source | API/Feed | Content | Items |
-|--------|----------|---------|-------|
-| **Sina Rolling News** | `feed.mix.sina.com.cn/api/roll/get` | Finance (LID 2509) + Politics (LID 2510) | ~35 |
-| **People's Daily** | RSS (`people.com.cn/rss/`) | Politics + Finance feeds | ~16 |
+| Source | API/Feed | Content | Typical Items |
+|--------|----------|---------|:------------:|
+| **新浪滚动新闻** (Sina) | `feed.mix.sina.com.cn/api/roll/get` | Finance (LID 2509) + Politics (LID 2510) | ~45 |
+| **人民日报** (People's Daily) | RSS (`people.com.cn/rss/`) | Politics + Finance feeds | ~20 |
+| **财联社快讯** (CLS Telegraph) | `cls.cn/nodeapi/updateTelegraphList` | Real-time market flash news | ~15 |
+| **今日头条热榜** (Toutiao) | `toutiao.com/hot-event/hot-board/` | Trending hot topics | ~15 |
+| **微博热搜** (Weibo) | `weibo.com/ajax/side/hotSearch` | Social trending topics | ~15 |
+
+### Cross-Day Deduplication (2026-04-19)
+
+A major issue was that rolling/trending APIs return "latest N" items regardless of date, causing heavy overlap between consecutive daily fetches. The fix:
+
+1. On each run, load yesterday's `china-news.json` titles
+2. Skip any article whose title (first 50 chars) matches yesterday's data
+3. Sort results: today's articles first, then by source diversity
+
+This typically removes 20-40 stale articles per run.
 
 ### Category Mapping
 
@@ -77,10 +90,13 @@ CATEGORY_MAP = {
     "finance": "economics",     # → "Economics & Business"
     "economy": "economics",
     "policy": "politics",
+    "technology": "technology",  # → "Technology"
 }
 ```
 
-Political keyword detection overrides category for items containing: 政策, 国务院, 总书记, 外交, 军事, 制裁.
+Political keyword detection overrides category for Sina items containing: 政策, 国务院, 总书记, 外交, 军事, 制裁.
+
+Toutiao/Weibo items are auto-categorized by keyword matching (经济/股/基金 → economics, 科技/AI/芯片 → technology).
 
 ### Output Format
 
@@ -100,6 +116,8 @@ Each item includes pre-filled `title_zh`/`summary_zh` (since content is already 
 }
 ```
 
+Valid `_source_tag` values: `sina`, `people`, `cls`, `toutiao`, `weibo`.
+
 ## Merge Logic (`merge_news`)
 
 ### Source Priority
@@ -108,7 +126,7 @@ Sources are sorted by priority during deduplication (lower = higher priority):
 
 | Source | Priority | Display Name |
 |--------|:--------:|-------------|
-| `china-news` | 0 | 中国新闻 (新华社/财联社) |
+| `china-news` | 0 | 中国新闻 (新浪/人民日报/财联社/头条/微博) |
 | `bbc-news` | 1 | BBC World News |
 | `reuters` | 2 | Reuters |
 | `ap-news` | 3 | AP News |
@@ -178,9 +196,10 @@ The agent's `_run_daily_fetch` function generates **two separate audio files** f
 - Language controlled by `audio_lang_world` setting
 
 ### Chinese News Audio (`china-news.mp3`)
-- Contains only **China-sourced** items (Sina, People's Daily)
+- Contains only **China-sourced** items (Sina, People's Daily, CLS, Toutiao, Weibo)
 - Up to 6 items per category (vs 4 for world news)
 - Language controlled by `audio_lang_china` setting
+- Cross-day dedup ensures minimal repeat content between consecutive days
 
 ### Generation Flow
 
@@ -203,7 +222,7 @@ The agent's `_run_daily_fetch` function generates **two separate audio files** f
 
 ```json
 {
-  "sources_used": ["BBC World News", "中国新闻 (新华社/财联社)", ...],
+  "sources_used": ["BBC World News", "中国新闻 (新浪/人民日报/财联社/头条/微博)", ...],
   "sources_unavailable": ["AP News"],
   "total_items": 70,
   "translated": true,
@@ -230,7 +249,7 @@ The agent's `_run_daily_fetch` function generates **two separate audio files** f
 
 ## Error Handling
 
-- **Fetcher timeout**: Each script has 120s timeout. `fetch-china-news.py` is fast (~2s) since it uses direct APIs.
+- **Fetcher timeout**: Each script has 120s timeout. `fetch-china-news.py` takes ~30s (5 API sources with 12s timeout each).
 - **Translation failure**: If an Ollama batch fails, items keep their original `title`/`summary` without `_zh` variants.
 - **Missing sources**: The merge function handles missing JSON files gracefully; absent sources appear in `sources_unavailable`.
 - **Pipeline timeout**: `run-all-sources.py` gives the world news phase a 180s timeout.
@@ -243,4 +262,6 @@ The agent's `_run_daily_fetch` function generates **two separate audio files** f
 | Source metadata | `SOURCE_META` | `run-world-news.py` line 36 |
 | Category order | `CATEGORY_ORDER` | `run-world-news.py` line 45 |
 | Per-script timeout | 120s | `PER_SCRIPT_TIMEOUT` |
-| Sina API channels | LID 2509 (finance), 2510 (politics) | `fetch-china-news.py` |
+| Sina API channels | LID 2509 (finance, 25 items), 2510 (politics, 20 items) | `fetch-china-news.py` |
+| China source count | 5 (Sina, People, CLS, Toutiao, Weibo) | `fetch-china-news.py` |
+| Cross-day dedup | Loads yesterday's titles, skips matches | `fetch-china-news.py` |

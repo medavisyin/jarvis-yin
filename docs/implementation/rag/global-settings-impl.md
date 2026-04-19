@@ -77,7 +77,7 @@ _tts_segments_to_mp3(narrations, path, voice=ai_voice)
 - TTS uses `zh-CN-YunxiNeural` (Chinese) or `en-US-AndrewNeural` (English)
 
 **Chinese News Audio** (`china-news.mp3` — 中国新闻 only):
-- Contains only China-sourced items (Sina, People's Daily)
+- Contains only China-sourced items (Sina, People's Daily, CLS, Toutiao, Weibo)
 - Controlled by `audio_lang_china` setting
 - Up to 6 items per category (vs 4 for world news)
 

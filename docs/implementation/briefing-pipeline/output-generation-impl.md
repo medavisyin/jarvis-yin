@@ -102,7 +102,7 @@ Audio language is controlled per type via Global Settings (`_GLOBAL_SETTINGS` di
 
 World news audio is split into two separate files:
 - **`world-news.mp3`**: International news only (BBC, Reuters, AP, DW, Guardian)
-- **`china-news.mp3`**: Chinese news only (Sina, People's Daily) — up to 6 items per category
+- **`china-news.mp3`**: Chinese news only (Sina, People's Daily, CLS, Toutiao, Weibo) — up to 6 items per category, cross-day dedup
 
 When generating audio, the pipeline prefers translated `title_zh`/`summary_zh` fields if the language is `"zh"`. For `"en"`, it uses the original English `title`/`summary`.
 

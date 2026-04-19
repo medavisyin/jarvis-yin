@@ -6,7 +6,7 @@ The Jarvis briefing pipeline uses sixteen fetcher scripts organized into two sub
 
 **AI and technology fetchers** (`scripts/fetchers/ai/`, 10 scripts — 9 used by `run-all-sources.py`): `fetch-arxiv.py`, `fetch-arxiv-ml.py`, `fetch-openai-blog.py`, `fetch-anthropic.py`, `fetch-deepmind.py`, `fetch-techcrunch.py`, `fetch-rundown.py`, `fetch-github-trending.py`, `fetch-mit-review.py`, `fetch-hf-papers.py` (manual only)
 
-**World news fetchers** (`scripts/fetchers/news/`, 6 scripts — all used by `run-world-news.py`): `fetch-china-news.py` (Sina + People's Daily, priority 0), `fetch-bbc-news.py`, `fetch-reuters.py`, `fetch-ap-news.py`, `fetch-dw-news.py`, `fetch-guardian.py`
+**World news fetchers** (`scripts/fetchers/news/`, 6 scripts — all used by `run-world-news.py`): `fetch-china-news.py` (5 CN sources: Sina + People's Daily + CLS + Toutiao + Weibo, priority 0, cross-day dedup), `fetch-bbc-news.py`, `fetch-reuters.py`, `fetch-ap-news.py`, `fetch-dw-news.py`, `fetch-guardian.py`
 
 All fetchers share one universal asynchronous pattern: launch a headless browser (or equivalent extraction path), extract listings, drill down where configured, normalize fields, and persist JSON with timing metadata.
 
