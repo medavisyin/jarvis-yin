@@ -75,6 +75,7 @@ docs/
 
 | Document | Description |
 |----------|-------------|
+| [System Architecture](design/architecture.md) | Full system architecture with Mermaid diagrams (context, layers, data flow, deployment) |
 | [RAG Agent Design](design/rag-agent-design.md) | Auto-RAG, SSE streaming, tool system, performance benchmarks |
 
 ## User Guides

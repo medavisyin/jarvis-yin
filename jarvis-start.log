@@ -1,5 +1,6 @@
-[Mon 04/13/2026 15:20:55.17] Starting Jarvis... 
-[Mon 04/13/2026 15:20:55.33] Python: C:\Users\rong.yin.MEDAVIS\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe 
-[Mon 04/13/2026 15:20:55.34] Starting search_ui.py 
-[Mon 04/13/2026 15:20:57.17] Starting agent.py 
-[Mon 04/13/2026 15:20:57.23] Done 
+[Mon 04/20/2026  9:55:15.40] Starting Jarvis... 
+[Mon 04/20/2026  9:55:15.79] Python: C:\Users\rong.yin.MEDAVIS\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe 
+[Mon 04/20/2026  9:55:15.79] Starting search_ui.py 
+[Mon 04/20/2026  9:55:17.12] Starting agent.py 
+[Mon 04/20/2026  9:55:19.18] Starting bot_telegram.py 
+[Mon 04/20/2026  9:55:19.28] Done 
