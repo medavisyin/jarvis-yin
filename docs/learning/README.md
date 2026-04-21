@@ -1,3 +1,13 @@
+---
+tags:
+  - hub
+  - learning
+  - navigation
+category: hub
+status: current
+last-updated: 2026-04-21
+---
+
 # Jarvis Learning Series
 
 > Structured learning paths covering every major technology area in the Jarvis project.

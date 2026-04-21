@@ -1,3 +1,14 @@
+---
+tags:
+  - hub
+  - stock
+  - implementation
+category: hub
+status: current
+last-updated: 2026-04-21
+---
+
+
 # Stock Module — Implementation Docs
 
 Comprehensive documentation for the Jarvis Chinese A-share stock analysis and prediction stack.

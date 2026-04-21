@@ -1,3 +1,12 @@
+---
+tags:
+  - hub
+  - navigation
+category: hub
+status: current
+last-updated: 2026-04-21
+---
+
 # Jarvis Documentation
 
 > Personal AI assistant: RAG chat, daily briefing pipeline, stock prediction, learning modes.

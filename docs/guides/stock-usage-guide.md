@@ -1,3 +1,14 @@
+---
+tags:
+  - guide
+  - stock
+  - chinese
+category: guide
+status: current
+last-updated: 2026-04-21
+---
+
+
 # Jarvis 股票分析系统实用指南
 
 面向已启动 Jarvis、希望用内置股票功能做分析与决策参考的用户。技术名词保留英文（括号）说明。

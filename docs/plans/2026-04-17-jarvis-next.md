@@ -1,3 +1,14 @@
+---
+tags:
+  - plan
+  - roadmap
+  - active
+category: plan
+status: active
+last-updated: 2026-04-18
+---
+
+
 # Jarvis Enhancement Plan — April 2026 and Beyond
 
 > **Purpose:** A living roadmap of enhancements, new features, and infrastructure improvements for the Jarvis project. Organized by priority tier and domain. Each item includes rationale, complexity estimate, and dependency notes.

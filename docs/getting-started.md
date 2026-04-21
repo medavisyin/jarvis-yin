@@ -1,3 +1,13 @@
+---
+tags:
+  - guide
+  - setup
+  - getting-started
+category: guide
+status: current
+last-updated: 2026-04-21
+---
+
 # Getting Started: Build Jarvis from Zero
 
 A complete beginner's guide. By the end you will have a working Jarvis system that collects AI news, generates PDF reports and Chinese audio podcasts, and lets you chat with an AI assistant backed by your own local knowledge base.

@@ -1,0 +1,7 @@
+{
+  "useMarkdownLinks": true,
+  "newLinkFormat": "relative",
+  "showFrontmatter": true,
+  "strictLineBreaks": true,
+  "readableLineLength": true
+}

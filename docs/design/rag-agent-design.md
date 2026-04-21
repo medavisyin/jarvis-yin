@@ -1,3 +1,14 @@
+---
+tags:
+  - architecture
+  - rag
+  - design
+  - agent
+category: design
+status: current
+last-updated: 2026-04-21
+---
+
 # Jarvis — Architecture & Design Document
 
 ## Overview

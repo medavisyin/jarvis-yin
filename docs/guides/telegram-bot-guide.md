@@ -1,3 +1,14 @@
+---
+tags:
+  - guide
+  - telegram
+  - remote-access
+category: guide
+status: current
+last-updated: 2026-04-21
+---
+
+
 # Jarvis Telegram Bot 实用指南
 
 通过手机上的 **Telegram** 远程向 Jarvis 发命令。技术名词保留英文（括号）说明。

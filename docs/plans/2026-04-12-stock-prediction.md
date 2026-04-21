@@ -1,3 +1,14 @@
+---
+tags:
+  - plan
+  - stock
+  - completed
+category: plan
+status: completed
+last-updated: 2026-04-12
+---
+
+
 # Chinese A-Share Stock Prediction — Implementation Plan
 
 > **For the implementing agent:** Follow this plan task-by-task. Complete each step, verify it works, then move to the next. This is a **large, multi-phase feature** — each phase is independently useful and can be shipped before starting the next.

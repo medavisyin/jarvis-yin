@@ -1,3 +1,13 @@
+---
+tags:
+  - architecture
+  - design
+  - system-overview
+category: design
+status: current
+last-updated: 2026-04-20
+---
+
 # Jarvis — System Architecture
 
 > A comprehensive architecture document describing the Jarvis personal AI assistant system: components, data flow, integration points, and deployment topology.

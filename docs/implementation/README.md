@@ -1,3 +1,13 @@
+---
+tags:
+  - hub
+  - implementation
+  - navigation
+category: hub
+status: current
+last-updated: 2026-04-21
+---
+
 # Jarvis Implementation Documentation
 
 This folder holds detailed implementation guides for the Jarvis project. Each document explains how a script, subsystem, or technology works in context so you can navigate the codebase, extend indexers, or debug the briefing and RAG pipelines.

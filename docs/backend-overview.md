@@ -1,3 +1,13 @@
+---
+tags:
+  - architecture
+  - implementation
+  - reference
+category: reference
+status: current
+last-updated: 2026-04-21
+---
+
 # Jarvis Backend — Complete System Guide
 
 > A comprehensive reference for understanding the entire Jarvis backend:
