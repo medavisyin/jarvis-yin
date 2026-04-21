@@ -100,7 +100,7 @@ Detailed developer documentation. See [Implementation Index](implementation/READ
 | [Codebase Indexer](implementation/rag/index-codebase-impl.md) | `index_codebase.py` |
 | [Custom Indexer](implementation/rag/index-custom-impl.md) | `index_custom.py` |
 | [Search UI](implementation/rag/search-ui-impl.md) | `search_ui.py` |
-| [Learning Features](implementation/rag/learning-features-impl.md) | AI Learning, Tech English, Casual English, Notes |
+| [Learning Features](implementation/rag/learning-features-impl.md) | AI Learning, Tech English, Casual English, AWS AIF-C01, Notes |
 | [Global Settings](implementation/rag/global-settings-impl.md) | Audio language per pipeline type |
 
 **Briefing Pipeline:**

@@ -283,7 +283,7 @@ graph LR
         TB_Usage["Usage Tools<br/>(Audio, Explain)"]
         TB_Data["Data Analysis<br/>(Trends, AI News KB)"]
         TB_Personal["Personal<br/>(Daily Fetch, Donors)"]
-        TB_Learning["Learning<br/>(AI, English, Notes)"]
+        TB_Learning["Learning<br/>(AI, English, AWS Cert, Notes)"]
         TB_Stock["Stock<br/>(Analysis, Scanner,<br/>Prediction)"]
     end
 

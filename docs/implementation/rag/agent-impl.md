@@ -333,17 +333,18 @@ Full-featured donor profile analysis with scoring, ranking, AI recommendations, 
 
 ### Learning Session Management
 
-Three fixed-ID sessions for learning. AI Learning is persistent; Tech English and Casual English start fresh each time (cleared on open):
+Four fixed-ID sessions for learning. AI Learning and AWS AIF-C01 are persistent; Tech English and Casual English start fresh each time (cleared on open):
 
 ```python
 _LEARNING_SESSION_IDS = {
     "ai_learning": "00000000-0000-0000-0000-000000000001",     # persistent
     "english_learning": "00000000-0000-0000-0000-000000000002", # fresh each time
     "casual_english": "00000000-0000-0000-0000-000000000003",   # fresh each time
+    "aws_cert": "00000000-0000-0000-0000-000000000004",         # persistent + progress tracking
 }
 ```
 
-Each session type has a dedicated system prompt (`SYSTEM_PROMPT_AI_LEARNING`, `SYSTEM_PROMPT_ENGLISH_LEARNING`, `SYSTEM_PROMPT_CASUAL_ENGLISH`) that shapes the LLM's teaching behavior. See `learning-features-impl.md` for full prompt text and modification guide.
+Each session type has a dedicated system prompt (`SYSTEM_PROMPT_AI_LEARNING`, `SYSTEM_PROMPT_ENGLISH_LEARNING`, `SYSTEM_PROMPT_CASUAL_ENGLISH`, `SYSTEM_PROMPT_AWS_CERT`) that shapes the LLM's teaching behavior. See `learning-features-impl.md` for full prompt text and modification guide.
 
 The client-side `_openLearning()` function detects `english_learning` and `casual_english` types and calls `POST /api/sessions/<id>/clear` before generating a fresh welcome message with current news topics.
 

@@ -246,6 +246,7 @@ The agent toolbar is organized into five categories:
 | AI Learning | Fundamentals-first AI learning with web references |
 | Tech English | Article analysis from AI news for English practice |
 | Casual English | Article analysis from world news for English practice |
+| AWS AIF-C01 | AWS Certified AI Practitioner exam prep: teach/quiz/progress modes |
 | My Notes | Review saved notes from conversations |
 
 ### Conversation Memory

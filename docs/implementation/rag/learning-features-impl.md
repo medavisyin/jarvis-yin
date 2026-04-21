@@ -26,7 +26,7 @@
 ## 1. Session Management
 
 ### What it does
-Three fixed-ID sessions. AI Learning is persistent (keeps history). Tech English and Casual English start fresh each time (session cleared on open).
+Four fixed-ID sessions. AI Learning and AWS AIF-C01 are persistent (keep history). Tech English and Casual English start fresh each time (session cleared on open).
 
 ### Where the code lives
 
@@ -50,7 +50,7 @@ const freshStart = true;  // all learning sessions start fresh
 ```
 
 **To add a new learning mode:**
-1. Add entry to `_LEARNING_SESSION_IDS` dict (use next UUID: `...000004`)
+1. Add entry to `_LEARNING_SESSION_IDS` dict (use next UUID: `...000005`)
 2. Create a new `SYSTEM_PROMPT_*` constant
 3. Add `elif` branch in `api_agent()` to detect the session ID
 4. Add a new `async function open*()` in the client JS
@@ -70,6 +70,7 @@ Each learning mode has a system prompt that controls the LLM's teaching behavior
 | AI Learning | `SYSTEM_PROMPT_AI_LEARNING` |
 | Tech English | `SYSTEM_PROMPT_ENGLISH_LEARNING` |
 | Casual English | `SYSTEM_PROMPT_CASUAL_ENGLISH` |
+| AWS AIF-C01 | `SYSTEM_PROMPT_AWS_CERT` |
 
 ### Current prompt designs
 
@@ -97,6 +98,19 @@ Knowledge source priority: RAG → own knowledge → web references.
 4. AFTER analysis: invite questions
 ```
 
+**AWS AIF-C01** — Two independent modes:
+```
+TEACH mode: "teach me <topic>" or "teach Domain N"
+  1. Present topic using study notes from knowledge/notes/aws_ai_p1/
+  2. Structured lesson with concepts, examples, exam tips
+  3. Track progress per domain
+
+QUIZ mode: "quiz me on <topic>"
+  1. Generate exam-style multiple-choice questions
+  2. Evaluate answers, explain correct option
+  3. Track quiz scores per domain
+```
+
 ### How to modify
 
 **To change teaching behavior:** Edit the system prompt string directly. The LLM follows the numbered instructions in order.
@@ -119,6 +133,7 @@ When a learning session opens, a welcome message is generated client-side showin
 | AI Learning | `openAILearning()` | `async function openAILearning` |
 | Tech English | `openEnglishLearning()` | `async function openEnglishLearning` |
 | Casual English | `openCasualEnglish()` | `async function openCasualEnglish` |
+| AWS AIF-C01 | `openAWSCert()` | `async function openAWSCert` |
 
 ### How to modify
 
@@ -179,6 +194,7 @@ When a topic is resolved, the system fetches the full article content from the r
 | AI Learning | `ch8-learning-roadmap.md` + `docs/*.md` | Section text matching topic |
 | Tech English | `briefing-data-filtered.json` | `title`, `source`, `url`, `summary`, `body` |
 | Casual English | `world-news-data.json` | `title`, `source`, `url`, `summary`, `key_points` |
+| AWS AIF-C01 | `aws-cert-learning-roadmap.md` + `knowledge/notes/aws_ai_p1/*.md` | Domain-mapped study notes (5 files for 5 domains). Uses `KNOWLEDGE_ROOT` from `config.py`. |
 
 ### How the LLM prompt differs by mode
 
@@ -398,23 +414,66 @@ File: `C:/reports/ai/.learning-notes.json`
 
 ---
 
+## 12. AWS AIF-C01 Cert Learning
+
+### What it does
+Prepares the student for the AWS Certified AI Practitioner (AIF-C01) exam with two independent modes: TEACH (structured lessons) and QUIZ (exam-style practice questions). Tracks progress per domain with a persistent progress file.
+
+### Where the code lives
+
+| Component | Search for |
+|-----------|------------|
+| System prompt | `SYSTEM_PROMPT_AWS_CERT` |
+| Session ID | `"aws_cert"` in `_LEARNING_SESSION_IDS` |
+| Roadmap file | `docs/aws-cert-learning-roadmap.md` |
+| Study notes (5 domains) | `C:/reports/ai/knowledge/notes/aws_ai_p1/` |
+| Progress file | `.aws-cert-progress.json` in `REPORTS_ROOT` |
+| Progress functions | `_load_aws_cert_progress`, `_save_aws_cert_progress`, `_update_aws_cert_progress`, `_format_aws_cert_progress` |
+| Roadmap loader | `_load_aws_cert_roadmap` |
+| Agent route logic | `is_aws_cert` block in `api_agent()` |
+| Article fetching | `aws_cert` branch in `_fetch_article_content` |
+| Learning context API | `aws_cert` branch in `api_learning_context` |
+| Toolbar button | `openAWSCert()` in HTML |
+| JS welcome function | `async function openAWSCert()` |
+
+### User commands
+
+| Command | Mode | Example |
+|---------|------|---------|
+| `teach me <topic>` | TEACH | "teach me Amazon Bedrock" |
+| `teach Domain N` | TEACH | "teach me Domain 2" |
+| `quiz me on <topic>` | QUIZ | "quiz me on Domain 3" |
+| `progress` | PROGRESS | "show progress" |
+| Free question | TEACH | "What's the difference between Bedrock and SageMaker?" |
+
+### How to modify
+
+**To add more domains or topics:** Edit `docs/aws-cert-learning-roadmap.md`.
+
+**To change the progress tracking algorithm:** Edit `_update_aws_cert_progress()` — domain detection uses keyword matching.
+
+**To change quiz format:** Edit the QUIZ MODE section in `SYSTEM_PROMPT_AWS_CERT`.
+
+---
+
 ## Quick Reference: File Locations
 
 All learning feature code is in `scripts/rag/agent.py`. Here's a quick map:
 
 | Feature | Approx. line range | Key identifiers |
 |---------|-------------------|-----------------|
-| System prompts | 1004–1068 | `SYSTEM_PROMPT_AI_LEARNING`, `SYSTEM_PROMPT_ENGLISH_LEARNING`, `SYSTEM_PROMPT_CASUAL_ENGLISH` |
-| Topic resolution | ~1070–1100 | `_resolve_topic_from_history` |
-| Topic refresh | ~1100–1130 | `_wants_more_topics`, `_fetch_fresh_topics` |
-| Web search | ~1131–1185 | `_web_search_references`, `_WEB_SEARCH_PROXY` |
-| Article fetching | ~1187–1280 | `_fetch_article_content` |
-| Agent route (learning logic) | ~1282–1350 | `api_agent`, `effective_query`, `web_refs` |
-| Session IDs | ~2918 | `_LEARNING_SESSION_IDS` |
-| Learning session API | ~2925–2960 | `api_toolbar_learning_session` |
-| Learning context API | ~3025–3060 | `api_toolbar_learning_context` |
-| Welcome messages (JS) | ~5440–5495 | `openAILearning`, `openEnglishLearning`, `openCasualEnglish` |
-| Continue button (JS) | ~5310–5330 | `contBtn` in `answer_done` handler |
-| Notes panel (HTML/JS) | ~5496–5560 | `toggleNotesPanel`, `loadNotes`, `saveToNotes` |
+| System prompts | 1004–1120 | `SYSTEM_PROMPT_AI_LEARNING`, `SYSTEM_PROMPT_ENGLISH_LEARNING`, `SYSTEM_PROMPT_CASUAL_ENGLISH`, `SYSTEM_PROMPT_AWS_CERT` |
+| Topic resolution | ~1120–1160 | `_resolve_topic_from_history` |
+| Topic refresh | ~1160–1190 | `_wants_more_topics`, `_fetch_fresh_topics` |
+| Web search | ~1190–1250 | `_web_search_references`, `_WEB_SEARCH_PROXY` |
+| Article fetching | ~1250–1400 | `_fetch_article_content` |
+| Agent route (learning logic) | ~1400–1550 | `api_agent`, `effective_query`, `web_refs`, `is_aws_cert` |
+| Session IDs | search `_LEARNING_SESSION_IDS` | includes `aws_cert` |
+| AWS cert progress | search `_load_aws_cert_progress` | `_AWS_CERT_PROGRESS_PATH`, `_update_aws_cert_progress`, `_format_aws_cert_progress` |
+| Learning session API | search `api_learning_session` | `api_toolbar_learning_session` |
+| Learning context API | search `api_learning_context` | `api_toolbar_learning_context` |
+| Welcome messages (JS) | search `openAILearning` | `openAILearning`, `openEnglishLearning`, `openCasualEnglish`, `openAWSCert` |
+| Continue button (JS) | search `contBtn` | `contBtn` in `answer_done` handler |
+| Notes panel (HTML/JS) | search `toggleNotesPanel` | `toggleNotesPanel`, `loadNotes`, `saveToNotes` |
 
 > **Tip:** Line numbers shift as the file grows. Use the "Key identifiers" column to search instead.

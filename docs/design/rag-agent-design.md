@@ -426,6 +426,7 @@ The web UI includes a toolbar strip between the header and chat area with two co
 | AI Learning | Opens persistent AI tutor session with roadmap topics from `ch8-learning-roadmap.md` |
 | Tech English | Opens fresh tech English session with AI news topics (resets each time) |
 | Casual English | Opens fresh casual English session with world news topics (resets each time) |
+| AWS AIF-C01 | Opens persistent AWS certification tutor with teach/quiz/progress modes from `aws-cert-learning-roadmap.md` |
 | My Notes | Opens slide-out notes panel for reviewing saved learning notes |
 
 ### Background Jobs
@@ -434,7 +435,7 @@ Reindex and Wiki Fetch run in background threads. The UI polls `GET /api/toolbar
 
 ## Learning Features
 
-Jarvis includes three specialized learning modes accessible from the toolbar's Learning dropdown. AI Learning uses a persistent session; Tech English and Casual English start fresh each time (session is cleared on open) so the user always gets new topics.
+Jarvis includes four specialized learning modes accessible from the toolbar's Learning dropdown. AI Learning and AWS AIF-C01 use persistent sessions; Tech English and Casual English start fresh each time (session is cleared on open) so the user always get new topics.
 
 ### Learning Modes
 
@@ -443,6 +444,7 @@ Jarvis includes three specialized learning modes accessible from the toolbar's L
 | AI Learning | `00000000-...-000001` | Persistent | `ch8-learning-roadmap.md` | Fundamentals-first tutor: concept → theory → project example. Web search references. |
 | Tech English | `00000000-...-000002` | Fresh each time | AI news (`briefing-data-filtered.json`) | Article analysis: summary → key phrases → presentation patterns → practice |
 | Casual English | `00000000-...-000003` | Fresh each time | World news (`world-news-data.json`) | Article analysis: summary → idioms/expressions → native speaker discussion → practice |
+| AWS AIF-C01 | `00000000-...-000004` | Persistent | `aws-cert-learning-roadmap.md` + study notes in `knowledge/notes/aws_ai_p1/` | TEACH (structured lessons by domain/task) and QUIZ (exam-style practice) modes with per-domain progress tracking. |
 
 Tech English and Casual English call `POST /api/sessions/<id>/clear` on open, then generate a new welcome message with fresh topics. This ensures the user always starts with the latest news content.
 
@@ -497,7 +499,7 @@ The summary captures: topics discussed, what was learned, mistakes corrected, an
 | < 14,000 | 8,192 | 4,096 | Long conversation with RAG |
 | ≥ 14,000 | 16,384 | 4,096 | Extended conversation |
 
-**Learning sessions** (AI Learning, Tech English, Casual English):
+**Learning sessions** (AI Learning, Tech English, Casual English, AWS AIF-C01):
 
 | Total chars | num_ctx | num_predict | Typical scenario |
 |------------|---------|-------------|-----------------|
@@ -535,7 +537,7 @@ Notes are stored in `C:/reports/ai/.learning-notes.json` as a JSON array. Each n
 
 - **Save button**: 📎 icon appears on hover over any assistant message
 - **Notes panel**: Slide-out panel from the right, opened via "My Notes" button in Learning dropdown
-- **Filter**: Dropdown to filter by category (AI Learning, Tech English, Casual English, General)
+- **Filter**: Dropdown to filter by category (AI Learning, Tech English, Casual English, AWS Cert, General)
 - **Note cards**: Collapsible — shows title + date when collapsed, full content when expanded
 - **Edit**: Click ✎ Edit to open inline textarea editor, Save/Cancel to commit
 - **Delete**: Click 🗑 Delete with confirmation

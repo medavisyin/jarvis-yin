@@ -390,7 +390,7 @@
 
 ### 4.5 Personal Learning Tracker
 
-**Problem:** Learning modes (AI Learning, Tech English, Casual English) generate content but don't track progress or spaced repetition.
+**Problem:** Learning modes (AI Learning, Tech English, Casual English, AWS AIF-C01) generate content but don't track progress or spaced repetition. *(Partial progress: AWS AIF-C01 mode already has per-domain progress tracking via `.aws-cert-progress.json` — see `learning-features-impl.md` §12.)*
 
 **Plan:**
 - Track topics studied, time spent, and quiz scores

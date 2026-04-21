@@ -241,7 +241,7 @@ The agent toolbar is grouped into these categories:
 - **Usage Tools**: Audio from Knowledge, Explain This
 - **Data Analysis**: Trend Analysis, AI News KB
 - **Personal**: Donor Analysis, Daily Fetch (includes AI/World/China news fetch, commit report, Jira, Wiki Fetch with page details & links, world news merge recovery, segmented audio with anti-duplication narration)
-- **Learning**: AI Learning, Tech English, Casual English, My Notes
+- **Learning**: AI Learning, Tech English, Casual English, AWS AIF-C01, My Notes
 - **Stock**: Stock Analysis, Watchlist management, Market Data Refresh, AI Prediction, AI Scanner (全市场扫描推荐 TOP 5)
 
 ### Why Two Servers?

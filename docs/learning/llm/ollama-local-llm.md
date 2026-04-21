@@ -302,7 +302,7 @@ num_ctx: 8192  → Prefill: ~2-4s   (large context, slow)
 - Total < 14,000 chars → `num_ctx=8192`, `num_predict=4096`
 - Total ≥ 14,000 chars → `num_ctx=16384`, `num_predict=4096`
 
-*Learning sessions* (detected by `system_prompt_override`):
+*Learning sessions* (AI Learning, Tech English, Casual English, AWS AIF-C01 — detected by `system_prompt_override`):
 - Total < 6,000 chars → `num_ctx=8192`, `num_predict=4096`
 - Total ≥ 6,000 chars → `num_ctx=16384`, `num_predict=4096`
 

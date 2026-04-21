@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from config import (
     CHAT_SESSIONS_DIR,
     JIRA_REPORT_SCRIPT,
+    KNOWLEDGE_ROOT,
     NOTES_FILE,
     REPORTS_ROOT,
     SNAPSHOT_PATH,
@@ -1075,6 +1076,65 @@ When the student writes free text:
 - Be warm, encouraging, and conversational
 - Answer in English, keep explanations simple and practical"""
 
+SYSTEM_PROMPT_AWS_CERT = """\
+You are an AWS certification tutor preparing a Java developer for the \
+AWS Certified AI Practitioner (AIF-C01) exam. The student has a strong \
+software engineering background but is building AI/ML knowledge from \
+foundational level. All teaching and communication must be in English.
+
+The exam has 5 domains:
+  Domain 1 — Fundamentals of AI and ML (20%)
+  Domain 2 — Fundamentals of Generative AI (24%)
+  Domain 3 — Applications of Foundation Models (28%)
+  Domain 4 — Guidelines for Responsible AI (14%)
+  Domain 5 — Security, Compliance & Governance (14%)
+
+You operate in two modes — TEACH and QUIZ — based on the student's request:
+
+=== TEACH MODE (default) ===
+Triggered by: "teach me ...", a topic name, a domain/task reference, or any knowledge question.
+Teaching structure (follow this order):
+1. State which domain and task this topic belongs to, and its exam weight.
+2. Explain the concept from zero — assume the student knows nothing about this topic. \
+Define every term before using it.
+3. Go deeper — AWS services involved, how they work, trade-offs, when to use what.
+4. Exam tips — what the exam tests about this topic, common wrong-answer traps.
+5. Suggest what to study next based on the roadmap.
+
+=== QUIZ MODE ===
+Triggered by: "quiz me on ...", "test me ...", "practice questions for ...".
+Quiz structure:
+1. Generate 5 multiple-choice questions matching the AIF-C01 exam format \
+(4 options: A/B/C/D, exactly one correct answer).
+2. Present ALL 5 questions at once (numbered Q1–Q5).
+3. Wait for the student's answers.
+4. After receiving answers, score them (X/5) and explain each answer — \
+why the correct answer is right AND why each wrong answer is wrong.
+5. Identify weak areas and suggest topics to review.
+
+=== PROGRESS MODE ===
+Triggered by: "progress", "show progress", "how am I doing", "status".
+Show a summary of domains studied, quiz scores, and recommended next steps.
+
+Knowledge sources (priority order):
+1. The RAG knowledge base — indexed AIF-C01 study books, slides, and structured notes
+2. Your own training knowledge about AWS services and AI/ML concepts
+3. Web references (if provided) as supplementary material
+
+Teaching style:
+- Clear, structured explanations with real-world analogies
+- Always connect concepts to specific AWS services
+- Use tables for comparisons (e.g., Bedrock vs SageMaker)
+- Include "Exam tip:" callouts for high-yield points
+- At the end of each lesson, provide 📚 references to learn more
+
+Key exam facts to always keep in mind:
+- Customization order: Prompt Engineering → RAG → Fine-tuning → Pre-training
+- Amazon Bedrock = managed FMs via API (no infrastructure)
+- Amazon SageMaker = full ML platform (build/train/deploy)
+- Responsible AI = FEPST (Fairness, Explainability, Privacy, Safety, Transparency)
+- Domains 2+3 = 52% of exam — focus heavily on GenAI and Bedrock"""
+
 
 def _resolve_topic_from_history(query: str, history: list[dict]) -> str | None:
     """If query is a topic number reference (e.g. '16', 'topic 16'), resolve it
@@ -1208,9 +1268,81 @@ def _web_search_references(query: str, num_results: int = 5) -> str:
 def _fetch_article_content(title: str, session_id: str) -> str:
     """Fetch the full article summary/content for a given topic title.
     Searches world news JSON (for casual english), briefing JSON (for tech english),
-    or the learning roadmap + docs (for AI learning)."""
+    the learning roadmap + docs (for AI learning), or AWS cert study notes."""
     title_lower = title.strip().lower()
-    if session_id == _LEARNING_SESSION_IDS.get("ai_learning"):
+    if session_id == _LEARNING_SESSION_IDS.get("aws_cert"):
+        parts = []
+        roadmap = _load_aws_cert_roadmap()
+        if roadmap:
+            import re
+            sections = re.split(r"(?=^## )", roadmap, flags=re.MULTILINE)
+            for section in sections:
+                if title_lower in section.lower():
+                    parts.append(section[:3000])
+                    break
+            if not parts:
+                for section in sections:
+                    for line in section.split("\n"):
+                        if title_lower in line.lower():
+                            parts.append(section[:3000])
+                            break
+                    if parts:
+                        break
+        import re as _re2
+        dm = _re2.search(r"domain\s*(\d)", title_lower)
+        tm = _re2.search(r"task\s*(\d)\.(\d)", title_lower)
+        _aws_domain_file_map = {
+            "1": "01-ai-ml-fundamentals.md",
+            "2": "02-genai-fundamentals.md",
+            "3": "03-foundation-models.md",
+            "4": "04-responsible-ai.md",
+            "5": "05-security-compliance.md",
+        }
+        aws_notes_dir = os.path.join(KNOWLEDGE_ROOT, "notes", "aws_ai_p1")
+        if os.path.isdir(aws_notes_dir):
+            target_files = []
+            if dm:
+                d_num = dm.group(1)
+                if d_num in _aws_domain_file_map:
+                    target_files = [_aws_domain_file_map[d_num]]
+            elif tm:
+                d_num = tm.group(1)
+                if d_num in _aws_domain_file_map:
+                    target_files = [_aws_domain_file_map[d_num]]
+            else:
+                target_files = sorted(f for f in os.listdir(aws_notes_dir)
+                                      if f.endswith(".md"))
+            for fname in target_files:
+                fpath = os.path.join(aws_notes_dir, fname)
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    if title_lower in content.lower() or dm or tm:
+                        if tm:
+                            task_key = f"Task {tm.group(1)}.{tm.group(2)}"
+                            sections = _re2.split(r"(?=^## )", content,
+                                                  flags=_re2.MULTILINE)
+                            for section in sections:
+                                if task_key.lower() in section.lower():
+                                    parts.append(
+                                        f"From {fname}:\n\n{section[:4000]}")
+                                    break
+                        elif dm:
+                            parts.append(f"From {fname}:\n\n{content[:5000]}")
+                        else:
+                            sections = _re2.split(r"(?=^## )", content,
+                                                  flags=_re2.MULTILINE)
+                            for section in sections:
+                                if title_lower in section.lower():
+                                    parts.append(
+                                        f"From {fname}:\n\n{section[:3000]}")
+                                    break
+                        if len(parts) >= 3:
+                            break
+                except OSError:
+                    continue
+        return "\n\n---\n\n".join(parts) if parts else ""
+    elif session_id == _LEARNING_SESSION_IDS.get("ai_learning"):
         roadmap = _load_ai_learning_roadmap()
         if roadmap:
             import re
@@ -1315,11 +1447,103 @@ def api_agent():
     elif session_id == _LEARNING_SESSION_IDS.get("casual_english"):
         learning_prompt = SYSTEM_PROMPT_CASUAL_ENGLISH
         is_learning = True
+    elif session_id == _LEARNING_SESSION_IDS.get("aws_cert"):
+        learning_prompt = SYSTEM_PROMPT_AWS_CERT
+        is_learning = True
 
+    is_aws_cert = session_id == _LEARNING_SESSION_IDS.get("aws_cert")
     rag_query_override = None
     effective_query = query
     web_refs = ""
-    if is_learning:
+
+    if is_aws_cert:
+        query_lower = query.strip().lower()
+        import re as _re
+        _progress_triggers = ("progress", "show progress", "how am i doing",
+                              "status", "my progress", "show status")
+        _quiz_pattern = _re.compile(
+            r"^(?:quiz|test|exam)\s+(?:me\s+)?(?:on\s+)?(.+)$"
+            r"|^practice\s+(?:questions?\s+)?(?:for\s+|on\s+|about\s+)?(.+)$",
+            _re.IGNORECASE,
+        )
+        _teach_pattern = _re.compile(
+            r"^teach\s+(?:me\s+)?(?:about\s+)?(.+)$", _re.IGNORECASE
+        )
+        _domain_pattern = _re.compile(
+            r"domain\s*(\d)", _re.IGNORECASE
+        )
+        _task_pattern = _re.compile(
+            r"task\s*(\d)\.(\d)", _re.IGNORECASE
+        )
+
+        if query_lower in _progress_triggers:
+            progress = _load_aws_cert_progress()
+            progress_text = _format_aws_cert_progress(progress)
+            effective_query = (
+                f"The student asked to see their study progress. "
+                f"Here is their current progress data:\n\n{progress_text}\n\n"
+                f"Present this progress summary to them and recommend what to study next "
+                f"based on the weakest domains. Be encouraging."
+            )
+        elif (qm := _quiz_pattern.match(query.strip())):
+            quiz_topic = (qm.group(1) or qm.group(2) or query).strip()
+            rag_query_override = f"AWS AIF-C01 {quiz_topic}"
+            article_content = _fetch_article_content(quiz_topic, session_id)
+            _update_aws_cert_progress(quiz_topic, "quiz")
+            effective_query = (
+                f"QUIZ MODE: Generate 5 multiple-choice questions about \"{quiz_topic}\" "
+                f"in AIF-C01 exam format (4 options A/B/C/D, one correct).\n"
+            )
+            if article_content:
+                effective_query += f"\nReference material:\n{article_content}\n"
+            effective_query += (
+                f"\nPresent all 5 questions numbered Q1-Q5, then wait for the "
+                f"student's answers before scoring."
+            )
+        elif (tm := _teach_pattern.match(query.strip())):
+            teach_topic = tm.group(1).strip()
+            rag_query_override = f"AWS AIF-C01 {teach_topic}"
+            article_content = _fetch_article_content(teach_topic, session_id)
+            _update_aws_cert_progress(teach_topic, "teach")
+            effective_query = (
+                f"TEACH MODE: Teach the student about \"{teach_topic}\".\n"
+            )
+            if article_content:
+                effective_query += f"\nReference material:\n{article_content}\n"
+            effective_query += (
+                f"\nFollow the teaching structure: domain context → concept from zero "
+                f"→ deeper with AWS services → exam tips → next steps."
+            )
+        else:
+            dm = _domain_pattern.search(query)
+            tm2 = _task_pattern.search(query)
+            if dm or tm2:
+                article_content = _fetch_article_content(query, session_id)
+                rag_query_override = f"AWS AIF-C01 {query}"
+                topic_for_progress = query.strip()
+                _update_aws_cert_progress(topic_for_progress, "teach")
+                if article_content:
+                    effective_query = (
+                        f"The student wants to learn about: \"{query}\".\n\n"
+                        f"Reference material:\n{article_content}\n\n"
+                        f"Teach this following the TEACH MODE structure."
+                    )
+            else:
+                rag_query_override = f"AWS AIF-C01 {query}"
+                article_content = _fetch_article_content(query, session_id)
+                if article_content:
+                    effective_query = (
+                        f"The student asks: \"{query}\"\n\n"
+                        f"Reference material:\n{article_content}\n\n"
+                        f"Answer using the reference material and your knowledge. "
+                        f"Always note which exam domain this relates to."
+                    )
+                else:
+                    web_refs = _web_search_references(
+                        f"AWS AIF-C01 {query} certification", 3
+                    )
+
+    elif is_learning:
         resolved = _resolve_topic_from_history(query, history)
         if resolved:
             rag_query_override = resolved
@@ -2701,6 +2925,7 @@ Knowledge base content:
         for prefix in ["Narration:", "Script:", "Podcast Script:", "Here is", "Here's"]:
             if narration.lower().startswith(prefix.lower()):
                 narration = narration[len(prefix):].strip()
+        narration = _clean_narration_for_tts(narration)
 
         if not narration:
             _audio_jobs[job_id]["status"] = "done"
@@ -3170,9 +3395,16 @@ _TTS_VOICE_FALLBACKS = ["zh-CN-YunxiNeural", "zh-CN-YunjianNeural", "zh-CN-Xiaox
 
 def _clean_narration_for_tts(text: str) -> str:
     """Strip markdown formatting and sound-effect annotations that break TTS."""
+    text = re.sub(r"\*\*\*([^*]+)\*\*\*", r"\1", text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
-    text = re.sub(r"###?\s*", "", text)
+    text = re.sub(r"\*([^*\n]+)\*", r"\1", text)
+    text = re.sub(r"#{1,6}\s*", "", text)
     text = re.sub(r"---+", "", text)
+    text = re.sub(r"!\[[^\]]*\]\([^)]*\)", "", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]*\)", r"\1", text)
+    text = re.sub(r"^\s*[-*+]\s+", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*>\s?", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^\s*\d+\.\s+", "", text, flags=re.MULTILINE)
     text = re.sub(r"（音效[^）]*）", "", text)
     text = re.sub(r"（背景音乐[^）]*）", "", text)
     text = re.sub(r"（过渡音效[^）]*）", "", text)
@@ -3928,6 +4160,7 @@ _LEARNING_SESSION_IDS = {
     "ai_learning": "00000000-0000-0000-0000-000000000001",
     "english_learning": "00000000-0000-0000-0000-000000000002",
     "casual_english": "00000000-0000-0000-0000-000000000003",
+    "aws_cert": "00000000-0000-0000-0000-000000000004",
 }
 
 
@@ -3945,6 +4178,7 @@ def _get_or_create_learning_session(session_type: str) -> dict:
         "ai_learning": "AI Learning — RAG, LLM & HuggingFace",
         "english_learning": "English Learning — Tech Communication",
         "casual_english": "Casual English — World News & Daily Life",
+        "aws_cert": "AWS AIF-C01 — Certified AI Practitioner",
     }
     data = {
         "id": sid,
@@ -3969,6 +4203,157 @@ def _load_ai_learning_roadmap() -> str:
             return f.read()
     except OSError:
         return ""
+
+
+def _load_aws_cert_roadmap() -> str:
+    """Load the AWS AIF-C01 certification roadmap."""
+    roadmap_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "..", "docs", "aws-cert-learning-roadmap.md"
+    )
+    try:
+        with open(os.path.normpath(roadmap_path), "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+_AWS_CERT_PROGRESS_PATH = os.path.join(REPORTS_ROOT, ".aws-cert-progress.json")
+
+
+def _load_aws_cert_progress() -> dict:
+    """Load AWS cert study progress from disk."""
+    try:
+        with open(_AWS_CERT_PROGRESS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {
+            "domains": {str(i): {"topics_taught": [], "topics_quizzed": [],
+                                  "quiz_scores": [], "completion_pct": 0}
+                        for i in range(1, 6)},
+            "overall_readiness": 0,
+            "last_activity": "",
+        }
+
+
+def _save_aws_cert_progress(progress: dict) -> None:
+    """Persist AWS cert study progress to disk."""
+    progress["last_activity"] = _now_iso()
+    try:
+        with open(_AWS_CERT_PROGRESS_PATH, "w", encoding="utf-8") as f:
+            json.dump(progress, f, indent=2, ensure_ascii=False)
+    except OSError as e:
+        print(f"[aws-cert] Failed to save progress: {e}")
+
+
+def _update_aws_cert_progress(topic: str, mode: str, score: int = 0,
+                              total: int = 0) -> dict:
+    """Record a teach or quiz event in the progress tracker.
+    mode: 'teach' or 'quiz'. Returns updated progress."""
+    progress = _load_aws_cert_progress()
+    domain_keywords = {
+        "1": ["ai ", "ml ", "machine learning", "neural network", "supervised",
+              "unsupervised", "reinforcement", "lifecycle", "pipeline",
+              "classification", "regression", "clustering", "inferencing",
+              "comprehend", "lex", "transcribe", "translate", "rekognition",
+              "textract", "personalize", "fraud detector", "forecast", "kendra",
+              "evaluation metric", "mlops", "data drift"],
+        "2": ["generative ai", "genai", "transformer", "token", "embedding",
+              "foundation model", "hallucination", "diffusion", "bedrock",
+              "sagemaker", "amazon q", "nova", "partyrock", "chunking",
+              "multimodal"],
+        "3": ["prompt engineering", "few-shot", "zero-shot", "chain-of-thought",
+              "rag", "fine-tuning", "fine-tune", "pre-training", "rlhf",
+              "knowledge base", "rouge", "bleu", "bertscore", "inference param",
+              "temperature", "top-p", "top-k", "model evaluation",
+              "provisioned throughput", "prompt caching"],
+        "4": ["responsible ai", "fairness", "explainability", "bias",
+              "transparency", "safety", "fepst", "clarify", "a2i",
+              "guardrail", "toxicity", "human-in-the-loop", "model card"],
+        "5": ["security", "iam", "kms", "encryption", "macie", "privatelink",
+              "compliance", "governance", "data lineage", "data quality",
+              "gdpr", "hipaa", "artifact", "audit manager", "config",
+              "trusted advisor", "shared responsibility", "glue",
+              "lake formation", "cost explorer", "budgets"],
+    }
+    topic_lower = topic.lower()
+    import re as _re_prog
+    _dm = _re_prog.search(r"domain\s*(\d)", topic_lower)
+    if _dm and _dm.group(1) in domain_keywords:
+        matched_domain = _dm.group(1)
+    else:
+        matched_domain = "1"
+        for d_num, keywords in domain_keywords.items():
+            if any(kw in topic_lower for kw in keywords):
+                matched_domain = d_num
+                break
+    d = progress["domains"].setdefault(matched_domain, {
+        "topics_taught": [], "topics_quizzed": [],
+        "quiz_scores": [], "completion_pct": 0,
+    })
+    if mode == "teach":
+        if topic not in d["topics_taught"]:
+            d["topics_taught"].append(topic)
+    elif mode == "quiz":
+        if topic not in d["topics_quizzed"]:
+            d["topics_quizzed"].append(topic)
+        if total > 0:
+            d["quiz_scores"].append({
+                "topic": topic, "score": score, "total": total,
+                "date": _now_iso(),
+            })
+    domain_weights = {"1": 20, "2": 24, "3": 28, "4": 14, "5": 14}
+    total_readiness = 0
+    for d_num in ["1", "2", "3", "4", "5"]:
+        dd = progress["domains"].get(d_num, {})
+        taught = len(dd.get("topics_taught", []))
+        quizzed = len(dd.get("topics_quizzed", []))
+        pct = min(100, (taught * 8 + quizzed * 12))
+        dd["completion_pct"] = pct
+        total_readiness += pct * domain_weights.get(d_num, 20) / 100
+    progress["overall_readiness"] = round(total_readiness)
+    _save_aws_cert_progress(progress)
+    return progress
+
+
+def _format_aws_cert_progress(progress: dict) -> str:
+    """Format progress as a readable summary for the LLM or welcome message."""
+    domain_names = {
+        "1": "Fundamentals of AI and ML",
+        "2": "Fundamentals of Generative AI",
+        "3": "Applications of Foundation Models",
+        "4": "Guidelines for Responsible AI",
+        "5": "Security, Compliance & Governance",
+    }
+    domain_weights = {"1": "20%", "2": "24%", "3": "28%", "4": "14%", "5": "14%"}
+    lines = ["## Study Progress\n"]
+    for d_num in ["1", "2", "3", "4", "5"]:
+        dd = progress["domains"].get(d_num, {})
+        pct = dd.get("completion_pct", 0)
+        taught = len(dd.get("topics_taught", []))
+        quizzed = len(dd.get("topics_quizzed", []))
+        scores = dd.get("quiz_scores", [])
+        avg = ""
+        if scores:
+            avg_score = sum(s["score"] for s in scores) / len(scores)
+            avg_total = sum(s["total"] for s in scores) / len(scores)
+            avg = f" | Avg quiz: {avg_score:.1f}/{avg_total:.0f}"
+        bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
+        lines.append(
+            f"**Domain {d_num}** ({domain_weights[d_num]}) — {domain_names[d_num]}\n"
+            f"  {bar} {pct}% | {taught} taught, {quizzed} quizzed{avg}\n"
+        )
+    readiness = progress.get("overall_readiness", 0)
+    lines.append(f"\n**Overall Exam Readiness: {readiness}%**")
+    if readiness < 30:
+        lines.append("📌 *Keep going! Focus on Domains 2 & 3 (52% of exam).*")
+    elif readiness < 60:
+        lines.append("📌 *Good progress! Review weak domains and take more quizzes.*")
+    elif readiness < 80:
+        lines.append("📌 *Almost there! Do full practice exams to find remaining gaps.*")
+    else:
+        lines.append("🎯 *Looking strong! Consider scheduling the exam.*")
+    return "\n".join(lines)
 
 
 def _load_recent_ai_news_titles() -> list[str]:
@@ -4065,6 +4450,30 @@ def api_learning_context():
     elif ltype == "casual_english":
         items = _load_recent_world_news_titles()
         return jsonify({"type": "casual_english", "news_items": items})
+    elif ltype == "aws_cert":
+        roadmap = _load_aws_cert_roadmap()
+        domains = []
+        current_domain = ""
+        current_task = ""
+        for line in roadmap.split("\n"):
+            if line.startswith("## Domain"):
+                current_domain = line.replace("## ", "").strip()
+                current_task = ""
+            elif line.startswith("### Task"):
+                current_task = line.replace("### ", "").strip()
+            elif line.startswith("- **") and current_domain:
+                topic_name = line.split("**")[1] if "**" in line else line[4:]
+                domains.append({
+                    "domain": current_domain,
+                    "task": current_task,
+                    "topic": topic_name.strip(":").strip(),
+                })
+        progress = _load_aws_cert_progress()
+        return jsonify({
+            "type": "aws_cert",
+            "domains": domains,
+            "progress": progress,
+        })
     return jsonify({"error": "Unknown type"}), 400
 
 
@@ -5202,6 +5611,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" onclick="openAILearning()" title="AI/RAG/LLM learning with roadmap and deep-dive lessons">&#127891; AI Learning</button>
         <button type="button" class="toolbar-btn" onclick="openEnglishLearning()" title="Tech English learning from AI news: phrases, demos, corrections">&#128187; Tech English</button>
         <button type="button" class="toolbar-btn" onclick="openCasualEnglish()" title="Casual English learning from world news: daily conversation, idioms">&#127758; Casual English</button>
+        <button type="button" class="toolbar-btn" onclick="openAWSCert()" title="AWS Certified AI Practitioner (AIF-C01) exam preparation: teach &amp; quiz modes">&#127942; AWS AIF-C01</button>
         <button type="button" class="toolbar-btn" onclick="toggleNotesPanel()" title="View and manage your saved learning notes">&#128221; My Notes</button>
       </div>
     </div>
@@ -7541,6 +7951,64 @@ async function openCasualEnglish() {
   });
 }
 
+async function openAWSCert() {
+  await _openLearning('aws_cert', function(ctx) {
+    const domains = ctx.domains || [];
+    const progress = ctx.progress || {};
+    const domainWeights = {'1':'20%','2':'24%','3':'28%','4':'14%','5':'14%'};
+    const domainNames = {
+      '1':'Fundamentals of AI and ML',
+      '2':'Fundamentals of Generative AI',
+      '3':'Applications of Foundation Models',
+      '4':'Guidelines for Responsible AI',
+      '5':'Security, Compliance & Governance'
+    };
+
+    let msg = '## AWS Certified AI Practitioner (AIF-C01)\n\n';
+    msg += '**Exam:** 65 questions | 90 min | Passing: 700/1000\n\n';
+
+    // Progress summary
+    const pd = progress.domains || {};
+    let hasProgress = false;
+    for (const dn of ['1','2','3','4','5']) {
+      const dd = pd[dn] || {};
+      if ((dd.topics_taught||[]).length > 0 || (dd.topics_quizzed||[]).length > 0) { hasProgress = true; break; }
+    }
+    if (hasProgress) {
+      msg += '### Your Progress\n\n';
+      for (const dn of ['1','2','3','4','5']) {
+        const dd = pd[dn] || {};
+        const pct = dd.completion_pct || 0;
+        const taught = (dd.topics_taught||[]).length;
+        const quizzed = (dd.topics_quizzed||[]).length;
+        const bar = '\u2588'.repeat(Math.floor(pct/10)) + '\u2591'.repeat(10 - Math.floor(pct/10));
+        msg += 'D' + dn + ' (' + domainWeights[dn] + ') ' + bar + ' ' + pct + '% | ' + taught + ' taught, ' + quizzed + ' quizzed\n';
+      }
+      msg += '\n**Overall Readiness: ' + (progress.overall_readiness||0) + '%**\n\n';
+    }
+
+    msg += '### Exam Domains\n\n';
+    let lastDomain = '';
+    for (const d of domains) {
+      if (d.domain !== lastDomain) {
+        msg += '\n**' + escHtml(d.domain) + '**\n';
+        lastDomain = d.domain;
+      }
+      if (d.task) msg += '  ' + escHtml(d.task) + '\n';
+      msg += '  - ' + escHtml(d.topic) + '\n';
+    }
+
+    msg += '\n---\n\n';
+    msg += '**Commands:**\n';
+    msg += '- `teach me Domain 1` — Start a lesson on any domain\n';
+    msg += '- `teach me Amazon Bedrock` — Learn a specific topic\n';
+    msg += '- `quiz me on Domain 2` — Take a practice quiz\n';
+    msg += '- `progress` — View your study progress\n';
+    msg += '- Or just ask any question about the AIF-C01 exam!\n';
+    return msg;
+  });
+}
+
 function toggleNotesPanel() {
   document.getElementById('notesPanel').classList.toggle('open');
   if (document.getElementById('notesPanel').classList.contains('open')) loadNotes();
@@ -7641,7 +8109,8 @@ function startEditNote(noteId, content, noteBody) {
 async function saveToNotes(content) {
   const sessionType = currentSessionId === '00000000-0000-0000-0000-000000000001' ? 'ai_learning'
     : currentSessionId === '00000000-0000-0000-0000-000000000002' ? 'tech_english'
-    : currentSessionId === '00000000-0000-0000-0000-000000000003' ? 'casual_english' : 'general';
+    : currentSessionId === '00000000-0000-0000-0000-000000000003' ? 'casual_english'
+    : currentSessionId === '00000000-0000-0000-0000-000000000004' ? 'aws_cert' : 'general';
   const tags = [sessionType];
   try {
     const r = await fetch('/api/notes', {

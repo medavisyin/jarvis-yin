@@ -47,6 +47,7 @@ Use this file so the briefing and agent features stay aligned with **what you al
 ## Learning goals (6–12 months)
 
 - **Primary aim:** Steadily **build and deepen AI knowledge** on top of a strong developer background — from vocabulary and trends to architecture and safe use in regulated/medical IT contexts.
+- **Certification goal:** Pass the **AWS Certified AI Practitioner (AIF-C01)** exam — structured learning through Jarvis with teach/quiz modes, drawing from indexed study books (Tom Taulli guides, Slides v16) and structured notes. *(See `docs/aws-cert-learning-roadmap.md` for the exam roadmap.)*
 - **Future ambition:** Apply AI/ML knowledge to **Chinese A-share stock prediction** — this requires accumulating knowledge in AI models, financial models, time-series analysis, sentiment analysis, and stock market fundamentals. *(See `docs/stock-prediction-plan.md` for the feature roadmap.)*
 
 ## Personal interests & motivations
