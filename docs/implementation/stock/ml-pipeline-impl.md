@@ -244,8 +244,9 @@ Log predictions, backfill actual prices, calculate accuracy, grade model health.
 |----------|-------------|
 | `record_prediction(symbol, result)` | Append prediction to log |
 | `backfill_actuals(symbol)` | Fill actual prices from `daily.csv` |
-| `get_accuracy_stats(symbol)` | Aggregate accuracy metrics + health |
+| `get_accuracy_stats(symbol)` | Per-symbol accuracy metrics + health |
 | `get_latest_verification(symbol)` | Most recent entry with actuals filled |
+| `get_aggregate_stats(symbols)` | Cross-symbol aggregate stats (direction accuracy, MAPE, MAE, per-window breakdowns, per-symbol detail) |
 
 ### Backfill Process
 
@@ -279,6 +280,27 @@ When ≥ 10 entries:
 ### Storage
 
 `data/{symbol}/predictions_log.json` — array of prediction entries with backfilled actuals.
+
+### Aggregate Statistics (`get_aggregate_stats`)
+
+Computes watchlist-scoped statistics across all symbols. Called once after all stocks are trained; result is included in `train_progress.json` as `aggregate_stats`.
+
+**Output fields:**
+
+| Field | Description |
+|-------|-------------|
+| `total_predictions` | Total prediction entries across all symbols |
+| `total_verified` | Entries with actual data filled |
+| `total_pending` | Entries still awaiting actual prices |
+| `direction_correct` / `direction_total` | Correct direction predictions vs total evaluated |
+| `direction_accuracy` | Overall direction hit rate (0–1) |
+| `avg_mape` | Mean Absolute Percentage Error across all verified entries |
+| `avg_mae` | Mean Absolute Error (price units) |
+| `last_7` / `last_30` | Per-window breakdown (count, avg_mape, direction stats) |
+| `per_symbol` | Sorted list of per-symbol stats (verified count, direction accuracy, avg MAPE) |
+| `symbol_count` | Number of symbols with verified data |
+
+**Scope:** Only symbols passed in (current watchlist). Removed stocks are excluded automatically.
 
 ---
 

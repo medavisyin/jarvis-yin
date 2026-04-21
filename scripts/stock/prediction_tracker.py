@@ -220,6 +220,90 @@ def get_latest_verification(symbol: str) -> dict | None:
     return filled[-1]
 
 
+def get_aggregate_stats(symbols: list[str]) -> dict:
+    """
+    Aggregate verification statistics across multiple symbols (watchlist scope).
+    Returns combined counts, success rates, and per-window breakdowns.
+    """
+    total_predictions = 0
+    total_filled = 0
+    total_pending = 0
+    all_dir_correct = 0
+    all_dir_total = 0
+    all_mape: list[float] = []
+    all_mae: list[float] = []
+
+    window_7: list[dict] = []
+    window_30: list[dict] = []
+
+    per_symbol: list[dict] = []
+
+    for sym in symbols:
+        entries = _load_log(sym)
+        if not entries:
+            continue
+
+        filled = [e for e in entries if e.get("actual_close") is not None]
+        total_predictions += len(entries)
+        total_filled += len(filled)
+        total_pending += len(entries) - len(filled)
+
+        sym_dir_correct = 0
+        sym_dir_total = 0
+        sym_mape: list[float] = []
+
+        for e in filled:
+            if e.get("error_pct_close") is not None:
+                all_mape.append(e["error_pct_close"])
+                sym_mape.append(e["error_pct_close"])
+            if e.get("error_close") is not None:
+                all_mae.append(abs(e["error_close"]))
+            if e.get("direction_correct") is not None:
+                all_dir_total += 1
+                sym_dir_total += 1
+                if e["direction_correct"]:
+                    all_dir_correct += 1
+                    sym_dir_correct += 1
+
+        window_7.extend(filled[-7:])
+        window_30.extend(filled[-30:])
+
+        if sym_dir_total > 0:
+            per_symbol.append({
+                "symbol": sym,
+                "verified": len(filled),
+                "direction_accuracy": round(sym_dir_correct / sym_dir_total, 4),
+                "avg_mape": round(sum(sym_mape) / len(sym_mape), 2) if sym_mape else None,
+            })
+
+    def _window_stats(data: list[dict]) -> dict:
+        mape = [e["error_pct_close"] for e in data if e.get("error_pct_close") is not None]
+        dirs = [e["direction_correct"] for e in data if e.get("direction_correct") is not None]
+        dc = sum(1 for d in dirs if d)
+        return {
+            "count": len(data),
+            "avg_mape": round(sum(mape) / len(mape), 2) if mape else None,
+            "direction_correct": dc,
+            "direction_total": len(dirs),
+            "direction_accuracy": round(dc / len(dirs), 4) if dirs else None,
+        }
+
+    return {
+        "total_predictions": total_predictions,
+        "total_verified": total_filled,
+        "total_pending": total_pending,
+        "direction_correct": all_dir_correct,
+        "direction_total": all_dir_total,
+        "direction_accuracy": round(all_dir_correct / all_dir_total, 4) if all_dir_total else None,
+        "avg_mape": round(sum(all_mape) / len(all_mape), 2) if all_mape else None,
+        "avg_mae": round(sum(all_mae) / len(all_mae), 2) if all_mae else None,
+        "last_7": _window_stats(window_7),
+        "last_30": _window_stats(window_30),
+        "per_symbol": sorted(per_symbol, key=lambda x: x.get("direction_accuracy", 0), reverse=True),
+        "symbol_count": len(per_symbol),
+    }
+
+
 def _calc_model_health(filled: list[dict]) -> dict:
     """
     Assess long-term model health by comparing recent vs older accuracy.

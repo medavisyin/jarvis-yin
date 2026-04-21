@@ -158,7 +158,7 @@ jarvis/                               # Project root (C:\jarvis or wherever inst
     │   ├── scanner.py               # 3-layer market scanner (Layer1→2→3, background thread)
     │   ├── hot_sectors.py           # Hot sector detection for scanner bonus scoring
     │   ├── model_price_predictor.py # XGBoost regression for next-day close/high/low price prediction
-    │   └── prediction_tracker.py  # Prediction vs actual price tracking and accuracy stats
+    │   └── prediction_tracker.py  # Prediction vs actual price tracking, accuracy stats, and cross-symbol aggregate statistics
     └── rag/                          # RAG subsystem
         ├── agent.py                  # Jarvis chat agent server (:18889)
         ├── search_ui.py              # RAG search UI server (:18888)
@@ -664,8 +664,8 @@ Output: `world-news-data.json` categorized by politics, economics, technology, s
 | DELETE | `/api/stock/watchlist/<symbol>` | Remove stock from watchlist | — | `true/false` |
 | POST | `/api/stock/watchlist/refresh` | Refresh all watchlist data | — | `{ results: [...] }` |
 | POST | `/api/stock/analyze` | Full stock analysis | `{ symbol, mode }` | Varies by mode: technical, fundamental, sentiment, xgboost, prediction, full |
-| POST | `/api/stock/train/daily` | Start daily price prediction training for watchlist stocks | — | `{ ok, status, results, verifications, ... }` — `verifications`: predicted vs actual per stock (alongside `results`) |
-| GET | `/api/stock/train/status` | Get training progress | — | `{ status, completed, total, results, verifications, ... }` — top-level `verifications`; each item in `results` includes `health` |
+| POST | `/api/stock/train/daily` | Start daily price prediction training for watchlist stocks | — | `{ ok, status, results, verifications, aggregate_stats, ... }` — `verifications`: predicted vs actual (watchlist-scoped); `aggregate_stats`: cross-symbol historical accuracy |
+| GET | `/api/stock/train/status` | Get training progress | — | `{ status, completed, total, results, verifications, aggregate_stats, ... }` — `aggregate_stats`: direction accuracy, MAPE, MAE, 7d/30d windows, per-symbol detail |
 | GET | `/api/stock/predict/{symbol}` | Get price prediction and accuracy stats | — | `{ symbol, prediction, accuracy, health, ... }` — `health`: grade, trend, action |
 
 **Analysis modes for `/api/stock/analyze`:**

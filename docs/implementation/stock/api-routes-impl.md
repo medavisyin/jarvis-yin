@@ -56,14 +56,16 @@ All stock API endpoints are defined in `scripts/rag/agent.py` using Flask. The `
 **Training thread flow:**
 1. Mutex check (`_train_lock`)
 2. For each watchlist stock: `update_stock_data` → `backfill_actuals` → `get_latest_verification` → `train_price_prediction` → `record_prediction` → `get_accuracy_stats`
-3. After all stocks: `fetch_all_sentiment()` + `scan_world_news()`
-4. Write `train_progress.json` with status, results, verifications, sentiment, black_swan
+3. Compute `get_aggregate_stats(watchlist_symbols)` — cross-symbol verification statistics (scoped to current watchlist only)
+4. After all stocks: `fetch_all_sentiment()` + `scan_world_news()`
+5. Write `train_progress.json` with status, results, verifications, aggregate_stats, sentiment, black_swan
 
 **Status response includes:**
 - `status`: `running` / `done` / `idle`
 - `total`, `completed`, `current`
 - `results[]`: per-stock predictions + health grades
-- `verifications[]`: yesterday's prediction vs actual comparison
+- `verifications[]`: yesterday's prediction vs actual comparison (current watchlist only)
+- `aggregate_stats`: cross-symbol historical verification stats (direction accuracy, MAPE, MAE, 7d/30d windows, per-symbol breakdown)
 - `sentiment`: market sentiment data (Fear & Greed + VIX)
 - `black_swan`: world news risk alerts
 

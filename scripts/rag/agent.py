@@ -5133,7 +5133,7 @@ def api_stock_train_daily():
 
         from watchlist import list_stocks
         from model_price_predictor import train_price_prediction
-        from prediction_tracker import record_prediction, backfill_actuals, get_latest_verification, get_accuracy_stats
+        from prediction_tracker import record_prediction, backfill_actuals, get_latest_verification, get_accuracy_stats, get_aggregate_stats
         from fetch_market_data import update_stock_data
 
         stocks = list_stocks()
@@ -5192,6 +5192,12 @@ def api_stock_train_daily():
 
             progress["completed"] = i + 1
             _save_prog()
+
+        try:
+            watchlist_symbols = [s.get("symbol") for s in stocks if s.get("symbol")]
+            progress["aggregate_stats"] = get_aggregate_stats(watchlist_symbols)
+        except Exception:
+            pass
 
         try:
             from market_sentiment import fetch_all_sentiment
@@ -8485,11 +8491,11 @@ async function pollTrainStatus() {
       prog.style.display = 'none';
       btn.disabled = false;
       st.textContent = '训练完成 (' + (d.results || []).length + ' 只股票)';
-      renderFullTrainReport(d.verifications || [], d.results || [], d.sentiment || null, d.black_swan || null);
+      renderFullTrainReport(d.verifications || [], d.results || [], d.sentiment || null, d.black_swan || null, d.aggregate_stats || null);
     }
   } catch(e) {}
 }
-function renderFullTrainReport(verifications, results, sentiment, blackSwan) {
+function renderFullTrainReport(verifications, results, sentiment, blackSwan, aggregateStats) {
   const el = document.getElementById('trainResult');
   let h = '';
 
@@ -8566,6 +8572,87 @@ function renderFullTrainReport(verifications, results, sentiment, blackSwan) {
     h += '</table>';
   } else if (verifications.length > 0) {
     h += '<div style="color:#fbbf24;margin-bottom:12px;font-size:0.85em">&#9888; 首次运行，暂无历史预测可验证。下次运行时将自动回填实际价格。</div>';
+  }
+
+  // === Section 1.5: Aggregate Verification Stats ===
+  if (aggregateStats && aggregateStats.total_verified > 0) {
+    const as = aggregateStats;
+    const dirAcc = as.direction_accuracy != null ? (as.direction_accuracy * 100).toFixed(1) : '-';
+    const dirColor = as.direction_accuracy >= 0.6 ? '#10b981' : as.direction_accuracy >= 0.45 ? '#fbbf24' : '#ef4444';
+    const mapeColor = as.avg_mape != null ? (as.avg_mape <= 2 ? '#10b981' : as.avg_mape <= 5 ? '#fbbf24' : '#ef4444') : '#8b8fa4';
+    h += '<h3 style="color:#a78bfa;margin:12px 0 10px">&#128202; 历史验证统计</h3>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px">';
+
+    h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:12px 16px;flex:1;min-width:140px;text-align:center">';
+    h += '<div style="font-size:0.75em;color:#8b8fa4;margin-bottom:4px">验证次数</div>';
+    h += '<div style="font-size:1.6em;font-weight:700;color:#60a5fa">' + as.total_verified + '</div>';
+    h += '<div style="font-size:0.7em;color:#8b8fa4">待验证: ' + as.total_pending + '</div>';
+    h += '</div>';
+
+    h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:12px 16px;flex:1;min-width:140px;text-align:center">';
+    h += '<div style="font-size:0.75em;color:#8b8fa4;margin-bottom:4px">方向预测成功率</div>';
+    h += '<div style="font-size:1.6em;font-weight:700;color:' + dirColor + '">' + dirAcc + '%</div>';
+    h += '<div style="font-size:0.7em;color:#8b8fa4">' + as.direction_correct + ' / ' + as.direction_total + ' 次</div>';
+    h += '</div>';
+
+    h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:12px 16px;flex:1;min-width:140px;text-align:center">';
+    h += '<div style="font-size:0.75em;color:#8b8fa4;margin-bottom:4px">平均误差 (MAPE)</div>';
+    h += '<div style="font-size:1.6em;font-weight:700;color:' + mapeColor + '">' + (as.avg_mape != null ? as.avg_mape + '%' : '-') + '</div>';
+    h += '<div style="font-size:0.7em;color:#8b8fa4">MAE: ' + (as.avg_mae != null ? '&yen;' + as.avg_mae : '-') + '</div>';
+    h += '</div>';
+
+    h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:12px 16px;flex:1;min-width:140px;text-align:center">';
+    h += '<div style="font-size:0.75em;color:#8b8fa4;margin-bottom:4px">覆盖股票</div>';
+    h += '<div style="font-size:1.6em;font-weight:700;color:#a78bfa">' + as.symbol_count + '</div>';
+    h += '<div style="font-size:0.7em;color:#8b8fa4">总预测: ' + as.total_predictions + ' 条</div>';
+    h += '</div>';
+
+    h += '</div>';
+
+    const l7 = as.last_7 || {};
+    const l30 = as.last_30 || {};
+    if (l7.count > 0 || l30.count > 0) {
+      h += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px">';
+      if (l7.count > 0) {
+        const d7 = l7.direction_accuracy != null ? (l7.direction_accuracy * 100).toFixed(1) : '-';
+        const d7c = l7.direction_accuracy >= 0.6 ? '#10b981' : l7.direction_accuracy >= 0.45 ? '#fbbf24' : '#ef4444';
+        h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:10px 14px;flex:1;min-width:200px">';
+        h += '<div style="font-size:0.78em;color:#8b8fa4;margin-bottom:6px">近 7 日 (' + l7.count + ' 条)</div>';
+        h += '<div style="display:flex;gap:16px;align-items:baseline">';
+        h += '<span style="font-size:0.82em">方向: <b style="color:' + d7c + '">' + d7 + '%</b></span>';
+        h += '<span style="font-size:0.82em">MAPE: <b>' + (l7.avg_mape != null ? l7.avg_mape + '%' : '-') + '</b></span>';
+        h += '<span style="font-size:0.82em">正确: ' + l7.direction_correct + '/' + l7.direction_total + '</span>';
+        h += '</div></div>';
+      }
+      if (l30.count > 0) {
+        const d30 = l30.direction_accuracy != null ? (l30.direction_accuracy * 100).toFixed(1) : '-';
+        const d30c = l30.direction_accuracy >= 0.6 ? '#10b981' : l30.direction_accuracy >= 0.45 ? '#fbbf24' : '#ef4444';
+        h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:10px 14px;flex:1;min-width:200px">';
+        h += '<div style="font-size:0.78em;color:#8b8fa4;margin-bottom:6px">近 30 日 (' + l30.count + ' 条)</div>';
+        h += '<div style="display:flex;gap:16px;align-items:baseline">';
+        h += '<span style="font-size:0.82em">方向: <b style="color:' + d30c + '">' + d30 + '%</b></span>';
+        h += '<span style="font-size:0.82em">MAPE: <b>' + (l30.avg_mape != null ? l30.avg_mape + '%' : '-') + '</b></span>';
+        h += '<span style="font-size:0.82em">正确: ' + l30.direction_correct + '/' + l30.direction_total + '</span>';
+        h += '</div></div>';
+      }
+      h += '</div>';
+    }
+
+    if (as.per_symbol && as.per_symbol.length > 0) {
+      h += '<details style="margin-bottom:16px"><summary style="cursor:pointer;color:#a78bfa;font-size:0.85em;font-weight:600">&#128200; 各股票验证明细</summary>';
+      h += '<table style="width:100%;border-collapse:collapse;font-size:0.8em;margin-top:8px">';
+      h += '<tr style="border-bottom:1px solid #2a2d3e;color:#8b8fa4"><th style="text-align:left;padding:5px">股票</th><th>验证次数</th><th>方向成功率</th><th>平均MAPE</th></tr>';
+      as.per_symbol.forEach(ps => {
+        const psColor = ps.direction_accuracy >= 0.6 ? '#10b981' : ps.direction_accuracy >= 0.45 ? '#fbbf24' : '#ef4444';
+        h += '<tr style="border-bottom:1px solid #1a1d2e">';
+        h += '<td style="padding:5px;font-weight:600">' + ps.symbol + '</td>';
+        h += '<td style="text-align:center;padding:5px">' + ps.verified + '</td>';
+        h += '<td style="text-align:center;padding:5px;color:' + psColor + ';font-weight:600">' + (ps.direction_accuracy * 100).toFixed(1) + '%</td>';
+        h += '<td style="text-align:center;padding:5px">' + (ps.avg_mape != null ? ps.avg_mape + '%' : '-') + '</td>';
+        h += '</tr>';
+      });
+      h += '</table></details>';
+    }
   }
 
   // === Section 2: Model Health ===

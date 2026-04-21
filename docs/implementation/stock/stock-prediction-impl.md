@@ -8,7 +8,13 @@ The stock module provides a **Chinese A-share (A股) individual stock prediction
 **HTTP integration:** Flask routes in `scripts/rag/agent.py`
 **Detailed docs:** See [README.md](./README.md) for the full document index.
 
-### Recent Changes (2026-04-19)
+### Recent Changes (2026-04-21)
+- **Aggregate verification statistics** added to training report — cross-symbol direction accuracy, MAPE, MAE, 7d/30d windows, per-symbol breakdown
+- **Verification scoped to watchlist** — removed stocks no longer appear in "昨日预测验证"
+- **`get_aggregate_stats(symbols)`** added to `prediction_tracker.py`
+- **Training report UI** includes new "历史验证统计" section with summary cards and collapsible per-symbol detail
+
+### Changes (2026-04-19)
 - **Scanner redesigned** from "top-5 by momentum" to **buyability-focused** (may return 0 stocks)
 - **Training window** extended from 250 to **500 days** (both classifier and regressor)
 - **Walk-forward rounds** increased from 10 to **15**
@@ -41,7 +47,7 @@ The stock module provides a **Chinese A-share (A股) individual stock prediction
         ├─ mode full only ──► llm_reasoning (Ollama synthesis)
         │
         ├─ train/daily ──► model_price_predictor (regression)
-        │   └─ prediction_tracker (verification)
+        │   └─ prediction_tracker (verification + aggregate_stats)
         │   └─ market_sentiment + black_swan_detector (appended to results)
         │
         └─ scan/start ──► scanner (3-layer) + hot_sectors
