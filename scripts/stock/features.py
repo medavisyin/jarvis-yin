@@ -2,7 +2,8 @@
 特征工程 — 将原始OHLCV + 技术指标转换为ML模型可用的特征矩阵.
 
 从 technical_analysis.py 获取带指标的 DataFrame,
-再派生出收益率、动量、波动率、均线距离等衍生特征,
+再派生出收益率、动量、波动率、均线距离、资金流向、北向资金、
+板块轮动、T+1约束、市场情绪、追高惩罚等衍生特征,
 最终输出一个干净的特征矩阵 + 目标变量.
 """
 import json
@@ -50,6 +51,12 @@ def build_features(symbol: str, forward_days: int = 5, threshold: float = 2.0) -
     _add_pattern_features(df)
     _add_fundamental_features(df, symbol)
     _add_calendar_features(df)
+
+    _add_fund_flow_features(df, symbol)
+    _add_northbound_features(df)
+    _add_t1_features(df)
+    _add_market_mood_features(df)
+    _add_chase_penalty_features(df)
 
     _add_target(df, forward_days, threshold)
 
@@ -203,6 +210,230 @@ def _add_calendar_features(df: pd.DataFrame):
     df["month"] = dates.dt.month
 
 
+def _safe_import_china_data():
+    """Lazy import china_market_data to avoid circular deps and allow graceful fallback."""
+    try:
+        import china_market_data as cmd
+        return cmd
+    except ImportError:
+        log.debug("china_market_data 模块不可用, 跳过中国特色特征")
+        return None
+
+
+def _add_fund_flow_features(df: pd.DataFrame, symbol: str):
+    """资金流向特征: 主力净流入、价格-资金背离等。按日期对齐。"""
+    cmd = _safe_import_china_data()
+    if cmd is None:
+        return
+
+    try:
+        ff_df = cmd.fetch_stock_fund_flow(symbol)
+    except Exception as e:
+        log.debug("资金流向获取失败 %s: %s", symbol, e)
+        return
+
+    if ff_df is None or ff_df.empty or len(ff_df) < 3:
+        return
+
+    net_col = None
+    pct_col = None
+    super_col = None
+    for col in ff_df.columns:
+        if "主力净流入" in col and "净额" in col:
+            net_col = col
+        elif "主力净流入" in col and "净占比" in col:
+            pct_col = col
+        elif "超大单" in col and "净额" in col:
+            super_col = col
+
+    if net_col is None:
+        for col in ff_df.columns:
+            if "主力" in col and "净" in col:
+                net_col = col
+                break
+    if net_col is None:
+        return
+
+    ff_df = ff_df.copy()
+    if "日期" in ff_df.columns:
+        ff_df["_date"] = pd.to_datetime(ff_df["日期"], errors="coerce").dt.strftime("%Y-%m-%d")
+    else:
+        return
+
+    ff_df[net_col] = pd.to_numeric(ff_df[net_col], errors="coerce").fillna(0)
+    ff_df["_net_3d"] = ff_df[net_col].rolling(3, min_periods=1).sum()
+    ff_df["_net_10d"] = ff_df[net_col].rolling(10, min_periods=3).sum()
+    if pct_col:
+        ff_df[pct_col] = pd.to_numeric(ff_df[pct_col], errors="coerce").fillna(0)
+        ff_df["_pct_3d"] = ff_df[pct_col].rolling(3, min_periods=1).sum()
+
+    net_rank_5 = ff_df[net_col].rolling(5, min_periods=3).mean().rank(pct=True)
+    ff_df["_net_rank_5"] = net_rank_5
+
+    if super_col:
+        ff_df[super_col] = pd.to_numeric(ff_df[super_col], errors="coerce").fillna(0)
+        super_sum = ff_df[super_col].rolling(5, min_periods=3).sum()
+        net_abs_sum = ff_df[net_col].abs().rolling(5, min_periods=3).sum().replace(0, np.nan)
+        ff_df["_super_ratio"] = super_sum / net_abs_sum
+
+    date_col_df = pd.to_datetime(df["date"], errors="coerce").dt.strftime("%Y-%m-%d") if "date" in df.columns else None
+    if date_col_df is None:
+        return
+
+    ff_lookup = ff_df.set_index("_date")
+
+    for feat, src in [("ff_main_net_3d", "_net_3d"),
+                      ("ff_main_net_10d", "_net_10d")]:
+        df[feat] = np.nan
+        if src in ff_lookup.columns:
+            mapped = date_col_df.map(ff_lookup[src]).values
+            df[feat] = mapped.astype(float)
+
+    df["ff_main_pct_3d"] = np.nan
+    if "_pct_3d" in ff_lookup.columns:
+        df["ff_main_pct_3d"] = date_col_df.map(ff_lookup["_pct_3d"]).values.astype(float)
+
+    df["ff_super_large_ratio"] = np.nan
+    if "_super_ratio" in ff_lookup.columns:
+        df["ff_super_large_ratio"] = date_col_df.map(ff_lookup["_super_ratio"]).values.astype(float)
+
+    df["ff_price_diverge_5d"] = np.nan
+    if "ret_5d" in df.columns and "_net_rank_5" in ff_lookup.columns:
+        net_r5 = date_col_df.map(ff_lookup["_net_rank_5"]).astype(float)
+        ret_r5 = df["ret_5d"].rank(pct=True)
+        df["ff_price_diverge_5d"] = net_r5.values - ret_r5.values
+
+
+def _add_northbound_features(df: pd.DataFrame):
+    """北向资金特征: 日净买入、5日/20日趋势、动量、连续天数。"""
+    cmd = _safe_import_china_data()
+    if cmd is None:
+        return
+
+    try:
+        nb_df = cmd.fetch_northbound(days=250)
+    except Exception as e:
+        log.debug("北向资金获取失败: %s", e)
+        return
+
+    if nb_df is None or nb_df.empty:
+        return
+
+    net_col = "当日成交净买额"
+    if net_col not in nb_df.columns:
+        return
+
+    nb_vals = pd.to_numeric(nb_df[net_col], errors="coerce").dropna()
+    if nb_vals.empty:
+        return
+
+    df["nb_net_1d"] = np.nan
+    df["nb_net_5d"] = np.nan
+    df["nb_momentum"] = np.nan
+    df["nb_consecutive"] = np.nan
+
+    n = min(len(nb_vals), len(df))
+    if n < 5:
+        return
+
+    vals = nb_vals.values[-n:]
+    df.iloc[-n:, df.columns.get_loc("nb_net_1d")] = vals
+
+    s = pd.Series(vals)
+    df.iloc[-n:, df.columns.get_loc("nb_net_5d")] = s.rolling(5, min_periods=1).sum().values
+
+    ma5 = s.rolling(5, min_periods=3).mean()
+    ma20 = s.rolling(20, min_periods=10).mean().replace(0, np.nan)
+    df.iloc[-n:, df.columns.get_loc("nb_momentum")] = (ma5 / ma20).values
+
+    consec = np.zeros(n)
+    streak = 0
+    for i in range(n):
+        if vals[i] > 0:
+            streak = streak + 1 if streak >= 0 else 1
+        elif vals[i] < 0:
+            streak = streak - 1 if streak <= 0 else -1
+        else:
+            streak = 0
+        consec[i] = streak
+    df.iloc[-n:, df.columns.get_loc("nb_consecutive")] = consec
+
+
+def _add_t1_features(df: pd.DataFrame):
+    """T+1约束特征: 涨跌停接近度、跳空、隔夜风险。"""
+    prev_close = df["close"].shift(1)
+    change_pct = (df["close"] - prev_close) / prev_close * 100
+
+    code_prefix = ""
+    if "date" in df.columns:
+        pass
+
+    df["near_limit_up"] = (change_pct > 9.0).astype(int)
+    df["near_limit_down"] = (change_pct < -9.0).astype(int)
+    df["gap_up_pct"] = (df["open"] - prev_close) / prev_close * 100
+    df["overnight_risk"] = (df["high"].shift(1) - df["close"].shift(1)) / df["close"].shift(1) * 100
+
+
+def _add_market_mood_features(df: pd.DataFrame):
+    """市场情绪特征: 融资余额变化、北向强度。"""
+    cmd = _safe_import_china_data()
+    if cmd is None:
+        return
+
+    df["mood_margin_chg_5d"] = np.nan
+    df["mood_north_strength"] = np.nan
+
+    try:
+        mg = cmd.margin_sentiment(window=5)
+        if mg and mg.get("balance_change_pct"):
+            df.iloc[-1, df.columns.get_loc("mood_margin_chg_5d")] = mg["balance_change_pct"]
+    except Exception:
+        pass
+
+    try:
+        nb = cmd.northbound_momentum(window_short=5, window_long=20)
+        if nb and nb.get("momentum"):
+            df.iloc[-1, df.columns.get_loc("mood_north_strength")] = nb["momentum"]
+    except Exception:
+        pass
+
+
+def _add_chase_penalty_features(df: pd.DataFrame):
+    """追高惩罚特征: 连涨天数、均线偏离度、RSI+资金流出组合。"""
+    change = df["close"].pct_change() * 100
+
+    consec = np.zeros(len(df))
+    streak = 0
+    for i in range(len(df)):
+        if change.iat[i] > 0:
+            streak = streak + 1 if streak > 0 else 1
+        elif change.iat[i] < 0:
+            streak = streak - 1 if streak < 0 else -1
+        else:
+            streak = 0
+        consec[i] = streak
+    df["penalty_consec_up"] = consec
+
+    if "ma20" in df.columns:
+        df["penalty_dist_ma20_pct"] = (df["close"] - df["ma20"]) / df["ma20"] * 100
+    else:
+        df["penalty_dist_ma20_pct"] = np.nan
+
+    df["penalty_rsi_with_outflow"] = 0
+    if "rsi_14" in df.columns and "ff_main_net_3d" in df.columns:
+        mask = (df["rsi_14"] > 70) & (df["ff_main_net_3d"] < 0)
+        df.loc[mask, "penalty_rsi_with_outflow"] = 1
+
+    if "volume" in df.columns:
+        vol_trend = df["volume"].pct_change().rolling(3).mean()
+        price_trend = change.rolling(3).mean()
+        df["penalty_volume_diverge"] = 0
+        mask = (price_trend > 0) & (vol_trend < -0.05)
+        df.loc[mask, "penalty_volume_diverge"] = 1
+    else:
+        df["penalty_volume_diverge"] = 0
+
+
 def _add_target(df: pd.DataFrame, forward_days: int, threshold: float):
     """计算目标变量: 未来N日收益率 + 三分类标签."""
     df["target_ret"] = df["close"].shift(-forward_days) / df["close"] * 100 - 100
@@ -212,8 +443,15 @@ def _add_target(df: pd.DataFrame, forward_days: int, threshold: float):
     df.loc[df["target_ret"] < -threshold, "target"] = -1
 
 
+_CHINA_FEATURE_PREFIXES = ("ff_", "nb_", "mood_")
+
+
 def _get_feature_columns(df: pd.DataFrame) -> list[str]:
-    """自动识别所有特征列 (排除日期、目标、原始价格)."""
+    """自动识别所有特征列 (排除日期、目标、原始价格).
+
+    China-specific features (ff_*, nb_*, mood_*) use a lower threshold (15%)
+    because their data sources only cover ~100 recent trading days.
+    """
     exclude = {
         "date", "open", "high", "low", "close", "volume", "amount",
         "target", "target_ret",
@@ -236,7 +474,9 @@ def _get_feature_columns(df: pd.DataFrame) -> list[str]:
             continue
         if df[c].dtype in (np.float64, np.float32, np.int64, np.int32, float, int):
             valid_pct = df[c].notna().mean()
-            if valid_pct >= 0.5:
+            is_china = any(c.startswith(p) for p in _CHINA_FEATURE_PREFIXES)
+            threshold = 0.15 if is_china else 0.5
+            if valid_pct >= threshold:
                 cols.append(c)
 
     return sorted(cols)

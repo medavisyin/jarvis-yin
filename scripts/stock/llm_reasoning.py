@@ -151,9 +151,28 @@ def _build_prompt(symbol: str, data: dict) -> str:
     return "\n".join(sections)
 
 
+def _make_system_prompt() -> str:
+    return (
+        "你是一位资深A股市场分析师，为散户投资者撰写预测报告。\n"
+        "要求：\n"
+        "1. 用中文撰写，技术术语可保留英文\n"
+        "2. 诚实面对不确定性，不夸大预测准确度\n"
+        "3. 解释推理过程，让初学者也能理解\n"
+        "4. 给出明确的操作建议和关键价位\n"
+        "5. 报告结构必须包含以下部分:\n"
+        "   - 方向判断 (看涨/看跌/震荡)\n"
+        "   - 信心水平 (高/中/低)\n"
+        "   - 时间范围 (1周/2周)\n"
+        "   - 核心理由 (3-5条)\n"
+        "   - 风险因素\n"
+        "   - 建议操作 (买入/持有/减仓/观望)\n"
+        "   - 关键价位 (支撑/阻力/止损)"
+    )
+
+
 def generate_prediction(symbol: str, stream: bool = False):
     """
-    生成 AI 综合预测报告.
+    生成 AI 综合预测报告 (本地 Ollama).
 
     Args:
         symbol: 股票代码
@@ -170,22 +189,7 @@ def generate_prediction(symbol: str, stream: bool = False):
     name = data.get("fundamental", {}).get("profile", {}).get("name") or symbol
     model = MODEL_USAGE.get("prediction_reasoning", "qwen3.5:4b")
 
-    system_prompt = (
-        "你是一位资深A股市场分析师，为散户投资者撰写预测报告。\n"
-        "要求：\n"
-        "1. 用中文撰写，技术术语可保留英文\n"
-        "2. 诚实面对不确定性，不夸大预测准确度\n"
-        "3. 解释推理过程，让初学者也能理解\n"
-        "4. 给出明确的操作建议和关键价位\n"
-        "5. 报告结构必须包含以下部分:\n"
-        "   - 方向判断 (看涨/看跌/震荡)\n"
-        "   - 信心水平 (高/中/低)\n"
-        "   - 时间范围 (1周/2周)\n"
-        "   - 核心理由 (3-5条)\n"
-        "   - 风险因素\n"
-        "   - 建议操作 (买入/持有/减仓/观望)\n"
-        "   - 关键价位 (支撑/阻力/止损)"
-    )
+    system_prompt = _make_system_prompt()
 
     user_prompt = (
         f"请根据以下{name}({symbol})的分析数据，撰写一份完整的AI预测报告:\n\n"
@@ -259,6 +263,59 @@ def generate_prediction(symbol: str, stream: bool = False):
                 pass
 
     return _stream_gen()
+
+
+def generate_prediction_deepseek(symbol: str) -> dict:
+    """生成 AI 综合预测报告 via DeepSeek API (deepseek-reasoner).
+
+    Returns dict with:
+      - report: str (full markdown report)
+      - reasoning: str (chain-of-thought from deepseek-reasoner)
+      - model: str
+      - usage: dict (token usage)
+      - error: str (if failed)
+    """
+    from config import call_deepseek
+
+    log.info("开始生成 %s DeepSeek 预测...", symbol)
+
+    data = _load_or_compute(symbol)
+    analysis_text = _build_prompt(symbol, data)
+    name = data.get("fundamental", {}).get("profile", {}).get("name") or symbol
+
+    system_prompt = _make_system_prompt()
+    user_prompt = (
+        f"请根据以下{name}({symbol})的分析数据，撰写一份完整的AI预测报告:\n\n"
+        f"{analysis_text}\n\n"
+        f"请按照要求的结构撰写报告。"
+    )
+
+    result = call_deepseek(system_prompt, user_prompt, max_tokens=4096, temperature=0.6)
+
+    if not result["ok"]:
+        log.error("DeepSeek 预测 %s 失败: %s", symbol, result.get("error"))
+        return {"error": result["error"]}
+
+    content = result["content"]
+    reasoning = result.get("reasoning_content", "")
+
+    header = f"# {name} ({symbol}) AI 预测报告\n"
+    header += f"> 生成时间: {datetime.now().strftime('%Y-%m-%d %H:%M')} | 模型: {result['model']} (DeepSeek API)\n\n"
+
+    report = header + content
+
+    out_path = os.path.join(STOCK_DATA_DIR, symbol, "prediction-report-deepseek.md")
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(report)
+    log.info("DeepSeek 预测报告已保存 → %s", out_path)
+
+    return {
+        "report": report,
+        "reasoning": reasoning,
+        "model": result["model"],
+        "usage": result.get("usage", {}),
+    }
 
 
 if __name__ == "__main__":

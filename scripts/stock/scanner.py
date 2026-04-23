@@ -55,6 +55,7 @@ MIN_BUYABILITY_SCORE = 60
 _scan_lock = threading.Lock()
 _scan_thread: threading.Thread | None = None
 _stop_event = threading.Event()
+_use_deepseek = False
 
 
 def _ensure_dirs():
@@ -105,6 +106,12 @@ def _layer1_quick_filter(hot_stocks: set[str]) -> tuple[list[dict], int]:
     """
     Fetch full A-share realtime snapshot and filter candidates.
 
+    China A-share rework:
+      - Exclude ST / *ST / limit-up (avoid chase)
+      - Require minimum liquidity (30M volume, 0.5% turnover)
+      - Score blends value, momentum, and smart-money signals
+      - Hot sector stocks get a moderate bonus
+
     Returns (candidates, market_total) where market_total is the raw count
     before any filtering.
     """
@@ -130,20 +137,29 @@ def _layer1_quick_filter(hot_stocks: set[str]) -> tuple[list[dict], int]:
 
     mask = (
         df["名称"].apply(lambda x: "ST" not in str(x))
-        & df["涨跌幅"].between(-5, 8)
+        & df["涨跌幅"].between(-7, 8)
         & (df["换手率"] >= 0.5)
         & (df["成交额"] >= 30_000_000)
         & (df["市盈率-动态"] > 0)
         & (df["市盈率-动态"] < 80)
+        & (df["涨跌幅"] < 9.5)
     )
     candidates = df[mask].copy()
     log.info("Layer 1: 基础筛选后 %d 只", len(candidates))
 
     pe = candidates["市盈率-动态"].clip(1, 80)
+    change = candidates["涨跌幅"].clip(-7, 8)
+    turnover = candidates["换手率"].clip(0, 15)
+
+    chase_penalty = (change > 6).astype(int) * -5
+    pullback_bonus = ((change < 0) & (change > -5)).astype(int) * 3
+
     candidates["score_l1"] = (
-        (80 - pe) * 0.5
-        + candidates["涨跌幅"].clip(-5, 8) * 1.0
-        + candidates["换手率"].clip(0, 15) * 0.5
+        (80 - pe) * 0.4
+        + change * 0.8
+        + turnover * 0.3
+        + chase_penalty
+        + pullback_bonus
     )
     candidates["is_hot"] = candidates["代码"].isin(hot_stocks)
     candidates.loc[candidates["is_hot"], "score_l1"] += 5
@@ -247,19 +263,48 @@ def _layer2_analyze_batch(batch: list[dict], progress: dict) -> list[dict]:
             log.warning("  %s 情绪分析失败: %s", sym, e)
             sentiment_score = 50
 
+        ff_score = 50
+        ff_signals = {}
+        try:
+            import china_market_data as cmd
+            ff = cmd.stock_fund_flow_signals(sym)
+            if ff and ff.get("data_days", 0) >= 3:
+                ff_signals = ff
+                accumulating = ff.get("accumulation_signal", False)
+                main_net_3d = ff.get("main_net_3d", 0)
+                phase = ff.get("smart_money_phase", "无信号")
+                accum_score_raw = ff.get("accumulation_score", 0)
+
+                if phase == "布局期":
+                    ff_score = 80 + min(accum_score_raw / 5, 15)
+                elif accumulating and main_net_3d > 0:
+                    ff_score = 70 + min(main_net_3d / 1e8 * 5, 20)
+                elif phase == "拉升期":
+                    ff_score = 55
+                elif phase == "出货期":
+                    ff_score = 25
+                elif main_net_3d < 0:
+                    ff_score = max(20, 50 + main_net_3d / 1e8 * 3)
+                ff_score = max(0, min(100, ff_score))
+        except Exception as e:
+            log.debug("  %s 资金流向失败: %s", sym, e)
+
         hot_bonus = 5 if stock.get("is_hot") else 0
         total_score = (
-            fund_score * 0.35
-            + tech_score * 0.25
-            + sentiment_score * 0.15
-            + stock["score_l1"] * 0.15
-            + _valuation_bonus(stock.get("pe")) * 0.10
+            ff_score * 0.30
+            + fund_score * 0.25
+            + tech_score * 0.20
+            + sentiment_score * 0.10
+            + stock["score_l1"] * 0.10
+            + _valuation_bonus(stock.get("pe")) * 0.05
             + hot_bonus
         )
 
         stock.update({
             "tech_score": tech_score,
             "fund_score": round(fund_score, 1),
+            "ff_score": round(ff_score, 1),
+            "ff_signals": ff_signals,
             "sentiment_score": sentiment_score,
             "hot_bonus": hot_bonus,
             "rsi": round(rsi_val, 1) if rsi_val else None,
@@ -399,13 +444,30 @@ def _build_scoring_prompt(stock: dict) -> str:
     if stock.get("overbought"):
         rsi_text += " (超买警告)"
 
-    return f"""判断这只股票**现在是否值得买入**。
+    ff_text = ""
+    ff_signals = stock.get("ff_signals", {})
+    if ff_signals:
+        phase = ff_signals.get("smart_money_phase", "无信号")
+        accum_s = ff_signals.get("accumulation_score", 0)
+        detail = ff_signals.get("detail", "")
+        ff_text = (
+            f"  - 3日主力净流入: {ff_signals.get('main_net_3d', 'N/A')}\n"
+            f"  - 10日主力净流入: {ff_signals.get('main_net_10d', 'N/A')}\n"
+            f"  - 3日主力净占比: {ff_signals.get('main_pct_3d', 'N/A')}%\n"
+            f"  - 聪明钱阶段: {phase} (得分 {accum_s}/100)\n"
+            f"  - 判断: {detail}"
+        )
+    else:
+        ff_text = "  (无资金流向数据)"
 
-核心原则：
-1. 被低估或估值合理的才推荐（PE合理、基本面良好）
-2. 技术面严重超买（RSI>70、连续大涨）的不推荐
-3. 必须有"安全边际"——买入价要低于你认为的合理价值
-4. 如果不确定，就判定"不买入"——错过机会比亏钱好
+    return f"""判断这只A股股票**现在是否值得买入**。
+
+核心原则(A股特色):
+1. 跟随"聪明钱"吸筹：资金持续流入但股价未大涨=主力吸筹(最佳信号)
+2. 追高是最大敌人：连续大涨、涨停板后不追买(A股T+1,买入后当日无法卖出)
+3. 估值合理+基本面良好是安全底线
+4. A股T+1风险：买入即锁仓一天,所以不能追高,要有足够安全边际
+5. 如果不确定或风险大于收益,必须判定"不买入"
 
 数据:
 - 股票: {stock['name']} ({stock['symbol']})
@@ -415,6 +477,9 @@ def _build_scoring_prompt(stock: dict) -> str:
 - 市盈率(PE): {stock.get('pe', 'N/A')}
 - RSI: {rsi_text}
 - 成交额: {_format_amount(stock.get('amount'))}
+- 资金流向评分: {stock.get('ff_score', 'N/A')}/100
+- 资金流向详情:
+{ff_text}
 - 基本面评分: {stock.get('fund_score', 'N/A')}/100
 - 基本面详情:
 {fund_text}
@@ -426,7 +491,7 @@ def _build_scoring_prompt(stock: dict) -> str:
 要求: 直接输出一个JSON对象，不要输出任何其他文字。
 verdict 字段必须是 "买入" 或 "不买入"。只有你确信值得买入时才填"买入"。
 格式(buy_low和buy_high是数字):
-{{"verdict":"买入","score":75,"reason":"估值处于合理区间，基本面良好，技术面未超买","risk":"行业竞争加剧","buy_low":{price_f * 0.95:.2f},"buy_high":{price_f * 1.0:.2f}}}
+{{"verdict":"买入","score":75,"reason":"资金持续流入且股价回调充分,估值合理,T+1安全边际足够","risk":"行业竞争加剧","buy_low":{price_f * 0.95:.2f},"buy_high":{price_f * 1.0:.2f}}}
 
 你的回复(只输出JSON):"""
 
@@ -483,6 +548,280 @@ def _buy_range_str(pick: dict) -> str:
     if low and high:
         return f"¥{low:.2f} ~ ¥{high:.2f}"
     return "暂无"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Comprehensive analysis for recommended picks
+# ---------------------------------------------------------------------------
+
+def _run_comprehensive_for_picks(top_picks: list[dict], progress: dict) -> list[dict]:
+    """Run multi-dimensional analysis for each recommended stock."""
+    from technical_analysis import load_ohlcv, compute_indicators, evaluate_signals
+    from fundamental_analysis import score_fundamentals
+
+    enriched = []
+    for i, pick in enumerate(top_picks):
+        if _stop_event.is_set():
+            enriched.append(pick)
+            continue
+
+        sym = pick["symbol"]
+        log.info("综合分析 %d/%d: %s (%s)", i + 1, len(top_picks), sym, pick.get("name", ""))
+        progress["comprehensive_current"] = f"{sym} ({i+1}/{len(top_picks)})"
+        _save_progress(progress)
+
+        comp = {"dimensions": {}, "verdict_details": [], "star_rating": 0}
+        total_support = 0
+        total_dims = 0
+
+        try:
+            df = load_ohlcv(sym)
+            if df is not None and not df.empty:
+                df = compute_indicators(df)
+                sig = evaluate_signals(df)
+                overall = sig.get("overall", "中性")
+                bullish = sig.get("bullish_count", 0)
+                bearish = sig.get("bearish_count", 0)
+                rsi = sig.get("rsi_14", 50)
+                support = sig.get("support_levels", [])
+                resistance = sig.get("resistance_levels", [])
+
+                tech_supports_buy = overall in ("看涨", "偏多") and rsi < 75
+                comp["dimensions"]["technical"] = {
+                    "overall": overall,
+                    "bullish": bullish,
+                    "bearish": bearish,
+                    "rsi": round(rsi, 1) if isinstance(rsi, float) else rsi,
+                    "support": support[:2] if support else [],
+                    "resistance": resistance[:2] if resistance else [],
+                    "supports_buy": tech_supports_buy,
+                    "signals": sig.get("bullish_signals", [])[:3],
+                    "warnings": sig.get("bearish_signals", [])[:3],
+                }
+                total_dims += 1
+                if tech_supports_buy:
+                    total_support += 1
+                    comp["verdict_details"].append("技术面偏多")
+                else:
+                    comp["verdict_details"].append(f"技术面{overall}")
+        except Exception as e:
+            log.debug("综合分析-技术 %s 失败: %s", sym, e)
+
+        try:
+            from model_xgboost import train_and_predict
+            xgb = train_and_predict(sym)
+            if xgb and not xgb.get("error"):
+                direction = xgb.get("direction", "平")
+                confidence = xgb.get("confidence", 0)
+                ml_supports = direction == "涨" and confidence > 50
+                comp["dimensions"]["ml_direction"] = {
+                    "direction": direction,
+                    "confidence": round(confidence, 1),
+                    "supports_buy": ml_supports,
+                }
+                total_dims += 1
+                if ml_supports:
+                    total_support += 1
+                    comp["verdict_details"].append(f"ML预测看涨({confidence:.0f}%)")
+                else:
+                    comp["verdict_details"].append(f"ML预测{direction}")
+        except Exception as e:
+            log.debug("综合分析-ML方向 %s 失败: %s", sym, e)
+
+        try:
+            from model_price_predictor import train_price_prediction
+            pp = train_price_prediction(sym)
+            if pp and not pp.get("error"):
+                preds = pp.get("predictions", {})
+                close_pred = preds.get("close")
+                high_pred = preds.get("high")
+                low_pred = preds.get("low")
+                current = pp.get("current_close")
+                chg = pp.get("change_pct", {})
+
+                price_supports = (chg.get("close", 0) or 0) > 0.5
+                comp["dimensions"]["price_prediction"] = {
+                    "current": current,
+                    "pred_close": close_pred,
+                    "pred_high": high_pred,
+                    "pred_low": low_pred,
+                    "change_pct": round(chg.get("close", 0) or 0, 2),
+                    "supports_buy": price_supports,
+                }
+                total_dims += 1
+                if price_supports:
+                    total_support += 1
+                    comp["verdict_details"].append(f"价格预测看涨({chg.get('close',0):+.1f}%)")
+                else:
+                    comp["verdict_details"].append("价格预测偏中性")
+        except Exception as e:
+            log.debug("综合分析-价格预测 %s 失败: %s", sym, e)
+
+        try:
+            from china_market_data import stock_fund_flow_signals
+            ff = stock_fund_flow_signals(sym)
+            if ff and ff.get("main_net_3d") is not None:
+                accum = ff.get("accumulation_signal", False)
+                main_3d = ff.get("main_net_3d", 0)
+                phase = ff.get("smart_money_phase", "无信号")
+                accum_score = ff.get("accumulation_score", 0)
+                detail = ff.get("detail", "")
+
+                ff_supports = phase == "布局期" or (accum and main_3d > 0)
+
+                comp["dimensions"]["fund_flow"] = {
+                    "main_net_3d": main_3d,
+                    "main_net_10d": ff.get("main_net_10d"),
+                    "accumulation": accum,
+                    "smart_money_phase": phase,
+                    "accumulation_score": accum_score,
+                    "detail": detail,
+                    "supports_buy": ff_supports,
+                }
+                total_dims += 1
+                if ff_supports:
+                    total_support += 1
+                    if phase == "布局期":
+                        comp["verdict_details"].append(f"聪明钱布局期(得分{accum_score})")
+                    else:
+                        comp["verdict_details"].append("资金净流入")
+                elif phase == "出货期":
+                    comp["verdict_details"].append("⚠ 疑似出货")
+                elif phase == "拉升期":
+                    comp["verdict_details"].append("已进入拉升期,追高风险")
+                else:
+                    comp["verdict_details"].append("资金流出")
+        except Exception as e:
+            log.debug("综合分析-资金流向 %s 失败: %s", sym, e)
+
+        scanner_supports = pick.get("verdict") == "买入"
+        if scanner_supports:
+            total_support += 1
+            total_dims += 1
+            comp["verdict_details"].insert(0, "Scanner推荐买入")
+        else:
+            total_dims += 1
+            comp["verdict_details"].insert(0, "Scanner评分入选")
+
+        if total_dims > 0:
+            star = round(total_support / total_dims * 5)
+        else:
+            star = 0
+        comp["star_rating"] = star
+        comp["support_count"] = total_support
+        comp["total_dims"] = total_dims
+
+        if star >= 4:
+            comp["conclusion"] = "多维共振,建议建仓"
+        elif star >= 3:
+            comp["conclusion"] = "多数支持,可考虑小仓"
+        elif star >= 2:
+            comp["conclusion"] = "信号分歧,建议观望"
+        else:
+            comp["conclusion"] = "支持不足,暂不建议"
+
+        pick["comprehensive"] = comp
+        enriched.append(pick)
+        log.info("综合分析 %s: %d星 (%d/%d支持) — %s",
+                 sym, star, total_support, total_dims, comp["conclusion"])
+
+    return enriched
+
+
+def _run_deepseek_for_picks(top_picks: list[dict], progress: dict) -> list[dict]:
+    """Run DeepSeek API analysis for final TOP picks (only if API key is available)."""
+    from config import call_deepseek, get_deepseek_key
+
+    if not get_deepseek_key():
+        log.info("DeepSeek: 无API key, 跳过")
+        return top_picks
+
+    system_prompt = (
+        "你是一位资深A股市场分析师。你的任务是对以下股票进行深度分析，判断是否值得买入。\n"
+        "请用中文撰写分析报告，包含：\n"
+        "1. 综合判断（买入/观望/回避）\n"
+        "2. 核心理由（3-5条）\n"
+        "3. 风险提示\n"
+        "4. 建议操作策略（包括仓位、止损价、目标价）\n"
+        "5. 信心水平（高/中/低）\n"
+        "注意：A股是T+1市场，买入即锁仓一天，追高风险极大。"
+    )
+
+    for i, pick in enumerate(top_picks):
+        if _stop_event.is_set():
+            break
+
+        sym = pick["symbol"]
+        name = pick.get("name", sym)
+        progress["deepseek_current"] = f"{sym} ({i+1}/{len(top_picks)})"
+        _save_progress(progress)
+
+        comp = pick.get("comprehensive", {})
+        dims = comp.get("dimensions", {})
+        details = comp.get("verdict_details", [])
+
+        parts = [
+            f"股票: {name} ({sym})",
+            f"Scanner评分: {pick.get('final_score', 'N/A')}/100",
+            f"Scanner判定: {pick.get('verdict', 'N/A')}",
+            f"综合星级: {comp.get('star_rating', '?')}/5",
+            f"综合结论: {comp.get('conclusion', '')}",
+            f"判据: {', '.join(details)}",
+        ]
+
+        tech = dims.get("technical", {})
+        if tech:
+            parts.append(f"\n技术面: {tech.get('overall', '?')} | RSI={tech.get('rsi','?')} "
+                         f"| 看涨{tech.get('bullish',0)} 看跌{tech.get('bearish',0)}")
+            if tech.get("signals"):
+                parts.append(f"  信号: {', '.join(tech['signals'][:5])}")
+            if tech.get("support"):
+                parts.append(f"  支撑: {tech['support']}")
+            if tech.get("resistance"):
+                parts.append(f"  阻力: {tech['resistance']}")
+
+        ml = dims.get("ml_direction", {})
+        if ml:
+            parts.append(f"\nML方向预测: {ml.get('direction','?')} (置信度 {ml.get('confidence',0)}%)")
+
+        pp = dims.get("price_prediction", {})
+        if pp:
+            parts.append(f"\n明日价格预测: 收盘{pp.get('change_pct',0):+.1f}%"
+                         f" | 区间 ¥{pp.get('pred_low','?')}~¥{pp.get('pred_high','?')}")
+
+        ff = dims.get("fund_flow", {})
+        if ff:
+            parts.append(f"\n资金流向: {ff.get('smart_money_phase','?')} "
+                         f"(布局得分{ff.get('accumulation_score',0)})")
+            if ff.get("detail"):
+                parts.append(f"  {ff['detail']}")
+
+        parts.append(f"\nLLM分析: {pick.get('reasoning', 'N/A')}")
+        if pick.get("risk"):
+            parts.append(f"风险: {pick['risk']}")
+
+        user_prompt = "\n".join(parts)
+
+        try:
+            log.info("DeepSeek 分析 %s (%d/%d)...", sym, i+1, len(top_picks))
+            result = call_deepseek(system_prompt, user_prompt, max_tokens=2048)
+            if result["ok"]:
+                pick["deepseek"] = {
+                    "report": result["content"],
+                    "reasoning": result.get("reasoning_content", ""),
+                    "model": result.get("model", ""),
+                    "usage": result.get("usage", {}),
+                }
+                log.info("DeepSeek 分析 %s 完成 (tokens: %s)",
+                         sym, result.get("usage", {}).get("total_tokens", "?"))
+            else:
+                pick["deepseek"] = {"error": result.get("error", "Unknown")}
+                log.warning("DeepSeek 分析 %s 失败: %s", sym, result.get("error"))
+        except Exception as e:
+            pick["deepseek"] = {"error": str(e)}
+            log.warning("DeepSeek 分析 %s 异常: %s", sym, e)
+
+    return top_picks
 
 
 # ---------------------------------------------------------------------------
@@ -625,8 +964,15 @@ def _run_scan_inner():
     _spec.loader.exec_module(_cfg)
     sys.modules["config"] = _cfg
 
-    if "hot_sectors" in sys.modules:
-        del sys.modules["hot_sectors"]
+    _stale = [
+        "hot_sectors", "technical_analysis", "report_technical",
+        "fundamental_analysis", "sentiment", "features", "model_xgboost",
+        "fetch_market_data", "china_market_data", "llm_reasoning",
+        "market_sentiment", "black_swan_detector",
+    ]
+    for m in _stale:
+        sys.modules.pop(m, None)
+
     from hot_sectors import get_hot_stock_set
 
     log.info("=== AI 股票扫描开始 ===")
@@ -646,6 +992,7 @@ def _run_scan_inner():
         "analyzed_count": 0,
         "top_picks": [],
         "error": None,
+        "use_deepseek": _use_deepseek,
     }
     _save_progress(progress)
 
@@ -726,6 +1073,20 @@ def _execute_layer2_and_3(progress: dict, candidates: list[dict], resume: bool =
     _save_progress(progress)
 
     top_picks = _layer3_llm_rank(all_l2)
+
+    if top_picks and not _stop_event.is_set():
+        progress["status"] = "comprehensive"
+        progress["top_picks"] = top_picks
+        _save_progress(progress)
+        log.info("Phase 4: 对 %d 只推荐股票运行综合分析...", len(top_picks))
+        top_picks = _run_comprehensive_for_picks(top_picks, progress)
+
+    use_ds = progress.get("use_deepseek", False)
+    if use_ds and top_picks and not _stop_event.is_set():
+        progress["status"] = "deepseek"
+        _save_progress(progress)
+        log.info("Phase 5: DeepSeek 深度分析 TOP %d...", len(top_picks))
+        top_picks = _run_deepseek_for_picks(top_picks, progress)
 
     progress["status"] = "done"
     progress["top_picks"] = top_picks
@@ -872,15 +1233,16 @@ def list_scan_dates() -> list[str]:
 # Public API — start / stop / status
 # ---------------------------------------------------------------------------
 
-def start_scan() -> dict:
+def start_scan(use_deepseek: bool = False) -> dict:
     """Start a background scan. Returns status."""
-    global _scan_thread
+    global _scan_thread, _use_deepseek
 
-    log.info("start_scan called")
+    log.info("start_scan called (deepseek=%s)", use_deepseek)
     with _scan_lock:
         if _scan_thread is not None and _scan_thread.is_alive():
             return {"ok": False, "error": "扫描正在进行中", "status": get_scan_status()}
 
+        _use_deepseek = use_deepseek
         _stop_event.clear()
         _scan_thread = threading.Thread(target=_run_scan, daemon=True, name="stock-scanner")
         _scan_thread.start()

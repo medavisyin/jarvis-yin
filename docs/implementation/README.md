@@ -5,7 +5,7 @@ tags:
   - navigation
 category: hub
 status: current
-last-updated: 2026-04-21
+last-updated: 2026-04-23
 ---
 
 # Jarvis Implementation Documentation
@@ -33,16 +33,17 @@ docs/implementation/
 │   ├── topic-dedup-impl.md          # topic_index, filter_topics, raw_saver
 │   └── world-news-impl.md          # World news pipeline, China fetcher, translation
 └── stock/
-    ├── README.md                    # Stock module index (17 modules)
+    ├── README.md                    # Stock module index (20 modules)
     ├── stock-prediction-impl.md     # Architecture overview + anti-overfitting
     ├── config-impl.md              # Config, paths, Ollama models
     ├── data-layer-impl.md          # Data acquisition + watchlist + hot sectors
     ├── analysis-engines-impl.md    # TA + fundamental + sentiment engines
     ├── ml-pipeline-impl.md         # XGBoost classifier/regressor + tracker
     ├── market-signals-impl.md      # Fear & Greed, VIX, black swan
-    ├── scanner-impl.md             # 3-layer market scanner
-    ├── llm-synthesis-impl.md       # Ollama narrative synthesis
-    └── api-routes-impl.md          # Stock API routes
+    ├── scanner-impl.md             # 3-layer market scanner (+ optional DeepSeek on TOP 5)
+    ├── llm-synthesis-impl.md       # Ollama / optional DeepSeek narrative synthesis (stock)
+    ├── api-routes-impl.md          # Stock API routes
+    └── china-market-impl.md       # A股数据层、国家队ETF、择时模型、回测引擎
 ```
 
 > **Beginner guides** (formerly `know-how/`) have moved to [docs/learning/](../learning/) organized by topic.
@@ -76,9 +77,11 @@ docs/implementation/
 
 ### Stock Prediction
 
+The stock module keeps **data and model computation on the machine**; the **optional DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings** is used only for **final** narrative synthesis and optional **AI 股票推荐** TOP 5 follow-up, not for RAG or the briefing pipeline.
+
 | Document | Description |
 |----------|-------------|
-| [stock/README.md](./stock/README.md) | Stock module navigation index (links to all 10 stock implementation docs). |
+| [stock/README.md](./stock/README.md) | Stock module navigation index (links to all 11 stock implementation docs). |
 | [stock-prediction-impl.md](./stock/stock-prediction-impl.md) | End-to-end architecture overview, module graph, anti-overfitting, market risk signals. |
 | [config-impl.md](./stock/config-impl.md) | Configuration, paths, Ollama models, environment variables. |
 | [data-layer-impl.md](./stock/data-layer-impl.md) | `fetch_market_data`, `watchlist`, `hot_sectors` — data acquisition and caching. |
@@ -86,8 +89,9 @@ docs/implementation/
 | [ml-pipeline-impl.md](./stock/ml-pipeline-impl.md) | Feature engineering, XGBoost classifier/regressor, prediction tracker. |
 | [market-signals-impl.md](./stock/market-signals-impl.md) | Fear & Greed, VIX, world news black swan detection. |
 | [scanner-impl.md](./stock/scanner-impl.md) | 3-layer full-market AI recommendation scanner. |
-| [llm-synthesis-impl.md](./stock/llm-synthesis-impl.md) | Ollama-powered Chinese narrative synthesis. |
+| [llm-synthesis-impl.md](./stock/llm-synthesis-impl.md) | Ollama- or **optional DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings** — final synthesis for stock only; RAG and briefing stay local. |
 | [api-routes-impl.md](./stock/api-routes-impl.md) | All stock Flask API endpoints, thread safety, error handling. |
+| [**china-market-impl.md**](./stock/china-market-impl.md) | A股数据层 (国家队ETF+北向+资金流)、择时模型、回测引擎 |
 
 ### Stack overview
 

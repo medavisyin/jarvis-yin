@@ -54,6 +54,18 @@ Jarvis combines a daily briefing pipeline (fetch, merge, deduplicate, render) wi
 
 ---
 
+### DeepSeek API (`deepseek-reasoner`, optional, stock only)
+
+**What it is:** A hosted large-language-model API with an **OpenAI-compatible** `chat/completions` surface. When enabled, Jarvis uses the **`deepseek-reasoner`** model for the **last mile** of certain stock flows.
+
+**Why Jarvis uses it (optionally):** The stock module can delegate **final Chinese narrative synthesis** to a strong reasoning model while keeping **all feature computation** (technical, fundamental, XGBoost, fund-flow inputs, scanner filtering) **local**. This path is **not** used for RAG chat, agent SSE, or the daily briefing pipeline.
+
+**Version / model:** The stock integration targets **`deepseek-reasoner`**. The API key is set in the **Global Settings** UI and persisted in **`scripts/rag/.global_settings.json`**.
+
+**Architecture role:** **`config.py`** exposes **`get_deepseek_key()`** and **`call_deepseek()`**; **`llm_reasoning.generate_prediction_deepseek()`** and the **AI 股票推荐** scanner (TOP 5 enrichment when `use_deepseek` is true) call into it. See [stock/llm-synthesis-impl.md](./stock/llm-synthesis-impl.md) and [stock/stock-prediction-impl.md](./stock/stock-prediction-impl.md).
+
+---
+
 ### Playwright
 
 **What it is:** A browser automation library that drives Chromium, Firefox, or WebKit in headless or headed mode, including modern JavaScript-heavy sites.
@@ -132,7 +144,7 @@ Jarvis combines a daily briefing pipeline (fetch, merge, deduplicate, render) wi
 | Entry | Flow |
 |--------|------|
 | **`search_ui.py`** | User query → embed with the same embedding stack → **Qdrant search** → return ranked results. **No LLM** is required for this path. |
-| **`agent.py`** | User query → **automatic RAG search** (Qdrant) → inject retrieved chunks into the prompt → **Ollama** (`qwen3.5:4b` at `localhost:11434`) → **SSE** stream of the answer to the client. |
+| **`agent.py`** | User query → **automatic RAG search** (Qdrant) → inject retrieved chunks into the prompt → **Ollama** (`qwen3.5:4b` at `localhost:11434`) → **SSE** stream of the answer to the client. **(RAG does not use DeepSeek;** optional **DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings** is stock-only.) |
 
 ---
 
@@ -144,6 +156,7 @@ Jarvis combines a daily briefing pipeline (fetch, merge, deduplicate, render) wi
 | qdrant-client | Indexers, `search_ui.py`, `agent.py`; snapshot `.rag-store.json` |
 | Flask | `search_ui.py` (:18888), `agent.py` (:18889) |
 | Ollama | `agent.py` → `localhost:11434` |
+| DeepSeek (optional) | `scripts/stock/config.py` `call_deepseek` / `get_deepseek_key`; stock synthesis & scanner TOP 5 only |
 | Playwright | All `fetch-*.py` |
 | pypdf | Briefing PDF indexing |
 | ReportLab | `briefing-template.py` → PDF |

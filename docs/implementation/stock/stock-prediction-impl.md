@@ -2,7 +2,7 @@
 
 ## Overview
 
-The stock module provides a **Chinese A-share (A股) individual stock prediction and analysis workflow**: market data ingestion, technical and fundamental engines, LLM-based news sentiment, **XGBoost** walk-forward classifiers and regressors, market sentiment signals (Fear & Greed, VIX), black swan detection from world news, a full-market **3-layer AI scanner with buyability filtering**, and consolidated Chinese narrative reports via Ollama.
+The stock module provides a **Chinese A-share (A股) individual stock prediction and analysis workflow**: market data ingestion, technical and fundamental engines, LLM-based news sentiment, **XGBoost** walk-forward classifiers and regressors, market sentiment signals (Fear & Greed, VIX), black swan detection from world news, a full-market **3-layer AI scanner with buyability filtering**, and consolidated Chinese narrative reports via **Ollama**, with an optional **DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings** for the same final synthesis step (dual tab “A股分析 & AI预测”: local vs DeepSeek).
 
 **Primary code location:** `scripts/stock/` (17 modules)
 **HTTP integration:** Flask routes in `scripts/rag/agent.py`
@@ -31,6 +31,7 @@ The stock module provides a **Chinese A-share (A股) individual stock prediction
 │                           User (Browser / API client)                       │
 └─────────────────────────────────────────────────────────────────────────────┘
         │  POST /api/stock/analyze  { symbol, mode }
+        │  POST /api/stock/analyze/deepseek  { symbol }  ← final report only (DeepSeek)
         │  GET/POST /api/stock/watchlist ...
         │  POST /api/stock/train/daily
         │  POST /api/stock/scan/start
@@ -45,16 +46,17 @@ The stock module provides a **Chinese A-share (A股) individual stock prediction
         ├─ mode sentiment / full ──► sentiment (Ollama per article)
         ├─ mode xgboost / full ──► model_xgboost (classification)
         ├─ mode full only ──► llm_reasoning (Ollama synthesis)
+        │   analyze/deepseek ──► llm_reasoning.generate_prediction_deepseek() (optional cloud)
         │
         ├─ train/daily ──► model_price_predictor (regression)
         │   └─ prediction_tracker (verification + aggregate_stats)
         │   └─ market_sentiment + black_swan_detector (appended to results)
         │
-        └─ scan/start ──► scanner (3-layer) + hot_sectors
-                └─ Layer 3: Ollama JSON scoring
+        └─ scan/start ──► scanner (3-layer) + hot_sectors + optional post–Layer 3 DeepSeek (TOP 5)
+                └─ Layer 3: Ollama JSON scoring; if `use_deepseek`, scanner progress includes a final DeepSeek step (**AI 股票推荐** “Phase 5”-style pass: enrich each of up to **five** picks)
         ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  On disk: C:/reports/stock/  │  External: akshare, Sina, EastMoney, Ollama │
+│  On disk: C:/reports/stock/  │  External: akshare, Sina, EastMoney, Ollama; optional DeepSeek (stock synthesis) │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -63,7 +65,7 @@ The stock module provides a **Chinese A-share (A股) individual stock prediction
 ## Module Dependency Graph
 
 ```
-config.py  ◄── used by all stock modules (paths, Ollama, MODEL_USAGE)
+config.py  ◄── used by all stock modules (paths, Ollama, MODEL_USAGE, call_deepseek / get_deepseek_key)
 
 fetch_market_data.py ──► akshare, requests (Sina + EastMoney fallbacks)
 watchlist.py ──────────► config, fetch_market_data
@@ -83,11 +85,11 @@ market_sentiment.py ───► requests (alternative.me, CNN, Yahoo), config
 black_swan_detector.py ► config (reads world-news-data.json from Daily Fetch)
 
 llm_reasoning.py ──────► technical_analysis, fundamental_analysis,
-                         sentiment, requests (Ollama), config
+                         sentiment, requests (Ollama), config, call_deepseek (optional)
 
 scanner.py ────────────► hot_sectors, technical_analysis, sentiment,
                          fundamental_analysis, fetch_market_data,
-                         requests (Ollama), config
+                         requests (Ollama), config, call_deepseek (optional TOP 5)
 ```
 
 ---
@@ -161,8 +163,9 @@ See [market-signals-impl.md](./market-signals-impl.md) for full details.
 | Category | Endpoints | Description |
 |----------|-----------|-------------|
 | Analysis | `POST /api/stock/analyze` | Run analysis modes |
+| Analysis (DeepSeek) | `POST /api/stock/analyze/deepseek` | Final synthesis only via `generate_prediction_deepseek()` (all upstream data computed locally first) |
 | Watchlist | `GET/POST/DELETE /api/stock/watchlist` | CRUD + refresh |
-| Scanner | `POST scan/start`, `GET scan/status/result/dates` | 3-layer AI scan |
+| Scanner | `POST scan/start` (body may include `use_deepseek`), `GET scan/status/result/dates` | 3-layer AI scan; optional DeepSeek pass on **TOP 5** picks after Layer 3 |
 | Training | `POST train/daily`, `GET train/status` | Price prediction training |
 | Prediction | `GET predict/<symbol>` | Per-stock prediction + accuracy |
 | Sentiment | `GET sentiment` | Fear & Greed + VIX |
@@ -235,7 +238,7 @@ For the full **phased engineering roadmap** with concrete module designs, verifi
 | pandas-ta | Technical indicators |
 | xgboost (≥ 2.0) | Classifier + regressor |
 | scikit-learn | LabelEncoder, utilities |
-| requests | Ollama HTTP, fallback APIs |
+| requests | Ollama HTTP, optional DeepSeek HTTPS (`config.call_deepseek`), fallback APIs |
 | numpy | Numerical operations |
 
 ### Ollama Models
@@ -245,3 +248,4 @@ For the full **phased engineering roadmap** with concrete module designs, verifi
 | FAST | qwen3:1.7b | Sentiment per article |
 | NORMAL | qwen3.5:4b | Reserved |
 | HEAVY | qwen3.5:4b | LLM synthesis, scanner Layer 3 |
+| Cloud (opt.) | deepseek-reasoner | `generate_prediction_deepseek`, scanner TOP 5 enrichment — **optional DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings**; not used for per-article sentiment |

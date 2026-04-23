@@ -5,27 +5,27 @@ tags:
   - system-overview
 category: design
 status: current
-last-updated: 2026-04-20
+last-updated: 2026-04-23
 ---
 
 # Jarvis — System Architecture
 
 > A comprehensive architecture document describing the Jarvis personal AI assistant system: components, data flow, integration points, and deployment topology.
 
-**Last updated:** 2026-04-20
+**Last updated:** 2026-04-23
 
 ---
 
 ## Executive Summary
 
-Jarvis is a fully local, privacy-first personal AI assistant that combines:
+Jarvis is a **privacy-first** personal AI assistant (RAG, briefing, and most stock **compute** stay local) that combines:
 
 - **Daily intelligence briefing** — automated collection from 16 news sources, PDF/audio generation
 - **RAG-powered chat** — AI answers grounded in 18,000+ knowledge chunks
 - **Stock market analysis** — ML-powered A-share prediction with XGBoost and LLM reasoning
 - **Remote access** — Telegram bot for on-the-go interaction
 
-All processing runs on-premise. No data leaves the user's machine.
+By default, processing runs on-premise. RAG chat and the daily briefing pipeline stay fully local. For **stock analysis only**, an optional **DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings** can perform the final narrative synthesis: technical, fundamental, ML, and fund-flow computation remain local; only that last step may call the cloud if a key is configured.
 
 ---
 
@@ -44,6 +44,7 @@ C4Context
 
     System_Ext(news_sources, "News Sources", "arXiv, HuggingFace, OpenAI, Anthropic, DeepMind, TechCrunch, GitHub, MIT Review, The Rundown, BBC, Reuters, AP, DW, Guardian, Chinese media")
     System_Ext(ollama, "Ollama", "Local LLM inference server (qwen3.5:4b, qwen3:1.7b)")
+    System_Ext(deepseek, "DeepSeek API (optional)", "OpenAI-compatible cloud; deepseek-reasoner — stock synthesis only, if key in Global Settings")
     System_Ext(atlassian, "Atlassian Cloud", "Confluence wiki + Jira project tracking")
     System_Ext(git_repos, "Git Repositories", "6 project repos for commit tracking")
     System_Ext(akshare, "AKShare / Sina", "A-share market data, financials, news")
@@ -55,6 +56,7 @@ C4Context
     Rel(telegram_api, jarvis, "Polling")
     Rel(jarvis, news_sources, "Scrape via Playwright")
     Rel(jarvis, ollama, "HTTP API", "localhost:11434")
+    Rel(jarvis, deepseek, "HTTPS (optional)", "api.deepseek.com — stock only")
     Rel(jarvis, atlassian, "REST API")
     Rel(jarvis, git_repos, "git CLI")
     Rel(jarvis, akshare, "Python API")
@@ -68,13 +70,14 @@ C4Context
 │                              EXTERNAL SYSTEMS                                    │
 │                                                                                 │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌────────┐  │
-│  │16 News   │ │ Ollama   │ │Atlassian │ │ 6 Git    │ │ AKShare  │ │Edge TTS│  │
-│  │Sources   │ │ LLM      │ │Confluence│ │ Repos    │ │ (A-share)│ │        │  │
-│  │(web)     │ │ :11434   │ │+ Jira    │ │          │ │ + Sina   │ │        │  │
-│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └───┬────┘  │
-└───────┼─────────────┼────────────┼────────────┼────────────┼───────────┼────────┘
-        │ Playwright  │ HTTP API   │ REST API   │ git CLI    │ Python   │ HTTPS
-        ▼             ▼            ▼            ▼            ▼          ▼
+│  │16 News   │ │ Ollama   │ │ DeepSeek │ │Atlassian │ │ 6 Git    │ │ AKShare  │ │Edge TTS│  │
+│  │Sources   │ │ LLM      │ │ (opt.)   │ │Confluence│ │ Repos    │ │ (A-share)│ │        │  │
+│  │(web)     │ │ :11434   │ │ API      │ │+ Jira    │ │          │ │ + Sina   │ │        │  │
+│  └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └────┬─────┘ └───┬────┘  │
+└───────┼─────────────┼────────────┼────────────┼────────────┼────────────┼───────────┼────────┘
+        │ Playwright  │ HTTP API   │ HTTPS*     │ REST API   │ git CLI    │ Python   │ HTTPS
+        * DeepSeek: optional stock-only final synthesis
+        ▼             ▼            ▼            ▼            ▼            ▼          ▼
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                           JARVIS SYSTEM (localhost)                              │
 │                                                                                 │
@@ -132,6 +135,7 @@ graph TB
 
     subgraph Intelligence["🧠 Intelligence Layer"]
         Ollama["Ollama LLM<br/>(qwen3.5:4b)"]
+        DeepSeekOpt["DeepSeek API (opt.)<br/>(deepseek-reasoner, stock)"]
         NarrationLLM["Narration LLM<br/>(qwen3:1.7b)"]
         Embeddings["SentenceTransformers<br/>(all-MiniLM-L6-v2)"]
         XGBoost["XGBoost Models<br/>(walk-forward)"]
@@ -170,6 +174,7 @@ graph TB
 
     StockAnalysis --> XGBoost
     StockAnalysis --> Scanner
+    StockAnalysis -.->|optional| DeepSeekOpt
 
     AudioGen --> NarrationLLM
     PDFGen --> Reports
@@ -343,7 +348,7 @@ flowchart TB
     subgraph ScannerLayer["Market Scanner"]
         L1["Layer 1: Filter<br/>(5000+ → 100)<br/>Price, PE, Turnover"]
         L2["Layer 2: Score<br/>(100 → 20)<br/>TA + Sentiment"]
-        L3["Layer 3: LLM Rank<br/>(20 → TOP 5)<br/>Buy range + reasoning"]
+        L3["Layer 3: LLM Rank<br/>(20 → TOP 5)<br/>Ollama + optional DeepSeek pass"]
     end
 
     subgraph OutputLayer["Output"]
@@ -484,6 +489,9 @@ mindmap
         qwen3.5:4b (chat)
         qwen3:1.7b (narration)
         qwen3-vl:8b (vision)
+      DeepSeek opt stock
+        deepseek-reasoner
+        Global Settings key
       SentenceTransformers
         all-MiniLM-L6-v2
         384-dim embeddings
@@ -528,7 +536,7 @@ mindmap
 
 | Decision | Choice | Rationale |
 |----------|--------|-----------|
-| LLM hosting | Ollama (local) | Full privacy, no API costs, no network dependency |
+| LLM hosting | Ollama (local); optional **DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings** | Default privacy and offline chat; users may opt in to cloud for stock narrative only (not RAG/briefing) |
 | Vector DB | Qdrant in-memory + JSON snapshot | Simple deployment (no server), fast queries, portable |
 | Embedding model | all-MiniLM-L6-v2 (384-dim) | Small, fast, good quality-to-speed ratio for CPU |
 | Web framework | Flask | Lightweight, easy SSE streaming, minimal overhead |
@@ -606,6 +614,8 @@ localhost
     │
     ├── :11434  ─── Ollama LLM API (always running)
     │
+    ├── (outbound) ── api.deepseek.com — optional **DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings** (not used by RAG or briefing)
+    │
     ├── :18888  ─── Search UI (Flask, no LLM required for search)
     │                 GET  /              → Web interface
     │                 GET  /api/search    → Semantic + hybrid search
@@ -642,6 +652,7 @@ localhost
 │    ─ Atlassian API calls (if configured)                     │
 │    ─ Telegram Bot API (messages, SOCKS proxy supported)       │
 │    ─ AKShare (market data fetch)                              │
+│    ─ DeepSeek API (optional; stock final synthesis only, if key set) │
 │  • Telegram bot: owner-only access (single user ID check)    │
 │  • No credentials stored in code (env vars / config files)   │
 └──────────────────────────────────────────────────────────────┘

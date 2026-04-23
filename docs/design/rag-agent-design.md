@@ -237,7 +237,9 @@ Both servers collect user feedback via `/api/feedback`:
 | `/api/toolbar/commit-summary` | POST | Run commit summary tool |
 | `/api/toolbar/jira-report` | POST | Run Jira report tool |
 | `/api/feedback` | POST | Record user interaction for feedback-weighted ranking |
-| `/api/settings` | GET/POST | Global settings (audio language per type: AI, World, China, Knowledge) |
+| `/api/settings` | GET/POST | Global settings (audio languages, API key status). Persisted to `.global_settings.json` |
+| `/api/settings/deepseek-key` | POST | Set DeepSeek API key (stored separately for security) |
+| `/api/deepseek/test` | POST | Test DeepSeek API connection with a simple chat completion |
 | `/api/daily-fetch` | POST | Start Daily Fetch background job |
 | `/api/daily-fetch/<job_id>` | GET | Poll Daily Fetch progress |
 | `/api/stock/analyze` | POST | Full stock analysis (technical, fundamental, sentiment, ML, LLM synthesis) |
@@ -247,6 +249,14 @@ Both servers collect user feedback via `/api/feedback`:
 | `/api/stock/scan/results` | GET | Get scanner results (with date filter) |
 | `/api/stock/predict` | POST | ML price prediction + verification for watchlist stocks |
 | `/api/stock/signals` | GET | Market sentiment (Fear & Greed, VIX) + black swan detection |
+| `/api/stock/national-team` | GET | National team ETF share monitoring (16 core ETFs, trend) |
+| `/api/stock/china-data` | GET | All China market data summary (northbound, fund flow, national team) |
+| `/api/stock/china-data/fund-flow/<sym>` | GET | Individual stock fund flow signals |
+| `/api/stock/timing/train` | POST | Train dual buy/exit timing models |
+| `/api/stock/timing/status` | GET | Timing model training status |
+| `/api/stock/timing/predict/<sym>` | GET | Get timing signal for a stock |
+| `/api/stock/backtest/<sym>` | POST | Run backtest with A-share constraints |
+| `/api/stock/backtest/<sym>/results` | GET | Get latest backtest results |
 
 ### POST /api/agent
 

@@ -55,6 +55,25 @@ Used by: `fetch_market_data`, `market_sentiment`, `hot_sectors`, `scanner`
 
 ---
 
+## DeepSeek API Integration
+
+| Variable | Default | Source |
+|----------|---------|--------|
+| `DEEPSEEK_API_URL` | `https://api.deepseek.com/chat/completions` | Hardcoded |
+| `DEEPSEEK_MODEL` | `deepseek-reasoner` | Hardcoded |
+| API Key | `""` | `.global_settings.json` > env `DEEPSEEK_API_KEY` |
+
+### Key Functions
+
+| Function | Purpose |
+|----------|---------|
+| `get_deepseek_key()` | Resolve API key (settings file → env var) |
+| `call_deepseek(system, user, max_tokens, temp)` | Generic chat completion call, returns `{ok, content, reasoning_content, model, usage}` |
+
+Used by: `llm_reasoning.generate_prediction_deepseek()`, `scanner._run_deepseek_for_picks()`
+
+---
+
 ## Other Settings
 
 | Variable | Value | Purpose |

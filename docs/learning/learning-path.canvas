@@ -1,493 +1,62 @@
 {
-  "nodes": [
-    {
-      "id": "title",
-      "type": "text",
-      "text": "# Jarvis Learning Path\n\nFollow the arrows for recommended reading order.\nClick any card to open that chapter.\n\n**4 tech phases** (left) + **independent stock track** (right)",
-      "x": -600,
-      "y": -500,
-      "width": 300,
-      "height": 160,
-      "color": "4"
-    },
-    {
-      "id": "hub",
-      "type": "file",
-      "file": "learning/README.md",
-      "x": -600,
-      "y": -300,
-      "width": 300,
-      "height": 80
-    },
-
-    {
-      "id": "grp-phase1",
-      "type": "group",
-      "label": "Phase 1: Foundations (Weeks 1-2)",
-      "x": -240,
-      "y": -520,
-      "width": 900,
-      "height": 180,
-      "color": "4"
-    },
-    {
-      "id": "p1-ml1",
-      "type": "file",
-      "file": "learning/machine-learning/ch1-ml-fundamentals.md",
-      "x": -200,
-      "y": -480,
-      "width": 260,
-      "height": 100
-    },
-    {
-      "id": "p1-ml2",
-      "type": "file",
-      "file": "learning/machine-learning/ch2-model-training-evaluation.md",
-      "x": 100,
-      "y": -480,
-      "width": 260,
-      "height": 100
-    },
-    {
-      "id": "p1-hf1",
-      "type": "file",
-      "file": "learning/huggingface/ch1-getting-started.md",
-      "x": 400,
-      "y": -480,
-      "width": 240,
-      "height": 100
-    },
-
-    {
-      "id": "grp-phase2",
-      "type": "group",
-      "label": "Phase 2: Core RAG (Weeks 3-4)",
-      "x": -240,
-      "y": -260,
-      "width": 1180,
-      "height": 180,
-      "color": "5"
-    },
-    {
-      "id": "p2-rag1",
-      "type": "file",
-      "file": "learning/rag/ch1-rag-concepts.md",
-      "x": -200,
-      "y": -220,
-      "width": 240,
-      "height": 100
-    },
-    {
-      "id": "p2-hf2",
-      "type": "file",
-      "file": "learning/huggingface/ch2-tokenization.md",
-      "x": 80,
-      "y": -220,
-      "width": 240,
-      "height": 100
-    },
-    {
-      "id": "p2-rag2",
-      "type": "file",
-      "file": "learning/rag/ch3-vector-search-explained.md",
-      "x": 360,
-      "y": -220,
-      "width": 280,
-      "height": 100
-    },
-    {
-      "id": "p2-hf4",
-      "type": "file",
-      "file": "learning/huggingface/sentence-transformers.md",
-      "x": 680,
-      "y": -220,
-      "width": 240,
-      "height": 100
-    },
-
-    {
-      "id": "grp-phase3",
-      "type": "group",
-      "label": "Phase 3: Retrieval Deep Dive (Weeks 5-6)",
-      "x": -240,
-      "y": 0,
-      "width": 900,
-      "height": 180,
-      "color": "6"
-    },
-    {
-      "id": "p3-hybrid",
-      "type": "file",
-      "file": "learning/rag/hybrid-search-reranking.md",
-      "x": -200,
-      "y": 40,
-      "width": 280,
-      "height": 100
-    },
-    {
-      "id": "p3-hf3",
-      "type": "file",
-      "file": "learning/huggingface/ch3-model-selection.md",
-      "x": 120,
-      "y": 40,
-      "width": 240,
-      "height": 100
-    },
-    {
-      "id": "p3-eval",
-      "type": "file",
-      "file": "learning/rag/ch9-rag-evaluation.md",
-      "x": 400,
-      "y": 40,
-      "width": 240,
-      "height": 100
-    },
-
-    {
-      "id": "grp-phase4",
-      "type": "group",
-      "label": "Phase 4: Advanced (Weeks 7+)",
-      "x": -240,
-      "y": 260,
-      "width": 900,
-      "height": 180,
-      "color": "3"
-    },
-    {
-      "id": "p4-ml3",
-      "type": "file",
-      "file": "learning/machine-learning/ch3-data-preprocessing.md",
-      "x": -200,
-      "y": 300,
-      "width": 260,
-      "height": 100
-    },
-    {
-      "id": "p4-adv",
-      "type": "file",
-      "file": "learning/rag/ch6-advanced-rag-techniques.md",
-      "x": 100,
-      "y": 300,
-      "width": 260,
-      "height": 100
-    },
-    {
-      "id": "p4-llm",
-      "type": "file",
-      "file": "learning/llm/ollama-local-llm.md",
-      "x": 400,
-      "y": 300,
-      "width": 240,
-      "height": 100
-    },
-
-    {
-      "id": "grp-stock",
-      "type": "group",
-      "label": "Stock Investing Track (独立学习路径)",
-      "x": 800,
-      "y": -520,
-      "width": 340,
-      "height": 960,
-      "color": "1"
-    },
-    {
-      "id": "stk1",
-      "type": "file",
-      "file": "learning/stock/ch1-stock-market-basics.md",
-      "x": 840,
-      "y": -480,
-      "width": 260,
-      "height": 60
-    },
-    {
-      "id": "stk2",
-      "type": "file",
-      "file": "learning/stock/ch2-financial-statements.md",
-      "x": 840,
-      "y": -400,
-      "width": 260,
-      "height": 60
-    },
-    {
-      "id": "stk3",
-      "type": "file",
-      "file": "learning/stock/ch3-valuation-methods.md",
-      "x": 840,
-      "y": -320,
-      "width": 260,
-      "height": 60
-    },
-    {
-      "id": "stk4",
-      "type": "file",
-      "file": "learning/stock/ch4-technical-analysis.md",
-      "x": 840,
-      "y": -240,
-      "width": 260,
-      "height": 60
-    },
-    {
-      "id": "stk5",
-      "type": "file",
-      "file": "learning/stock/ch5-risk-management.md",
-      "x": 840,
-      "y": -160,
-      "width": 260,
-      "height": 60
-    },
-    {
-      "id": "stk6",
-      "type": "file",
-      "file": "learning/stock/ch6-investment-strategies.md",
-      "x": 840,
-      "y": -80,
-      "width": 260,
-      "height": 60
-    },
-    {
-      "id": "stk7",
-      "type": "file",
-      "file": "learning/stock/ch7-quantitative-methods.md",
-      "x": 840,
-      "y": 0,
-      "width": 260,
-      "height": 60
-    },
-    {
-      "id": "stk8",
-      "type": "file",
-      "file": "learning/stock/ch8-jarvis-workflow.md",
-      "x": 840,
-      "y": 80,
-      "width": 260,
-      "height": 60
-    },
-    {
-      "id": "stk9",
-      "type": "file",
-      "file": "learning/stock/ch9-enhancement-roadmap.md",
-      "x": 840,
-      "y": 160,
-      "width": 260,
-      "height": 60
-    },
-    {
-      "id": "stk10",
-      "type": "file",
-      "file": "learning/stock/ch10-astock-deep-dive.md",
-      "x": 840,
-      "y": 240,
-      "width": 260,
-      "height": 60
-    },
-
-    {
-      "id": "ref-guides",
-      "type": "group",
-      "label": "Reference Guides (read alongside any phase)",
-      "x": -240,
-      "y": 520,
-      "width": 900,
-      "height": 160,
-      "color": "2"
-    },
-    {
-      "id": "ref-rag-arch",
-      "type": "file",
-      "file": "learning/rag/rag-architecture.md",
-      "x": -200,
-      "y": 560,
-      "width": 200,
-      "height": 80
-    },
-    {
-      "id": "ref-qdrant",
-      "type": "file",
-      "file": "learning/rag/qdrant-vector-db.md",
-      "x": 40,
-      "y": 560,
-      "width": 200,
-      "height": 80
-    },
-    {
-      "id": "ref-prompt",
-      "type": "file",
-      "file": "learning/llm/llm-prompt-engineering.md",
-      "x": 280,
-      "y": 560,
-      "width": 200,
-      "height": 80
-    },
-    {
-      "id": "ref-flask",
-      "type": "file",
-      "file": "learning/python-web/flask-web-server.md",
-      "x": 520,
-      "y": 560,
-      "width": 200,
-      "height": 80
-    }
-  ],
-  "edges": [
-    {
-      "id": "e-p1-ml1-ml2",
-      "fromNode": "p1-ml1",
-      "toNode": "p1-ml2",
-      "fromSide": "right",
-      "toSide": "left",
-      "label": "then"
-    },
-    {
-      "id": "e-p1-ml2-hf1",
-      "fromNode": "p1-ml2",
-      "toNode": "p1-hf1",
-      "fromSide": "right",
-      "toSide": "left",
-      "label": "then"
-    },
-    {
-      "id": "e-phase1-2",
-      "fromNode": "p1-hf1",
-      "toNode": "p2-rag1",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "label": "Phase 2"
-    },
-    {
-      "id": "e-p2-rag1-hf2",
-      "fromNode": "p2-rag1",
-      "toNode": "p2-hf2",
-      "fromSide": "right",
-      "toSide": "left",
-      "label": "then"
-    },
-    {
-      "id": "e-p2-hf2-rag2",
-      "fromNode": "p2-hf2",
-      "toNode": "p2-rag2",
-      "fromSide": "right",
-      "toSide": "left",
-      "label": "then"
-    },
-    {
-      "id": "e-p2-rag2-hf4",
-      "fromNode": "p2-rag2",
-      "toNode": "p2-hf4",
-      "fromSide": "right",
-      "toSide": "left",
-      "label": "then"
-    },
-    {
-      "id": "e-phase2-3",
-      "fromNode": "p2-hf4",
-      "toNode": "p3-hybrid",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "label": "Phase 3"
-    },
-    {
-      "id": "e-p3-hybrid-hf3",
-      "fromNode": "p3-hybrid",
-      "toNode": "p3-hf3",
-      "fromSide": "right",
-      "toSide": "left",
-      "label": "then"
-    },
-    {
-      "id": "e-p3-hf3-eval",
-      "fromNode": "p3-hf3",
-      "toNode": "p3-eval",
-      "fromSide": "right",
-      "toSide": "left",
-      "label": "then"
-    },
-    {
-      "id": "e-phase3-4",
-      "fromNode": "p3-eval",
-      "toNode": "p4-ml3",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "label": "Phase 4"
-    },
-    {
-      "id": "e-p4-ml3-adv",
-      "fromNode": "p4-ml3",
-      "toNode": "p4-adv",
-      "fromSide": "right",
-      "toSide": "left",
-      "label": "then"
-    },
-    {
-      "id": "e-p4-adv-llm",
-      "fromNode": "p4-adv",
-      "toNode": "p4-llm",
-      "fromSide": "right",
-      "toSide": "left",
-      "label": "then"
-    },
-    {
-      "id": "e-stk1-2",
-      "fromNode": "stk1",
-      "toNode": "stk2",
-      "fromSide": "bottom",
-      "toSide": "top"
-    },
-    {
-      "id": "e-stk2-3",
-      "fromNode": "stk2",
-      "toNode": "stk3",
-      "fromSide": "bottom",
-      "toSide": "top"
-    },
-    {
-      "id": "e-stk3-4",
-      "fromNode": "stk3",
-      "toNode": "stk4",
-      "fromSide": "bottom",
-      "toSide": "top"
-    },
-    {
-      "id": "e-stk4-5",
-      "fromNode": "stk4",
-      "toNode": "stk5",
-      "fromSide": "bottom",
-      "toSide": "top"
-    },
-    {
-      "id": "e-stk5-6",
-      "fromNode": "stk5",
-      "toNode": "stk6",
-      "fromSide": "bottom",
-      "toSide": "top"
-    },
-    {
-      "id": "e-stk6-7",
-      "fromNode": "stk6",
-      "toNode": "stk7",
-      "fromSide": "bottom",
-      "toSide": "top"
-    },
-    {
-      "id": "e-stk7-8",
-      "fromNode": "stk7",
-      "toNode": "stk8",
-      "fromSide": "bottom",
-      "toSide": "top"
-    },
-    {
-      "id": "e-stk8-9",
-      "fromNode": "stk8",
-      "toNode": "stk9",
-      "fromSide": "bottom",
-      "toSide": "top"
-    },
-    {
-      "id": "e-stk9-10",
-      "fromNode": "stk9",
-      "toNode": "stk10",
-      "fromSide": "bottom",
-      "toSide": "top"
-    }
-  ]
+	"nodes":[
+		{"id":"title","type":"text","text":"# Jarvis Learning Path\n\nFollow the arrows for recommended reading order.\nClick any card to open that chapter.\n\n**4 tech phases** (left) + **independent stock track** (right)","x":-600,"y":-500,"width":300,"height":160,"color":"4"},
+		{"id":"hub","type":"file","file":"learning/README.md","x":-600,"y":-300,"width":300,"height":80},
+		{"id":"grp-phase1","type":"group","label":"Phase 1: Foundations (Weeks 1-2)","x":-240,"y":-520,"width":900,"height":180,"color":"4"},
+		{"id":"p1-ml1","type":"file","file":"learning/machine-learning/ch1-ml-fundamentals.md","x":-200,"y":-480,"width":260,"height":100},
+		{"id":"p1-ml2","type":"file","file":"learning/machine-learning/ch2-model-training-evaluation.md","x":100,"y":-480,"width":260,"height":100},
+		{"id":"p1-hf1","type":"file","file":"learning/huggingface/ch1-getting-started.md","x":400,"y":-480,"width":240,"height":100},
+		{"id":"grp-phase2","type":"group","label":"Phase 2: Core RAG (Weeks 3-4)","x":-240,"y":-260,"width":1180,"height":180,"color":"5"},
+		{"id":"p2-rag1","type":"file","file":"learning/rag/ch1-rag-concepts.md","x":-200,"y":-220,"width":240,"height":100},
+		{"id":"p2-hf2","type":"file","file":"learning/huggingface/ch2-tokenization.md","x":80,"y":-220,"width":240,"height":100},
+		{"id":"p2-rag2","type":"file","file":"learning/rag/ch3-vector-search-explained.md","x":360,"y":-220,"width":280,"height":100},
+		{"id":"p2-hf4","type":"file","file":"learning/huggingface/sentence-transformers.md","x":680,"y":-220,"width":240,"height":100},
+		{"id":"grp-phase3","type":"group","label":"Phase 3: Retrieval Deep Dive (Weeks 5-6)","x":-240,"y":0,"width":900,"height":180,"color":"6"},
+		{"id":"p3-hybrid","type":"file","file":"learning/rag/hybrid-search-reranking.md","x":-200,"y":40,"width":280,"height":100},
+		{"id":"p3-hf3","type":"file","file":"learning/huggingface/ch3-model-selection.md","x":120,"y":40,"width":240,"height":100},
+		{"id":"p3-eval","type":"file","file":"learning/rag/ch9-rag-evaluation.md","x":400,"y":40,"width":240,"height":100},
+		{"id":"grp-phase4","type":"group","label":"Phase 4: Advanced (Weeks 7+)","x":-240,"y":260,"width":900,"height":180,"color":"3"},
+		{"id":"p4-ml3","type":"file","file":"learning/machine-learning/ch3-data-preprocessing.md","x":-200,"y":300,"width":260,"height":100},
+		{"id":"p4-adv","type":"file","file":"learning/rag/ch6-advanced-rag-techniques.md","x":100,"y":300,"width":260,"height":100},
+		{"id":"p4-llm","type":"file","file":"learning/llm/ollama-local-llm.md","x":400,"y":300,"width":240,"height":100},
+		{"id":"grp-stock","type":"group","label":"Stock Investing Track (独立学习路径)","x":800,"y":-520,"width":340,"height":960,"color":"1"},
+		{"id":"stk1","type":"file","file":"learning/stock/ch1-stock-market-basics.md","x":840,"y":-480,"width":260,"height":60},
+		{"id":"stk2","type":"file","file":"learning/stock/ch2-financial-statements.md","x":840,"y":-400,"width":260,"height":60},
+		{"id":"stk3","type":"file","file":"learning/stock/ch3-valuation-methods.md","x":840,"y":-320,"width":260,"height":60},
+		{"id":"stk4","type":"file","file":"learning/stock/ch4-technical-analysis.md","x":840,"y":-240,"width":260,"height":60},
+		{"id":"stk5","type":"file","file":"learning/stock/ch5-risk-management.md","x":840,"y":-160,"width":260,"height":60},
+		{"id":"stk6","type":"file","file":"learning/stock/ch6-investment-strategies.md","x":840,"y":-80,"width":260,"height":60},
+		{"id":"stk7","type":"file","file":"learning/stock/ch7-quantitative-methods.md","x":840,"y":0,"width":260,"height":60},
+		{"id":"stk8","type":"file","file":"learning/stock/ch8-jarvis-workflow.md","x":840,"y":80,"width":260,"height":60},
+		{"id":"stk9","type":"file","file":"learning/stock/ch9-enhancement-roadmap.md","x":840,"y":160,"width":260,"height":60},
+		{"id":"stk10","type":"file","file":"learning/stock/ch10-astock-deep-dive.md","x":840,"y":240,"width":260,"height":60},
+		{"id":"ref-guides","type":"group","label":"Reference Guides (read alongside any phase)","x":-240,"y":520,"width":900,"height":160,"color":"2"},
+		{"id":"ref-rag-arch","type":"file","file":"learning/rag/rag-architecture.md","x":-200,"y":560,"width":200,"height":80},
+		{"id":"ref-qdrant","type":"file","file":"learning/rag/qdrant-vector-db.md","x":40,"y":560,"width":200,"height":80},
+		{"id":"ref-prompt","type":"file","file":"learning/llm/llm-prompt-engineering.md","x":280,"y":560,"width":200,"height":80},
+		{"id":"ref-flask","type":"file","file":"learning/python-web/flask-web-server.md","x":520,"y":560,"width":200,"height":80}
+	],
+	"edges":[
+		{"id":"e-p1-ml1-ml2","fromNode":"p1-ml1","toNode":"p1-ml2","fromSide":"right","toSide":"left","label":"then"},
+		{"id":"e-p1-ml2-hf1","fromNode":"p1-ml2","toNode":"p1-hf1","fromSide":"right","toSide":"left","label":"then"},
+		{"id":"e-phase1-2","fromNode":"p1-hf1","toNode":"p2-rag1","fromSide":"bottom","toSide":"top","label":"Phase 2"},
+		{"id":"e-p2-rag1-hf2","fromNode":"p2-rag1","toNode":"p2-hf2","fromSide":"right","toSide":"left","label":"then"},
+		{"id":"e-p2-hf2-rag2","fromNode":"p2-hf2","toNode":"p2-rag2","fromSide":"right","toSide":"left","label":"then"},
+		{"id":"e-p2-rag2-hf4","fromNode":"p2-rag2","toNode":"p2-hf4","fromSide":"right","toSide":"left","label":"then"},
+		{"id":"e-phase2-3","fromNode":"p2-hf4","toNode":"p3-hybrid","fromSide":"bottom","toSide":"top","label":"Phase 3"},
+		{"id":"e-p3-hybrid-hf3","fromNode":"p3-hybrid","toNode":"p3-hf3","fromSide":"right","toSide":"left","label":"then"},
+		{"id":"e-p3-hf3-eval","fromNode":"p3-hf3","toNode":"p3-eval","fromSide":"right","toSide":"left","label":"then"},
+		{"id":"e-phase3-4","fromNode":"p3-eval","toNode":"p4-ml3","fromSide":"bottom","toSide":"top","label":"Phase 4"},
+		{"id":"e-p4-ml3-adv","fromNode":"p4-ml3","toNode":"p4-adv","fromSide":"right","toSide":"left","label":"then"},
+		{"id":"e-p4-adv-llm","fromNode":"p4-adv","toNode":"p4-llm","fromSide":"right","toSide":"left","label":"then"},
+		{"id":"e-stk1-2","fromNode":"stk1","toNode":"stk2","fromSide":"bottom","toSide":"top"},
+		{"id":"e-stk2-3","fromNode":"stk2","toNode":"stk3","fromSide":"bottom","toSide":"top"},
+		{"id":"e-stk3-4","fromNode":"stk3","toNode":"stk4","fromSide":"bottom","toSide":"top"},
+		{"id":"e-stk4-5","fromNode":"stk4","toNode":"stk5","fromSide":"bottom","toSide":"top"},
+		{"id":"e-stk5-6","fromNode":"stk5","toNode":"stk6","fromSide":"bottom","toSide":"top"},
+		{"id":"e-stk6-7","fromNode":"stk6","toNode":"stk7","fromSide":"bottom","toSide":"top"},
+		{"id":"e-stk7-8","fromNode":"stk7","toNode":"stk8","fromSide":"bottom","toSide":"top"},
+		{"id":"e-stk8-9","fromNode":"stk8","toNode":"stk9","fromSide":"bottom","toSide":"top"},
+		{"id":"e-stk9-10","fromNode":"stk9","toNode":"stk10","fromSide":"bottom","toSide":"top"}
+	]
 }

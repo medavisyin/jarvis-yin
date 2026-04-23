@@ -4,7 +4,7 @@ tags:
   - navigation
 category: hub
 status: current
-last-updated: 2026-04-21
+last-updated: 2026-04-22
 ---
 
 # Jarvis Documentation
@@ -63,6 +63,7 @@ docs/
 │
 ├── plans/                       # Implementation plans & roadmaps
 │   ├── 2026-04-17-jarvis-next.md    # Enhancement roadmap (Tier 0–5)
+│   ├── 2026-04-22-china-market-adaptation.md  # A股适配: 资金选股+择时+回测
 │   ├── 2026-04-12-stock-prediction.md
 │   ├── plan-advanced-rag.md
 │   └── plan-ml-integration.md
@@ -126,10 +127,11 @@ Detailed developer documentation. See [Implementation Index](implementation/READ
 
 | Document | Topic |
 |----------|-------|
-| [Stock Index](implementation/stock/README.md) | Navigation hub (10 docs) |
+| [Stock Index](implementation/stock/README.md) | Navigation hub (11 docs) |
 | [Architecture](implementation/stock/stock-prediction-impl.md) | Overview, anti-overfitting, module map |
 | [ML Pipeline](implementation/stock/ml-pipeline-impl.md) | XGBoost, walk-forward, prediction tracking |
-| [Scanner](implementation/stock/scanner-impl.md) | 3-layer market scanner with LLM ranking |
+| [Scanner](implementation/stock/scanner-impl.md) | 3-layer fund-driven market scanner with LLM ranking |
+| [**China Market Adaptation**](implementation/stock/china-market-impl.md) | A股数据层、择时模型、回测引擎 (3 new modules) |
 | [API Routes](implementation/stock/api-routes-impl.md) | All stock API endpoints |
 
 **Beginner Guides** (organized by learning track under `learning/`):
@@ -165,6 +167,7 @@ Read in order to understand the concepts behind the system:
 |----------|--------|
 | [Jarvis Enhancement Plan](plans/2026-04-17-jarvis-next.md) | Active — Tier 0–5 roadmap |
 | [Stock Prediction Plan](plans/2026-04-12-stock-prediction.md) | Phase 0–4.5 Done |
+| [A股适配: 资金驱动选股 + 择时回测](plans/2026-04-22-china-market-adaptation.md) | ✅ Completed — 7 phases |
 | [Advanced RAG Plan](plans/plan-advanced-rag.md) | Completed |
 | [ML Integration Plan](plans/plan-ml-integration.md) | Phase 1–2 Done |
 
@@ -184,7 +187,9 @@ Read in order to understand the concepts behind the system:
 │                                                              │
 │  Stock Module ──→ Analysis ──→ ML Prediction ──→ AI Synth    │
 │  (akshare data)   (TA, Fund,    (XGBoost)       (Ollama)    │
-│                    Sentiment)    Scanner → TOP 5 推荐         │
+│  + China Data     Sentiment)    Scanner → TOP 5 推荐         │
+│  (资金流/北向/龙虎)              Timing → 买入/回避信号        │
+│  + 国家队ETF监控                Backtest → T+1回测          │
 │                                                              │
 │  Port 18888: Search UI (Library, Chunk Analysis)             │
 │  Port 18889: Jarvis Agent (Chat, Tools, Audio, Stock)        │
@@ -193,6 +198,7 @@ Read in order to understand the concepts behind the system:
 │  Embedding: all-MiniLM-L6-v2 (384-dim)                      │
 │  Vector DB: Qdrant in-memory + JSON snapshot                 │
 │  LLM: Ollama (qwen3.5:4b chat, qwen3:1.7b narration)       │
+│       + DeepSeek API (cloud, via Global Settings)           │
 │  ML: XGBoost (stock prediction, walk-forward validation)     │
 │  TTS: Edge TTS (segmented audio, Chinese/English)            │
 └──────────────────────────────────────────────────────────────┘

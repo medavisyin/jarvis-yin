@@ -1652,12 +1652,46 @@ def api_health():
     return jsonify(status)
 
 
-_GLOBAL_SETTINGS = {
+_SETTINGS_FILE = os.path.join(os.path.dirname(__file__), ".global_settings.json")
+
+_GLOBAL_SETTINGS_DEFAULTS = {
     "audio_lang_ai": "zh",
     "audio_lang_world": "zh",
     "audio_lang_china": "zh",
     "audio_lang_knowledge": "zh",
+    "deepseek_api_key": "",
 }
+
+
+def _load_settings() -> dict:
+    """Load settings from disk, merging with defaults."""
+    settings = dict(_GLOBAL_SETTINGS_DEFAULTS)
+    if os.path.isfile(_SETTINGS_FILE):
+        try:
+            with open(_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                saved = json.loads(f.read())
+            settings.update(saved)
+        except Exception:
+            pass
+    return settings
+
+
+def _save_settings(settings: dict):
+    """Persist settings to disk."""
+    try:
+        with open(_SETTINGS_FILE, "w", encoding="utf-8") as f:
+            f.write(json.dumps(settings, indent=2, ensure_ascii=False))
+    except Exception:
+        pass
+
+
+_GLOBAL_SETTINGS = _load_settings()
+
+
+def _get_deepseek_key() -> str:
+    """Return the configured DeepSeek API key (settings > env var)."""
+    return (_GLOBAL_SETTINGS.get("deepseek_api_key") or "").strip() \
+        or os.environ.get("DEEPSEEK_API_KEY", "")
 
 
 @app.route("/api/settings", methods=["GET", "POST"])
@@ -1665,11 +1699,80 @@ def api_settings():
     """Get or update global settings."""
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
-        for k in _GLOBAL_SETTINGS:
+        for k in _GLOBAL_SETTINGS_DEFAULTS:
             if k in data:
                 _GLOBAL_SETTINGS[k] = data[k]
-        return jsonify({"ok": True, "settings": _GLOBAL_SETTINGS})
-    return jsonify(_GLOBAL_SETTINGS)
+        _save_settings(_GLOBAL_SETTINGS)
+        return jsonify({"ok": True, "settings": _settings_safe()})
+    return jsonify(_settings_safe())
+
+
+def _settings_safe() -> dict:
+    """Return settings with API key masked for GET responses."""
+    out = dict(_GLOBAL_SETTINGS)
+    key = out.get("deepseek_api_key", "")
+    if key and len(key) > 8:
+        out["deepseek_api_key_masked"] = key[:4] + "****" + key[-4:]
+    else:
+        out["deepseek_api_key_masked"] = ""
+    out.pop("deepseek_api_key", None)
+    return out
+
+
+@app.route("/api/settings/deepseek-key", methods=["POST"])
+def api_settings_deepseek_key():
+    """Set the DeepSeek API key (separate endpoint for security)."""
+    data = request.get_json(silent=True) or {}
+    key = (data.get("api_key") or "").strip()
+    _GLOBAL_SETTINGS["deepseek_api_key"] = key
+    _save_settings(_GLOBAL_SETTINGS)
+    masked = key[:4] + "****" + key[-4:] if len(key) > 8 else ("****" if key else "")
+    return jsonify({"ok": True, "masked": masked})
+
+
+@app.route("/api/deepseek/test", methods=["POST"])
+def api_deepseek_test():
+    """Test the DeepSeek API connection with a simple chat completion."""
+    data = request.get_json(silent=True) or {}
+    api_key = (data.get("api_key") or "").strip() or _get_deepseek_key()
+    if not api_key:
+        return jsonify({"ok": False, "error": "No API key configured"}), 400
+
+    try:
+        import requests as _req
+        resp = _req.post(
+            "https://api.deepseek.com/chat/completions",
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {api_key}",
+            },
+            json={
+                "model": "deepseek-chat",
+                "messages": [
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": "Say hello in one sentence."},
+                ],
+                "max_tokens": 50,
+                "stream": False,
+            },
+            timeout=30,
+        )
+        if resp.status_code == 200:
+            body = resp.json()
+            reply = body.get("choices", [{}])[0].get("message", {}).get("content", "")
+            model = body.get("model", "unknown")
+            usage = body.get("usage", {})
+            return jsonify({
+                "ok": True,
+                "model": model,
+                "reply": reply,
+                "usage": usage,
+            })
+        else:
+            err = resp.text[:300]
+            return jsonify({"ok": False, "error": f"HTTP {resp.status_code}: {err}"}), resp.status_code
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 500
 
 
 @app.route("/api/switch-model", methods=["GET", "POST"])
@@ -4867,7 +4970,8 @@ _STOCK_MODULES = [
     "fundamental_analysis", "sentiment", "features", "model_xgboost",
     "model_price_predictor", "prediction_tracker", "llm_reasoning",
     "watchlist", "scanner", "hot_sectors", "market_sentiment",
-    "black_swan_detector",
+    "black_swan_detector", "china_market_data", "model_timing",
+    "backtest_engine",
 ]
 
 
@@ -4937,6 +5041,41 @@ def api_stock_analyze():
             xgb_result = train_and_predict(symbol)
             result["xgb_report"] = generate_xgb_report(symbol, xgb_result)
 
+        if mode in ("fund_flow", "full"):
+            try:
+                from china_market_data import stock_fund_flow_signals
+                ff = stock_fund_flow_signals(symbol)
+                phase = ff.get("smart_money_phase", "无信号")
+                score = ff.get("accumulation_score", 0)
+                detail = ff.get("detail", "")
+                lines = [
+                    "# 资金流向 & 聪明钱分析",
+                    f"**聪明钱阶段: {phase}** (布局得分: {score}/100)",
+                    "",
+                ]
+                if detail:
+                    lines.append(f"> {detail}")
+                    lines.append("")
+                lines.append(f"| 指标 | 值 |")
+                lines.append(f"|---|---|")
+                lines.append(f"| 3日主力净流入 | {ff.get('main_net_3d', 'N/A')} |")
+                lines.append(f"| 10日主力净流入 | {ff.get('main_net_10d', 'N/A')} |")
+                lines.append(f"| 3日主力净占比 | {ff.get('main_pct_3d', 'N/A')}% |")
+                lines.append(f"| 超大单占比 | {ff.get('super_large_ratio', 'N/A')} |")
+                lines.append(f"| 价格-资金背离 | {ff.get('fund_price_divergence', 'N/A')} |")
+                lines.append("")
+                phase_guide = {
+                    "布局期": "资金持续流入但价格未涨,主力正在悄悄吸筹 → **可以考虑建仓**",
+                    "拉升期": "资金流入且价格已涨,追高风险大 → **谨慎追高,T+1风险**",
+                    "出货期": "资金流出但价格仍涨,主力可能在出货 → **不建议买入**",
+                    "观察期": "有资金流入迹象但未达布局标准 → **继续观察**",
+                    "无信号": "资金流向不明确 → **暂无明确方向**",
+                }
+                lines.append(f"**建议:** {phase_guide.get(phase, '')}")
+                result["fund_flow_report"] = "\n".join(lines)
+            except Exception as e:
+                log.debug("资金流向分析 %s 失败: %s", symbol, e)
+
         if mode == "full":
             from llm_reasoning import generate_prediction
             result["prediction_report"] = generate_prediction(symbol, stream=False)
@@ -4946,6 +5085,25 @@ def api_stock_analyze():
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"error": f"分析失败: {exc}"}), 500
+
+
+@app.route("/api/stock/analyze/deepseek", methods=["POST"])
+@_with_stock_imports
+def api_stock_analyze_deepseek():
+    """Run DeepSeek API analysis for a stock (final LLM step only)."""
+    body = request.get_json(silent=True) or {}
+    symbol = body.get("symbol", "").strip()
+
+    if not symbol or not symbol.isdigit():
+        return jsonify({"error": "请输入有效的股票代码 (纯数字)"}), 400
+
+    try:
+        from llm_reasoning import generate_prediction_deepseek
+        result = generate_prediction_deepseek(symbol)
+        return jsonify(result)
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": f"DeepSeek 分析失败: {exc}"}), 500
 
 
 @app.route("/api/stock/watchlist", methods=["GET"])
@@ -5011,8 +5169,10 @@ def api_stock_watchlist_refresh():
 def api_stock_scan_start():
     """Start AI stock scanner."""
     try:
+        body = request.get_json(silent=True) or {}
+        use_ds = body.get("use_deepseek", False)
         from scanner import start_scan
-        result = start_scan()
+        result = start_scan(use_deepseek=use_ds)
         return jsonify(result)
     except Exception as exc:
         traceback.print_exc()
@@ -5313,6 +5473,220 @@ def api_stock_risk(symbol):
         return jsonify({"error": str(exc)}), 500
 
 
+# --- Timing Model & Backtest ---
+
+_timing_thread = None
+_timing_lock = __import__("threading").Lock()
+
+
+@app.route("/api/stock/timing/train", methods=["POST"])
+@_with_stock_imports
+def api_stock_timing_train():
+    """Train timing models for all watchlist stocks."""
+    global _timing_thread
+    import threading
+
+    with _timing_lock:
+        if _timing_thread is not None and _timing_thread.is_alive():
+            return jsonify({"ok": False, "error": "择时训练正在进行中"})
+
+    def _run_timing_training():
+        import importlib.util as _ilu
+        _stock_dir = os.path.dirname(os.path.abspath(__file__))
+        _stock_dir = os.path.join(os.path.dirname(_stock_dir), "stock")
+        if _stock_dir not in sys.path:
+            sys.path.insert(0, _stock_dir)
+        _cfg_path = os.path.join(_stock_dir, "config.py")
+        _spec = _ilu.spec_from_file_location("config", _cfg_path)
+        _cfg = _ilu.module_from_spec(_spec)
+        _spec.loader.exec_module(_cfg)
+        sys.modules["config"] = _cfg
+
+        for mod_name in ["watchlist", "model_timing", "features",
+                         "technical_analysis", "china_market_data",
+                         "fetch_market_data"]:
+            if mod_name in sys.modules:
+                del sys.modules[mod_name]
+
+        from watchlist import list_stocks
+        from model_timing import train_timing_model
+
+        stocks = list_stocks()
+        progress_path = os.path.join(_cfg.STOCK_REPORTS_ROOT, "timing_progress.json")
+        progress = {
+            "status": "running",
+            "total": len(stocks),
+            "completed": 0,
+            "current": "",
+            "results": [],
+            "started_at": __import__("datetime").datetime.now().isoformat(),
+        }
+
+        def _save_prog():
+            with open(progress_path, "w", encoding="utf-8") as fp:
+                __import__("json").dump(progress, fp, ensure_ascii=False, indent=2, default=str)
+
+        _save_prog()
+
+        for i, stock in enumerate(stocks):
+            sym = stock.get("symbol", "")
+            if not sym:
+                continue
+            progress["current"] = f"{stock.get('name', sym)} ({sym})"
+            _save_prog()
+
+            try:
+                result = train_timing_model(sym)
+                progress["results"].append({
+                    "symbol": sym,
+                    "name": stock.get("name", ""),
+                    "status": result.get("status", "error"),
+                    "buy_metrics": result.get("buy_metrics"),
+                    "exit_metrics": result.get("exit_metrics"),
+                })
+            except Exception as e:
+                progress["results"].append({"symbol": sym, "error": str(e)})
+
+            progress["completed"] = i + 1
+            _save_prog()
+
+        progress["status"] = "done"
+        progress["finished_at"] = __import__("datetime").datetime.now().isoformat()
+        _save_prog()
+
+    with _timing_lock:
+        _timing_thread = __import__("threading").Thread(target=_run_timing_training, daemon=True)
+        _timing_thread.start()
+
+    return jsonify({"ok": True, "message": "择时训练已启动"})
+
+
+@app.route("/api/stock/timing/status", methods=["GET"])
+@_with_stock_imports
+def api_stock_timing_status():
+    """Get timing training progress."""
+    try:
+        from config import STOCK_REPORTS_ROOT
+        import json as _json
+        path = os.path.join(STOCK_REPORTS_ROOT, "timing_progress.json")
+        if not os.path.isfile(path):
+            return jsonify({"status": "idle"})
+        with open(path, encoding="utf-8") as f:
+            progress = _json.load(f)
+        progress["running"] = _timing_thread is not None and _timing_thread.is_alive()
+        return jsonify(progress)
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/timing/predict/<symbol>", methods=["GET"])
+@_with_stock_imports
+def api_stock_timing_predict(symbol):
+    """Get timing signal for a single stock."""
+    try:
+        from model_timing import predict_timing
+        result = predict_timing(symbol)
+        return jsonify(result)
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/timing/predict-all", methods=["GET"])
+@_with_stock_imports
+def api_stock_timing_predict_all():
+    """Get timing signals for all watchlist stocks."""
+    try:
+        from model_timing import predict_batch
+        from watchlist import list_stocks
+        stocks = list_stocks()
+        symbols = [s["symbol"] for s in stocks if s.get("symbol")]
+        results = predict_batch(symbols)
+        for r in results:
+            for s in stocks:
+                if s["symbol"] == r["symbol"]:
+                    r["name"] = s.get("name", "")
+                    break
+        return jsonify({"predictions": results})
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/backtest/<symbol>", methods=["POST"])
+@_with_stock_imports
+def api_stock_backtest(symbol):
+    """Run backtest for a symbol."""
+    try:
+        from backtest_engine import run_backtest
+        body = request.get_json(silent=True) or {}
+        strategy = body.get("strategy", "timing")
+        capital = float(body.get("capital", 500000))
+        result = run_backtest(symbol, strategy=strategy, initial_capital=capital)
+        from dataclasses import asdict
+        return jsonify(asdict(result))
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/backtest/<symbol>", methods=["GET"])
+@_with_stock_imports
+def api_stock_backtest_get(symbol):
+    """Get latest backtest result for a symbol."""
+    try:
+        from backtest_engine import load_latest_backtest
+        strategy = request.args.get("strategy", "timing")
+        result = load_latest_backtest(symbol, strategy)
+        if result:
+            return jsonify(result)
+        return jsonify({"error": "无回测结果, 请先运行回测"}), 404
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/china-data", methods=["GET"])
+@_with_stock_imports
+def api_stock_china_data():
+    """Fetch all China market data (northbound, margin, limit pool, etc)."""
+    try:
+        from china_market_data import fetch_all_china_data
+        data = fetch_all_china_data()
+        return jsonify(data)
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/china-data/fund-flow/<symbol>", methods=["GET"])
+@_with_stock_imports
+def api_stock_fund_flow(symbol):
+    """Get individual stock fund flow signals."""
+    try:
+        from china_market_data import stock_fund_flow_signals
+        data = stock_fund_flow_signals(symbol)
+        return jsonify(data)
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/national-team", methods=["GET"])
+@_with_stock_imports
+def api_stock_national_team():
+    """Monitor national team ETF share changes."""
+    try:
+        from china_market_data import national_team_monitor, national_team_trend
+        snapshot = national_team_monitor()
+        trend = national_team_trend()
+        return jsonify({"snapshot": snapshot, "trend": trend})
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
 # ===================================================================
 # WEB UI
 # ===================================================================
@@ -5529,7 +5903,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 
 <!-- Global Settings Modal -->
 <div id="globalSettingsModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;justify-content:center;align-items:center">
-  <div style="background:#1a1d2e;border:1px solid #2a2d3e;border-radius:12px;padding:24px;width:380px;max-width:90vw">
+  <div style="background:#1a1d2e;border:1px solid #2a2d3e;border-radius:12px;padding:24px;width:440px;max-width:90vw;max-height:90vh;overflow-y:auto">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
       <h3 style="margin:0;color:#e0e0e0;font-size:1.1em">&#9881; Global Settings</h3>
       <button onclick="closeGlobalSettings()" style="background:none;border:none;color:#8b8fa4;font-size:1.3em;cursor:pointer">&times;</button>
@@ -5560,6 +5934,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
           <select id="settAudioKnowledge" style="background:#1a1d2e;color:#a0a4b8;border:1px solid #3a3d4a;border-radius:4px;padding:4px 8px;font-size:0.85em">
             <option value="zh">中文</option><option value="en">English</option>
           </select>
+        </div>
+      </div>
+    </div>
+    <hr style="border:none;border-top:1px solid #2a2d3e;margin:16px 0">
+    <div style="margin-bottom:16px">
+      <div style="color:#8b8fa4;font-size:0.78em;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">API Keys</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="padding:10px 12px;background:#0f1117;border-radius:6px;border:1px solid #2a2d3e">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+            <span style="font-size:0.88em;color:#e0e0e0">&#128273; DeepSeek API</span>
+            <span id="dsKeyStatus" style="font-size:0.72em;padding:2px 6px;border-radius:4px;background:#1e293b;color:#8b8fa4"></span>
+          </div>
+          <div style="display:flex;gap:6px">
+            <input id="settDeepseekKey" type="password" placeholder="sk-..."
+              style="flex:1;background:#1a1d2e;color:#e0e0e0;border:1px solid #3a3d4a;border-radius:4px;padding:6px 10px;font-size:0.82em;font-family:monospace">
+            <button onclick="toggleDsKeyVisibility()" title="Show/Hide"
+              style="background:#2a2d3e;color:#a0a4b8;border:none;border-radius:4px;padding:4px 8px;cursor:pointer;font-size:0.85em">&#128065;</button>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button onclick="saveDsKey()" style="background:#10b981;color:white;border:none;border-radius:4px;padding:5px 12px;cursor:pointer;font-size:0.78em">Save Key</button>
+            <button onclick="testDsKey()" id="btnTestDs" style="background:#3b82f6;color:white;border:none;border-radius:4px;padding:5px 12px;cursor:pointer;font-size:0.78em">&#9889; Test</button>
+            <button onclick="clearDsKey()" style="background:#374151;color:#f87171;border:none;border-radius:4px;padding:5px 12px;cursor:pointer;font-size:0.78em">Clear</button>
+          </div>
+          <div id="dsTestResult" style="margin-top:8px;font-size:0.78em;color:#8b8fa4;display:none"></div>
         </div>
       </div>
     </div>
@@ -5630,6 +6028,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" onclick="openWatchlistModal()" title="管理自选股列表">&#11088; 自选股</button>
         <button type="button" class="toolbar-btn" onclick="openScannerModal()" title="AI全市场扫描推荐TOP5">&#127775; AI推荐</button>
         <button type="button" class="toolbar-btn" onclick="openPriceTrainModal()" title="明日价格预测训练 (自选股)">&#127919; 价格预测</button>
+        <button type="button" class="toolbar-btn" onclick="openNationalTeamModal()" title="国家队ETF份额监控 (汇金/社保等)">&#127961; 国家队</button>
       </div>
     </div>
   </div>
@@ -6033,11 +6432,21 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" id="btnStockFund" onclick="runStockFund()" style="font-size:0.78em">基本面</button>
         <button type="button" class="toolbar-btn" id="btnStockSent" onclick="runStockSent()" style="font-size:0.78em">情绪分析</button>
         <button type="button" class="toolbar-btn" id="btnStockXGB" onclick="runStockXGB()" style="font-size:0.78em">ML预测</button>
+        <button type="button" class="toolbar-btn" id="btnStockFF" onclick="runStockFF()" style="font-size:0.78em">&#128176; 聪明钱</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;cursor:pointer;margin-left:8px" title="同时使用 DeepSeek API 分析">
+          <input type="checkbox" id="stockUseDeepseek" style="accent-color:#3b82f6">
+          <span>&#128171; DeepSeek</span>
+        </label>
         <span id="stockStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
+      </div>
+      <div id="stockResultTabs" style="display:none;margin-bottom:8px">
+        <button onclick="showStockTab('local')" id="stockTabLocal" style="background:#3b82f6;color:white;border:none;border-radius:6px 6px 0 0;padding:6px 14px;font-size:0.82em;cursor:pointer">&#127968; 本地 Ollama</button>
+        <button onclick="showStockTab('deepseek')" id="stockTabDs" style="background:#1e293b;color:#64748b;border:none;border-radius:6px 6px 0 0;padding:6px 14px;font-size:0.82em;cursor:pointer">&#128171; DeepSeek</button>
       </div>
       <div id="stockResult" style="max-height:65vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:14px;background:#1a1d2e;font-size:0.84em;line-height:1.6;color:#c4c8f0;white-space:pre-wrap">
         <p style="color:#6b7280">输入股票代码后点击"全面分析"开始。支持沪深A股代码。</p>
       </div>
+      <div id="stockResultDs" style="display:none;max-height:65vh;overflow-y:auto;border:1px solid #1e3a5f;border-radius:8px;padding:14px;background:#0c1220;font-size:0.84em;line-height:1.6;color:#c4c8f0;white-space:pre-wrap"></div>
     </div>
   </div>
 </div>
@@ -6089,6 +6498,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="send-btn" id="btnScanStart" onclick="startScan()" style="padding:8px 18px;font-size:0.86em">&#127775; 开始扫描</button>
         <button type="button" class="toolbar-btn" id="btnScanStop" onclick="stopScan()" style="font-size:0.78em" disabled>&#9724; 停止</button>
         <button type="button" class="toolbar-btn" onclick="loadScanHistory()" style="font-size:0.78em">&#128203; 历史记录</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;cursor:pointer;margin-left:8px" title="TOP 5 使用 DeepSeek API 深度分析">
+          <input type="checkbox" id="scanUseDeepseek" style="accent-color:#3b82f6">
+          <span>&#128171; DeepSeek</span>
+        </label>
         <span id="scanStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
       </div>
       <div id="scanProgress" style="display:none;margin-bottom:12px">
@@ -6132,6 +6545,27 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <p style="color:#6b7280">点击"开始训练"为自选股训练明日价格预测模型。</p>
         <p style="color:#6b7280">训练内容: 预测明日收盘价、最高价、最低价</p>
         <p style="color:#6b7280;font-size:0.9em;margin-top:8px">训练完成后可查看每只股票的预测价格和历史准确率。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- National Team ETF Monitor Modal -->
+<div id="nationalTeamModal" class="modal-overlay" role="dialog" aria-modal="true">
+  <div class="modal-panel" style="max-width:96vw;max-height:94vh;width:960px;background:#0f1117;border:1px solid #2a2d3e">
+    <div class="modal-head" style="border-bottom:1px solid #2a2d3e">
+      <h2>&#127961; 国家队ETF监控</h2>
+      <button type="button" class="modal-close" onclick="closeNationalTeamModal()" title="Close">&times;</button>
+    </div>
+    <div class="modal-content" style="padding:14px 18px;background:#0f1117">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <button type="button" class="send-btn" id="btnNTFetch" onclick="fetchNationalTeam()" style="padding:8px 18px;font-size:0.86em">&#128202; 获取最新数据</button>
+        <span id="ntStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
+      </div>
+      <div id="ntResult" style="max-height:68vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:14px;background:#1a1d2e;font-size:0.84em;line-height:1.6;color:#c4c8f0">
+        <p style="color:#6b7280">点击"获取最新数据"查看国家队核心ETF份额变动。</p>
+        <p style="color:#6b7280;font-size:0.9em">监控16只核心ETF (9宽基 + 7行业)，跟踪汇金/社保/央企资金动向。</p>
+        <p style="color:#6b7280;font-size:0.85em;margin-top:4px">数据来源: 上交所/深交所 ETF 份额公告</p>
       </div>
     </div>
   </div>
@@ -7809,6 +8243,7 @@ async function switchModel(model) {
 
 async function openGlobalSettings() {
   document.getElementById('globalSettingsModal').style.display = 'flex';
+  document.getElementById('dsTestResult').style.display = 'none';
   try {
     const r = await fetch('/api/settings');
     const d = await r.json();
@@ -7816,6 +8251,13 @@ async function openGlobalSettings() {
     document.getElementById('settAudioWorld').value = d.audio_lang_world || 'zh';
     document.getElementById('settAudioChina').value = d.audio_lang_china || 'zh';
     document.getElementById('settAudioKnowledge').value = d.audio_lang_knowledge || 'zh';
+    var masked = d.deepseek_api_key_masked || '';
+    var el = document.getElementById('settDeepseekKey');
+    el.value = '';
+    el.placeholder = masked ? masked : 'sk-...';
+    var st = document.getElementById('dsKeyStatus');
+    if (masked) { st.textContent = 'Configured'; st.style.background = '#064e3b'; st.style.color = '#10b981'; }
+    else { st.textContent = 'Not set'; st.style.background = '#1e293b'; st.style.color = '#8b8fa4'; }
   } catch {}
 }
 function closeGlobalSettings() { document.getElementById('globalSettingsModal').style.display = 'none'; }
@@ -7828,7 +8270,64 @@ async function saveGlobalSettings() {
   };
   try {
     await fetch('/api/settings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    showToast('Settings saved');
     closeGlobalSettings();
+  } catch {}
+}
+function toggleDsKeyVisibility() {
+  var el = document.getElementById('settDeepseekKey');
+  el.type = el.type === 'password' ? 'text' : 'password';
+}
+async function saveDsKey() {
+  var key = document.getElementById('settDeepseekKey').value.trim();
+  if (!key) { showToast('Please enter an API key'); return; }
+  try {
+    const r = await fetch('/api/settings/deepseek-key', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({api_key: key}) });
+    const d = await r.json();
+    if (d.ok) {
+      var st = document.getElementById('dsKeyStatus');
+      st.textContent = 'Configured'; st.style.background = '#064e3b'; st.style.color = '#10b981';
+      document.getElementById('settDeepseekKey').value = '';
+      document.getElementById('settDeepseekKey').placeholder = d.masked;
+      showToast('API key saved');
+    }
+  } catch(e) { showToast('Failed to save: ' + e.message); }
+}
+async function testDsKey() {
+  var btn = document.getElementById('btnTestDs');
+  var res = document.getElementById('dsTestResult');
+  var keyInput = document.getElementById('settDeepseekKey').value.trim();
+  btn.disabled = true; btn.textContent = 'Testing...';
+  res.style.display = 'block'; res.style.color = '#60a5fa'; res.innerHTML = '&#9203; Connecting to DeepSeek API...';
+  try {
+    var body = {};
+    if (keyInput) body.api_key = keyInput;
+    const r = await fetch('/api/deepseek/test', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (d.ok) {
+      res.style.color = '#10b981';
+      res.innerHTML = '&#9989; <b>Connection successful!</b><br>Model: ' + d.model +
+        '<br>Reply: <em>' + (d.reply||'').substring(0,80) + '</em>' +
+        '<br><span style="font-size:0.72em;color:#8b8fa4">Tokens: ' + (d.usage.total_tokens||'?') + '</span>';
+    } else {
+      res.style.color = '#f87171';
+      res.innerHTML = '&#10060; <b>Failed:</b> ' + (d.error||'Unknown error');
+    }
+  } catch(e) {
+    res.style.color = '#f87171';
+    res.innerHTML = '&#10060; <b>Error:</b> ' + e.message;
+  }
+  btn.disabled = false; btn.textContent = '\u26A1 Test';
+}
+async function clearDsKey() {
+  try {
+    await fetch('/api/settings/deepseek-key', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({api_key: ''}) });
+    var st = document.getElementById('dsKeyStatus');
+    st.textContent = 'Not set'; st.style.background = '#1e293b'; st.style.color = '#8b8fa4';
+    document.getElementById('settDeepseekKey').value = '';
+    document.getElementById('settDeepseekKey').placeholder = 'sk-...';
+    document.getElementById('dsTestResult').style.display = 'none';
+    showToast('API key cleared');
   } catch {}
 }
 
@@ -8147,27 +8646,75 @@ function openStockModal() {
 function closeStockModal() {
   document.getElementById('stockAnalysisModal').classList.remove('open');
 }
+function showStockTab(tab) {
+  var local = document.getElementById('stockResult');
+  var ds = document.getElementById('stockResultDs');
+  var btnL = document.getElementById('stockTabLocal');
+  var btnD = document.getElementById('stockTabDs');
+  if (tab === 'deepseek') {
+    local.style.display = 'none'; ds.style.display = 'block';
+    btnL.style.background = '#1e293b'; btnL.style.color = '#64748b';
+    btnD.style.background = '#3b82f6'; btnD.style.color = 'white';
+  } else {
+    local.style.display = 'block'; ds.style.display = 'none';
+    btnL.style.background = '#3b82f6'; btnL.style.color = 'white';
+    btnD.style.background = '#1e293b'; btnD.style.color = '#64748b';
+  }
+}
 async function runStockAnalysis() {
   const sym = document.getElementById('stockSymbolInput').value.trim();
   if (!sym) { showToast('请输入股票代码'); return; }
   const st = document.getElementById('stockStatus');
   const res = document.getElementById('stockResult');
+  const resDs = document.getElementById('stockResultDs');
+  const tabs = document.getElementById('stockResultTabs');
+  const useDs = document.getElementById('stockUseDeepseek').checked;
   st.textContent = '正在分析...（需要1-3分钟）';
   res.innerHTML = '<p style="color:#60a5fa">⏳ 正在获取数据并生成AI预测报告，请稍候...</p>';
+  resDs.innerHTML = '';
+  tabs.style.display = useDs ? 'block' : 'none';
+  resDs.style.display = 'none'; res.style.display = 'block';
+  showStockTab('local');
   document.getElementById('btnStockAnalyze').disabled = true;
   try {
     const r = await fetch('/api/stock/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({symbol: sym, mode: 'full'})});
     const d = await r.json();
     if (d.error) { res.innerHTML = '<p style="color:#f87171">'+d.error+'</p>'; }
     else { res.innerHTML = _renderStockMd(d); }
-    st.textContent = '';
+    st.textContent = useDs ? 'DeepSeek 分析中...' : '';
   } catch(e) { res.innerHTML = '<p style="color:#f87171">请求失败: '+e.message+'</p>'; st.textContent = ''; }
   document.getElementById('btnStockAnalyze').disabled = false;
+  if (useDs) {
+    resDs.innerHTML = '<p style="color:#60a5fa">⏳ DeepSeek 分析中...</p>';
+    try {
+      const r2 = await fetch('/api/stock/analyze/deepseek', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({symbol: sym})});
+      const d2 = await r2.json();
+      if (d2.error) {
+        resDs.innerHTML = '<p style="color:#f87171">DeepSeek: '+d2.error+'</p>';
+      } else {
+        var h = '';
+        if (d2.reasoning) {
+          h += '<details style="margin-bottom:12px"><summary style="font-size:0.85em;color:#60a5fa;cursor:pointer">&#129504; 推理过程 (Chain of Thought)</summary>';
+          h += '<div style="font-size:0.8em;color:#94a3b8;white-space:pre-wrap;margin-top:6px;max-height:400px;overflow-y:auto;padding:8px;background:#0a0e1a;border-radius:6px">' + d2.reasoning.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</div></details>';
+        }
+        h += '<div style="white-space:pre-wrap;line-height:1.7">' + _simpleMarkdown(d2.report || '') + '</div>';
+        if (d2.usage && d2.usage.total_tokens) {
+          h += '<div style="font-size:0.72em;color:#64748b;text-align:right;margin-top:8px">Model: ' + (d2.model||'') + ' | Tokens: ' + d2.usage.total_tokens + '</div>';
+        }
+        resDs.innerHTML = h;
+      }
+      st.textContent = '';
+    } catch(e2) {
+      resDs.innerHTML = '<p style="color:#f87171">DeepSeek 请求失败: '+e2.message+'</p>';
+      st.textContent = '';
+    }
+  }
 }
 async function runStockTech() { await _runStockPartial('technical'); }
 async function runStockFund() { await _runStockPartial('fundamental'); }
 async function runStockSent() { await _runStockPartial('sentiment'); }
 async function runStockXGB() { await _runStockPartial('xgboost'); }
+async function runStockFF() { await _runStockPartial('fund_flow'); }
 async function _runStockPartial(mode) {
   const sym = document.getElementById('stockSymbolInput').value.trim();
   if (!sym) { showToast('请输入股票代码'); return; }
@@ -8185,6 +8732,7 @@ async function _runStockPartial(mode) {
 }
 function _renderStockMd(d) {
   let md = d.report || d.technical_report || d.fundamental_report || d.sentiment_report || '';
+  if (d.fund_flow_report) md += '\n\n---\n\n' + d.fund_flow_report;
   if (d.xgb_report) md += '\n\n---\n\n' + d.xgb_report;
   if (d.prediction_report) md += '\n\n---\n\n' + d.prediction_report;
   return '<div style="white-space:pre-wrap;line-height:1.7">' + _simpleMarkdown(md) + '</div>';
@@ -8284,9 +8832,10 @@ async function startScan() {
   document.getElementById('btnScanStart').disabled = true;
   document.getElementById('btnScanStop').disabled = false;
   document.getElementById('scanProgress').style.display = 'block';
-  document.getElementById('scanResult').innerHTML = '<p style="color:#60a5fa">⏳ 正在扫描全市场...</p>';
+  var useDs = document.getElementById('scanUseDeepseek').checked;
+  document.getElementById('scanResult').innerHTML = '<p style="color:#60a5fa">⏳ 正在扫描全市场...' + (useDs ? ' (DeepSeek enabled)' : '') + '</p>';
   try {
-    const r = await fetch('/api/stock/scan/start', {method:'POST'});
+    const r = await fetch('/api/stock/scan/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({use_deepseek: useDs})});
     const d = await r.json();
     if (d.error) { st.textContent = d.error; document.getElementById('btnScanStart').disabled = false; return; }
     st.textContent = '扫描进行中';
@@ -8322,7 +8871,11 @@ async function pollScanStatus() {
       bar.style.width = pct + '%'; txt.textContent = done + '/' + total;
       phase.textContent = 'Layer 2: 详细分析中 (' + done + '/' + total + ')';
     } else if (d.status === 'layer3') {
-      bar.style.width = '92%'; txt.textContent = ''; phase.textContent = 'Layer 3: LLM综合评分...';
+      bar.style.width = '90%'; txt.textContent = ''; phase.textContent = 'Layer 3: LLM综合评分...';
+    } else if (d.status === 'comprehensive') {
+      bar.style.width = '93%'; txt.textContent = ''; phase.textContent = '综合分析: ' + (d.comprehensive_current || '运行中...');
+    } else if (d.status === 'deepseek') {
+      bar.style.width = '97%'; txt.textContent = ''; phase.textContent = '&#128171; DeepSeek 深度分析: ' + (d.deepseek_current || '运行中...');
     } else if (d.status === 'done') {
       bar.style.width = '100%'; txt.textContent = '完成'; phase.textContent = '';
       st.textContent = '扫描完成';
@@ -8387,9 +8940,113 @@ function renderScanResult(picks) {
     if (p.buy_low && p.buy_high) h += '<div style="margin-top:6px;color:#38bdf8;font-size:0.83em">📊 建议买入区间: ¥' + p.buy_low + ' ~ ¥' + p.buy_high + '</div>';
     if (p.reasoning) h += '<div style="margin-top:4px;color:#a3e635;font-size:0.85em">💡 ' + p.reasoning + '</div>';
     if (p.risk) h += '<div style="margin-top:2px;color:#f87171;font-size:0.8em">⚠️ ' + p.risk + '</div>';
+    if (p.comprehensive) h += _renderComprehensive(p.comprehensive);
+    if (p.deepseek) h += _renderDeepseekResult(p.deepseek, i);
     h += '</div>';
   });
   el.innerHTML = h;
+}
+function _renderDeepseekResult(ds, idx) {
+  if (ds.error) {
+    return '<div style="margin-top:8px;padding:8px 12px;background:#1c1113;border:1px solid #7f1d1d;border-radius:6px;font-size:0.8em;color:#f87171">DeepSeek: ' + ds.error + '</div>';
+  }
+  var h = '<div style="margin-top:10px;padding:10px 12px;background:#0c1220;border:1px solid #1e3a5f;border-radius:8px">';
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+  h += '<span style="font-size:0.85em;color:#3b82f6;font-weight:600">&#128171; DeepSeek 深度分析</span>';
+  if (ds.model) h += '<span style="font-size:0.7em;color:#64748b">' + ds.model + '</span>';
+  h += '</div>';
+  if (ds.reasoning) {
+    var rid = 'dsReasoning' + idx;
+    h += '<details style="margin-bottom:8px"><summary style="font-size:0.78em;color:#60a5fa;cursor:pointer">&#129504; 推理过程 (Chain of Thought)</summary>';
+    h += '<div id="' + rid + '" style="font-size:0.78em;color:#94a3b8;white-space:pre-wrap;margin-top:4px;max-height:300px;overflow-y:auto;padding:6px;background:#0a0e1a;border-radius:4px">' + ds.reasoning.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</div></details>';
+  }
+  if (ds.report) {
+    h += '<div style="font-size:0.85em;color:#e0e0e0;white-space:pre-wrap;line-height:1.6">' + _simpleMarkdown(ds.report) + '</div>';
+  }
+  if (ds.usage && ds.usage.total_tokens) {
+    h += '<div style="font-size:0.7em;color:#64748b;margin-top:6px;text-align:right">Tokens: ' + ds.usage.total_tokens + '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+function _renderComprehensive(c) {
+  var star = c.star_rating || 0;
+  var starStr = '';
+  for (var s = 0; s < 5; s++) starStr += s < star ? '&#11088;' : '&#9734;';
+  var starColor = star >= 4 ? '#fbbf24' : star >= 3 ? '#60a5fa' : star >= 2 ? '#8b8fa4' : '#f87171';
+  var h = '<div style="margin-top:10px;padding:10px 12px;background:#111827;border:1px solid #374151;border-radius:8px">';
+  h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+  h += '<span style="font-size:0.85em;color:#8b8fa4;font-weight:600">综合分析报告</span>';
+  h += '<span style="font-size:1.1em;color:' + starColor + '">' + starStr + ' <span style="font-size:0.75em">(' + (c.support_count||0) + '/' + (c.total_dims||0) + ' 维度支持)</span></span>';
+  h += '</div>';
+  h += '<div style="font-size:0.88em;color:' + starColor + ';font-weight:700;margin-bottom:8px">' + (c.conclusion||'') + '</div>';
+
+  var dims = c.dimensions || {};
+  h += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+
+  if (dims.technical) {
+    var t = dims.technical;
+    var tc = t.supports_buy ? '#10b981' : '#f87171';
+    var icon = t.supports_buy ? '&#9989;' : '&#10060;';
+    h += '<div style="flex:1;min-width:200px;background:#0f1117;border:1px solid #2a2d3e;border-radius:6px;padding:8px">';
+    h += '<div style="font-size:0.78em;color:#8b8fa4;margin-bottom:4px">' + icon + ' 技术面</div>';
+    h += '<div style="font-size:0.85em;color:' + tc + ';font-weight:600">' + (t.overall||'') + '</div>';
+    h += '<div style="font-size:0.78em;color:#8b8fa4">RSI: ' + (t.rsi||'?') + ' | 看涨: ' + (t.bullish||0) + ' 看跌: ' + (t.bearish||0) + '</div>';
+    if (t.support && t.support.length) h += '<div style="font-size:0.75em;color:#8b8fa4">支撑: ¥' + t.support.join('/¥') + '</div>';
+    if (t.resistance && t.resistance.length) h += '<div style="font-size:0.75em;color:#8b8fa4">阻力: ¥' + t.resistance.join('/¥') + '</div>';
+    if (t.signals && t.signals.length) h += '<div style="font-size:0.72em;color:#10b981;margin-top:2px">' + t.signals.join(', ') + '</div>';
+    if (t.warnings && t.warnings.length) h += '<div style="font-size:0.72em;color:#f87171;margin-top:1px">' + t.warnings.join(', ') + '</div>';
+    h += '</div>';
+  }
+
+  if (dims.ml_direction) {
+    var m = dims.ml_direction;
+    var mc = m.supports_buy ? '#10b981' : (m.direction === '跌' ? '#f87171' : '#8b8fa4');
+    var micon = m.supports_buy ? '&#9989;' : '&#10060;';
+    h += '<div style="flex:1;min-width:140px;background:#0f1117;border:1px solid #2a2d3e;border-radius:6px;padding:8px">';
+    h += '<div style="font-size:0.78em;color:#8b8fa4;margin-bottom:4px">' + micon + ' ML方向预测</div>';
+    h += '<div style="font-size:0.95em;color:' + mc + ';font-weight:700">' + (m.direction||'?') + '</div>';
+    h += '<div style="font-size:0.78em;color:#8b8fa4">置信度: ' + (m.confidence||0) + '%</div>';
+    h += '</div>';
+  }
+
+  if (dims.price_prediction) {
+    var pp = dims.price_prediction;
+    var pc = pp.supports_buy ? '#10b981' : '#8b8fa4';
+    var picon = pp.supports_buy ? '&#9989;' : '&#10060;';
+    h += '<div style="flex:1;min-width:170px;background:#0f1117;border:1px solid #2a2d3e;border-radius:6px;padding:8px">';
+    h += '<div style="font-size:0.78em;color:#8b8fa4;margin-bottom:4px">' + picon + ' 明日价格预测</div>';
+    h += '<div style="font-size:0.85em;color:' + pc + ';font-weight:600">' + (pp.change_pct > 0 ? '+' : '') + (pp.change_pct||0).toFixed(1) + '%</div>';
+    if (pp.pred_close) h += '<div style="font-size:0.78em;color:#8b8fa4">收盘: ¥' + pp.pred_close.toFixed(2) + '</div>';
+    if (pp.pred_high && pp.pred_low) h += '<div style="font-size:0.75em;color:#8b8fa4">区间: ¥' + pp.pred_low.toFixed(2) + ' ~ ¥' + pp.pred_high.toFixed(2) + '</div>';
+    h += '</div>';
+  }
+
+  if (dims.fund_flow) {
+    var ff = dims.fund_flow;
+    var phase = ff.smart_money_phase || '无信号';
+    var phaseColors = {'布局期':'#10b981','拉升期':'#fbbf24','出货期':'#f87171','观察期':'#60a5fa','无信号':'#8b8fa4'};
+    var phaseIcons = {'布局期':'&#128176;','拉升期':'&#128200;','出货期':'&#9888;','观察期':'&#128065;','无信号':'&#8722;'};
+    var pc = phaseColors[phase] || '#8b8fa4';
+    var ficon = ff.supports_buy ? '&#9989;' : '&#10060;';
+    h += '<div style="flex:1;min-width:180px;background:#0f1117;border:1px solid #2a2d3e;border-radius:6px;padding:8px">';
+    h += '<div style="font-size:0.78em;color:#8b8fa4;margin-bottom:4px">' + ficon + ' 资金流向</div>';
+    h += '<div style="font-size:0.95em;color:' + pc + ';font-weight:700">' + (phaseIcons[phase]||'') + ' ' + phase + '</div>';
+    if (ff.accumulation_score != null) h += '<div style="font-size:0.78em;color:' + pc + '">布局得分: ' + ff.accumulation_score + '/100</div>';
+    if (ff.detail) h += '<div style="font-size:0.75em;color:#a3e635;margin-top:2px">' + ff.detail + '</div>';
+    h += '<div style="font-size:0.75em;color:#8b8fa4;margin-top:3px">3日净流入: ' + (ff.main_net_3d||'?') + '</div>';
+    if (ff.main_net_10d != null) h += '<div style="font-size:0.72em;color:#8b8fa4">10日净流入: ' + ff.main_net_10d + '</div>';
+    h += '</div>';
+  }
+
+  h += '</div>';
+
+  var details = c.verdict_details || [];
+  if (details.length > 0) {
+    h += '<div style="margin-top:6px;font-size:0.76em;color:#8b8fa4">判据: ' + details.join(' | ') + '</div>';
+  }
+  h += '</div>';
+  return h;
 }
 async function addScanPickToWatchlist(sym, name) {
   try {
@@ -8717,6 +9374,112 @@ function renderFullTrainReport(verifications, results, sentiment, blackSwan, agg
   }
 
   el.innerHTML = h || '<p style="color:#6b7280">暂无结果</p>';
+}
+
+// --- National Team ETF Monitor ---
+function openNationalTeamModal() {
+  document.getElementById('nationalTeamModal').classList.add('open');
+}
+function closeNationalTeamModal() {
+  document.getElementById('nationalTeamModal').classList.remove('open');
+}
+async function fetchNationalTeam() {
+  const st = document.getElementById('ntStatus');
+  const el = document.getElementById('ntResult');
+  st.textContent = '获取数据中... (约10-30秒)';
+  el.innerHTML = '<p style="color:#60a5fa">&#9203; 正在从上交所/深交所获取ETF份额数据...</p>';
+  document.getElementById('btnNTFetch').disabled = true;
+  try {
+    const r = await fetch('/api/stock/national-team');
+    const d = await r.json();
+    if (d.error) { el.innerHTML = '<p style="color:#f87171">'+d.error+'</p>'; st.textContent = ''; document.getElementById('btnNTFetch').disabled = false; return; }
+    renderNationalTeam(d);
+    st.textContent = '';
+  } catch(e) { el.innerHTML = '<p style="color:#f87171">请求失败: '+e.message+'</p>'; st.textContent = ''; }
+  document.getElementById('btnNTFetch').disabled = false;
+}
+function renderNationalTeam(d) {
+  const el = document.getElementById('ntResult');
+  const snap = d.snapshot || {};
+  const trend = d.trend || {};
+  const etfs = snap.etf_snapshot || [];
+  const sigs = snap.signals || {};
+  let h = '';
+
+  var sigColor = '#8b8fa4';
+  var sigLabel = sigs.broad_total_change || '无数据';
+  if (sigLabel.indexOf('大幅增持') >= 0) sigColor = '#ef4444';
+  else if (sigLabel.indexOf('温和增持') >= 0) sigColor = '#f97316';
+  else if (sigLabel.indexOf('大幅减持') >= 0) sigColor = '#10b981';
+  else if (sigLabel.indexOf('温和减持') >= 0) sigColor = '#3b82f6';
+
+  h += '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">';
+  h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:12px 16px;flex:1;min-width:180px">';
+  h += '<div style="font-size:0.78em;color:#8b8fa4">宽基ETF总份额</div>';
+  h += '<div style="font-size:1.6em;font-weight:700;color:#60a5fa">' + (snap.total_broad_shares_yi||0).toFixed(1) + '<span style="font-size:0.5em;color:#8b8fa4"> 亿份</span></div>';
+  h += '</div>';
+  h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:12px 16px;flex:1;min-width:180px">';
+  h += '<div style="font-size:0.78em;color:#8b8fa4">行业ETF总份额</div>';
+  h += '<div style="font-size:1.6em;font-weight:700;color:#a78bfa">' + (snap.total_sector_shares_yi||0).toFixed(1) + '<span style="font-size:0.5em;color:#8b8fa4"> 亿份</span></div>';
+  h += '</div>';
+  h += '<div style="background:#0f1117;border:1px solid ' + sigColor + ';border-radius:8px;padding:12px 16px;flex:1;min-width:180px">';
+  h += '<div style="font-size:0.78em;color:#8b8fa4">国家队动向</div>';
+  h += '<div style="font-size:1.3em;font-weight:700;color:' + sigColor + '">' + sigLabel + '</div>';
+  if (trend.total_change_pct != null) {
+    var tc = trend.total_change_pct;
+    h += '<div style="font-size:0.78em;color:#8b8fa4;margin-top:2px">近期变化: <span style="color:' + (tc > 0 ? '#ef4444' : tc < 0 ? '#10b981' : '#8b8fa4') + '">' + (tc > 0 ? '+' : '') + tc + '%</span></div>';
+    h += '<div style="font-size:0.78em;color:#8b8fa4">趋势: ' + (trend.trend||'') + ' (数据点: ' + (trend.data_points||0) + ')</div>';
+  }
+  h += '</div>';
+  h += '</div>';
+
+  if (sigs.anomalies && sigs.anomalies.length > 0) {
+    h += '<div style="background:#1a0a0a;border:1px solid #ef4444;border-radius:8px;padding:10px 14px;margin-bottom:14px">';
+    h += '<div style="color:#ef4444;font-weight:600;font-size:0.85em;margin-bottom:6px">&#9888; 异常变动</div>';
+    sigs.anomalies.forEach(function(a) {
+      var dir = a.direction === '增持' ? '&#9650;' : '&#9660;';
+      var dc = a.direction === '增持' ? '#ef4444' : '#10b981';
+      h += '<div style="font-size:0.82em;color:#e0e0e0;margin-bottom:3px">' + dir + ' <b style="color:' + dc + '">' + a.name + '</b> (' + a.code + '): ';
+      h += a.prev_yi.toFixed(1) + ' &rarr; ' + a.curr_yi.toFixed(1) + ' 亿份 ';
+      h += '<span style="color:' + dc + ';font-weight:600">(' + (a.change_pct > 0 ? '+' : '') + a.change_pct.toFixed(1) + '%)</span></div>';
+    });
+    h += '</div>';
+  }
+
+  var broad = etfs.filter(function(e) { return e.type === '宽基'; });
+  var sector = etfs.filter(function(e) { return e.type === '行业'; });
+
+  h += '<h3 style="color:#60a5fa;margin:8px 0 6px">&#127970; 宽基ETF (' + broad.length + '只)</h3>';
+  h += _ntTable(broad);
+
+  h += '<h3 style="color:#a78bfa;margin:12px 0 6px">&#127981; 行业ETF (' + sector.length + '只)</h3>';
+  h += _ntTable(sector);
+
+  h += '<div style="margin-top:12px;font-size:0.72em;color:#6b7280">数据来源: 上交所/深交所 ETF份额公告 | 更新时间: ' + (snap.date||'') + '</div>';
+  el.innerHTML = h;
+}
+function _ntTable(etfs) {
+  var h = '<table style="width:100%;border-collapse:collapse;font-size:0.82em">';
+  h += '<tr style="border-bottom:1px solid #2a2d3e;color:#8b8fa4"><th style="text-align:left;padding:5px">名称</th><th style="padding:5px">代码</th><th style="padding:5px">跟踪指数</th><th style="text-align:right;padding:5px">份额(亿份)</th><th style="text-align:right;padding:5px">变化</th></tr>';
+  etfs.forEach(function(e) {
+    var yi = e.shares_yi;
+    var chg = e.change_pct;
+    var chgStr = '-';
+    var chgColor = '#8b8fa4';
+    if (chg != null) {
+      chgStr = (chg > 0 ? '+' : '') + chg.toFixed(1) + '%';
+      chgColor = chg > 0 ? '#ef4444' : chg < 0 ? '#10b981' : '#8b8fa4';
+    }
+    h += '<tr style="border-bottom:1px solid #1a1d2e">';
+    h += '<td style="padding:5px;font-weight:600">' + e.name + '</td>';
+    h += '<td style="padding:5px;text-align:center;color:#8b8fa4">' + e.code + '</td>';
+    h += '<td style="padding:5px;text-align:center;color:#8b8fa4;font-size:0.9em">' + (e.index||'') + '</td>';
+    h += '<td style="padding:5px;text-align:right;font-weight:600">' + (yi != null ? yi.toFixed(1) : 'N/A') + '</td>';
+    h += '<td style="padding:5px;text-align:right;color:' + chgColor + ';font-weight:600">' + chgStr + '</td>';
+    h += '</tr>';
+  });
+  h += '</table>';
+  return h;
 }
 
 initSessions();

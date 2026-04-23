@@ -2,7 +2,7 @@
 
 ## Overview
 
-The LLM synthesis layer uses Ollama to generate comprehensive Chinese-language stock analysis reports by aggregating outputs from all other engines.
+The LLM synthesis layer generates comprehensive Chinese-language stock analysis reports by aggregating outputs from all other engines, then calling either **Ollama** (default) or, when configured, the **optional DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings** for the final narrative. Upstream **technical, fundamental, sentiment, XGBoost, and China market / fund-flow data** are always computed or loaded **locally**; only the closing synthesis may use the cloud.
 
 ---
 
@@ -10,7 +10,7 @@ The LLM synthesis layer uses Ollama to generate comprehensive Chinese-language s
 
 ### Purpose
 
-Aggregate technical, fundamental, sentiment, and ML prediction data, then call Ollama for a long-form Chinese narrative report.
+Aggregate technical, fundamental, sentiment, and ML prediction data, then call Ollama **or** `generate_prediction_deepseek()` for a long-form Chinese narrative report.
 
 ### Data Aggregation (`_load_or_compute`)
 
@@ -51,9 +51,32 @@ Uses the **HEAVY** tier for comprehensive analysis.
 
 ---
 
+## `generate_prediction_deepseek()` (cloud alternative)
+
+**Purpose:** Same aggregation as the Ollama path (`_load_or_compute` / `_build_prompt` logic) so the model receives identical structured context, but the completion is requested from **`config.call_deepseek()`** using the **`deepseek-reasoner`** model.
+
+**Flow:**
+1. Reuse the same data pipeline as Ollama synthesis (local TA, fundamentals, sentiment, XGB readouts).
+2. Build system + user prompts (Chinese sections as for Ollama).
+3. `call_deepseek(system_prompt, user_prompt, max_tokens=4096, ...)` — response may include **`reasoning_content`** (chain-of-thought) separate from the main answer.
+4. Write `data/{symbol}/prediction-report-deepseek.md` and return a **dict** with the report text, reasoning (if any), and metadata.
+
+**How it differs from the Ollama path:**
+
+| | Ollama (`generate_prediction` / `mode=full`) | DeepSeek (`generate_prediction_deepseek`) |
+|---|---------------------------------------------|-------------------------------------------|
+| Transport | `localhost:11434` | `https://api.deepseek.com/chat/completions` |
+| Default model | `MODEL_USAGE["prediction_reasoning"]` (e.g. `qwen3.5:4b`) | `deepseek-reasoner` (see `config.py`) |
+| Output file | `prediction-report.md` | `prediction-report-deepseek.md` |
+| Used by | `POST /api/stock/analyze` with `mode=full` | `POST /api/stock/analyze/deepseek` and **A股分析** UI “DeepSeek” tab |
+
+RAG chat, agent SSE, and briefing pipelines do **not** call this function.
+
+---
+
 ## API Integration
 
-The LLM synthesis runs as part of `mode=full` in `POST /api/stock/analyze`:
+The LLM synthesis runs as part of `mode=full` in `POST /api/stock/analyze`, **or** as a dedicated DeepSeek-only call:
 
 ```
 POST /api/stock/analyze { symbol: "600519", mode: "full" }
@@ -61,8 +84,15 @@ POST /api/stock/analyze { symbol: "600519", mode: "full" }
   → fundamental analysis
   → sentiment analysis
   → XGBoost classification
-  → LLM synthesis (reads all above)
+  → LLM synthesis (Ollama; reads all above)
   ← { technical_report, fundamental_report, sentiment_report, xgb_report, prediction_report }
+```
+
+```
+POST /api/stock/analyze/deepseek { symbol: "600519" }
+  → same local aggregation as above (on-demand)
+  → generate_prediction_deepseek()
+  ← { ... prediction from DeepSeek, path to prediction-report-deepseek.md }
 ```
 
 ---
@@ -75,3 +105,5 @@ POST /api/stock/analyze { symbol: "600519", mode: "full" }
 | `MODEL_USAGE["prediction_reasoning"]` | `qwen3.5:4b` (HEAVY) | Model for synthesis |
 | Temperature | 0.7 | Creative but controlled |
 | `num_predict` | 2000 | Token budget for report |
+| `deepseek_api_key` (Global Settings) | (empty) | **Optional DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings** — stored in `scripts/rag/.global_settings.json` and read by `get_deepseek_key()` |
+| `DEEPSEEK_API_URL` / `DEEPSEEK_MODEL` | see `config.py` | API endpoint and `deepseek-reasoner` model id |

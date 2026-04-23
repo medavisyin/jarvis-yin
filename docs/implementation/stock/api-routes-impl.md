@@ -14,7 +14,13 @@ All stock API endpoints are defined in `scripts/rag/agent.py` using Flask. The `
 |--------|------|-------------|----------|
 | `POST` | `/api/stock/analyze` | `{ symbol, mode }` | Report strings per mode |
 
-**Modes:** `technical`, `fundamental`, `sentiment`, `xgboost`, `full`
+**Modes:** `technical`, `fundamental`, `sentiment`, `xgboost`, `fund_flow`, `full`
+
+The `fund_flow` mode (and `full`) returns a `fund_flow_report` field with smart money accumulation analysis including phase (布局期/拉升期/出货期), accumulation score, and actionable advice.
+
+| `POST` | `/api/stock/analyze/deepseek` | `{ symbol }` | DeepSeek API prediction report |
+
+The DeepSeek endpoint sends the same data as `generate_prediction` but uses the `deepseek-reasoner` model via cloud API. Returns `{ report, reasoning, model, usage }` (reasoning = chain-of-thought).
 
 **Validation:** `symbol` must be non-empty and `symbol.isdigit()`.
 
@@ -78,6 +84,44 @@ All stock API endpoints are defined in `scripts/rag/agent.py` using Flask. The `
 | `GET` | `/api/stock/sentiment` | `?refresh=1` | Fear & Greed + VIX + mood |
 | `GET` | `/api/stock/blackswan` | `?refresh=1`, `?date=` | Black swan alerts |
 | `GET` | `/api/stock/risk/<symbol>` | Path param | Per-stock risk from alerts |
+
+---
+
+### China A-Share Data & National Team
+
+| Method | Path | Body/Params | Response |
+|--------|------|-------------|----------|
+| `GET` | `/api/stock/china-data` | — | All China market data summary (northbound, fund flow, margin, national team) |
+| `GET` | `/api/stock/china-data/fund-flow/<symbol>` | Path: 6-digit symbol | Fund flow signals + smart money phase/score/detail |
+| `GET` | `/api/stock/national-team` | — | `{ snapshot, trend }` — 16 core ETF shares + anomaly + history |
+
+**National Team response shape:**
+```json
+{
+  "snapshot": {
+    "date": "20260422",
+    "etf_snapshot": [{ "code": "510300", "name": "300ETF", "shares_yi": 424.4, "change_pct": 0.0, ... }],
+    "total_broad_shares_yi": 1704.7,
+    "total_sector_shares_yi": 1614.8,
+    "signals": { "broad_total_change": "平稳", "anomalies": [] }
+  },
+  "trend": { "trend": "数据不足", "total_change_pct": 0, "data_points": 1, "history": [...] }
+}
+```
+
+**Side-effect:** Each call saves a Markdown knowledge file to `C:/reports/ai/knowledge/stock/national-team-YYYYMMDD.md` for RAG indexing.
+
+---
+
+### Timing Model & Backtest
+
+| Method | Path | Body/Params | Response |
+|--------|------|-------------|----------|
+| `POST` | `/api/stock/timing/train` | `{ symbol }` | `{ ok, message }` |
+| `GET` | `/api/stock/timing/status` | — | Training status |
+| `GET` | `/api/stock/timing/predict/<symbol>` | Path param | Buy/exit signal + probabilities |
+| `POST` | `/api/stock/backtest/<symbol>` | `{ strategy?, initial_capital? }` | BacktestResult with metrics |
+| `GET` | `/api/stock/backtest/<symbol>/results` | Path param | Latest cached backtest |
 
 ---
 

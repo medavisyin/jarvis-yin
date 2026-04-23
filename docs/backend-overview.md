@@ -168,7 +168,12 @@ jarvis/                               # Project root (C:\jarvis or wherever inst
     │   ├── scanner.py               # 3-layer market scanner (Layer1→2→3, background thread)
     │   ├── hot_sectors.py           # Hot sector detection for scanner bonus scoring
     │   ├── model_price_predictor.py # XGBoost regression for next-day close/high/low price prediction
-    │   └── prediction_tracker.py  # Prediction vs actual price tracking, accuracy stats, and cross-symbol aggregate statistics
+    │   ├── prediction_tracker.py  # Prediction vs actual price tracking, accuracy stats, and cross-symbol aggregate statistics
+    │   ├── china_market_data.py   # A-share data: northbound, fund flow, national team ETF, margin, LHB
+    │   ├── model_timing.py        # Dual XGBoost buy/exit signal classifiers
+    │   ├── backtest_engine.py     # T+1 backtest with fees, slippage, limit constraints
+    │   ├── market_sentiment.py    # Fear & Greed Index + VIX volatility
+    │   └── black_swan_detector.py # World news scan for risk events
     └── rag/                          # RAG subsystem
         ├── agent.py                  # Jarvis chat agent server (:18889)
         ├── search_ui.py              # RAG search UI server (:18888)
@@ -252,7 +257,7 @@ The agent toolbar is grouped into these categories:
 - **Data Analysis**: Trend Analysis, AI News KB
 - **Personal**: Donor Analysis, Daily Fetch (includes AI/World/China news fetch, commit report, Jira, Wiki Fetch with page details & links, world news merge recovery, segmented audio with anti-duplication narration)
 - **Learning**: AI Learning, Tech English, Casual English, AWS AIF-C01, My Notes
-- **Stock**: Stock Analysis, Watchlist management, Market Data Refresh, AI Prediction, AI Scanner (全市场扫描推荐 TOP 5)
+- **Stock**: Stock Analysis, Watchlist, AI Scanner, Price Prediction, National Team ETF (国家队)
 
 ### Why Two Servers?
 
@@ -662,8 +667,10 @@ Output: `world-news-data.json` categorized by politics, economics, technology, s
 | GET | `/api/donor-analysis` | Load and score donors | `?cmv=negative` | `{ donors: [...] }` |
 | POST | `/api/donor-analysis/ai-reason` | AI reasoning for top donors | `{ donors, top_n }` | SSE stream |
 | POST | `/api/donor-analysis/pdf` | Generate donor PDF report | `{ donors, language }` | `{ pdf_url }` |
-| GET | `/api/settings` | Get global settings | — | `{ audio_lang_ai, audio_lang_world, audio_lang_china, audio_lang_knowledge }` |
+| GET | `/api/settings` | Get global settings | — | `{ audio_lang_*, deepseek_api_key_masked }` |
 | POST | `/api/settings` | Update global settings (partial) | `{ audio_lang_world: "en" }` | `{ ok, settings }` |
+| POST | `/api/settings/deepseek-key` | Set DeepSeek API key | `{ api_key }` | `{ ok, masked }` |
+| POST | `/api/deepseek/test` | Test DeepSeek API connection | `{ api_key? }` | `{ ok, model, reply, usage }` |
 
 ### Stock API Endpoints (Port 18889, via agent.py)
 
@@ -712,6 +719,21 @@ Output: `world-news-data.json` categorized by politics, economics, technology, s
 **Scanner LLM (Layer 3):** Calls Ollama via `POST /api/chat` with `"think": false` instead of `/api/generate`, so the qwen3.5 thinking model does not consume all tokens on `<think>` blocks.
 
 **Top pick fields:** `symbol`, `name`, `final_score`, `price`, `change_pct`, `pe`, `tech_score`, `sentiment_score`, `is_hot`, `reasoning`, `risk`, `buy_low`, `buy_high`
+
+### China A-Share Data & National Team API Endpoints (Port 18889)
+
+| Method | Path | Description | Request | Response |
+|--------|------|---------|---------|----------|
+| GET | `/api/stock/china-data` | All China market data summary | — | `{ northbound, sector_flow, national_team, ... }` |
+| GET | `/api/stock/china-data/fund-flow/<symbol>` | Individual stock fund flow | Path param | Fund flow signals |
+| GET | `/api/stock/national-team` | National team ETF share monitor | — | `{ snapshot, trend }` |
+| POST | `/api/stock/timing/train` | Train buy/exit timing model | `{ symbol }` | `{ ok, message }` |
+| GET | `/api/stock/timing/status` | Timing training status | — | Status JSON |
+| GET | `/api/stock/timing/predict/<symbol>` | Timing signal | Path param | Buy/exit/hold signal |
+| POST | `/api/stock/backtest/<symbol>` | Run backtest | `{ strategy?, initial_capital? }` | BacktestResult |
+| GET | `/api/stock/backtest/<symbol>/results` | Get cached backtest | Path param | BacktestResult |
+
+**National team monitors 16 core ETFs** (9 broad-based + 7 sector) from SSE and SZSE. Each fetch also saves a Markdown knowledge file to `C:/reports/ai/knowledge/stock/national-team-YYYYMMDD.md` for RAG indexing.
 
 ### Agent SSE Event Types
 
