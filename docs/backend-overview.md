@@ -712,11 +712,11 @@ Output: `world-news-data.json` categorized by politics, economics, technology, s
 
 | Layer | Input | Output | Cap |
 |-------|-------|--------|-----|
-| Layer 1 | Full A-share market (~5000+) | Filtered by price, turnover, PE, not-ST | Top 100 |
-| Layer 2 | 100 candidates | Technical + sentiment analysis, composite scoring | Top 20 |
-| Layer 3 | 20 candidates | LLM scoring with buy-price recommendation | Top 5 |
+| Layer 1 | Full A-share market (~5000+) | Bell-curve scoring (PE sweet-spot, pullback preferred, turnover) | Top 100 |
+| Layer 2 | 100 candidates | Fund-flow 30% + fundamental 25% + tech 20% + weighted sentiment 10% + L1 10% + valuation 5% | Top 30 |
+| Layer 3 | 30 candidates | DeepSeek judges TOP 10 (rich data) + local LLM for rest; buyability verdict | 0–5 |
 
-**Scanner LLM (Layer 3):** Calls Ollama via `POST /api/chat` with `"think": false` instead of `/api/generate`, so the qwen3.5 thinking model does not consume all tokens on `<think>` blocks.
+**Scanner LLM (Layer 3):** With DeepSeek enabled, TOP 10 candidates are judged by `deepseek-reasoner` with rich multi-dimensional data. Remaining candidates use local Ollama (`POST /api/chat` with `"think": false`). Without DeepSeek, all 30 use local LLM. Only stocks with verdict="买入" AND score≥60 pass.
 
 **Top pick fields:** `symbol`, `name`, `final_score`, `price`, `change_pct`, `pe`, `tech_score`, `sentiment_score`, `is_hot`, `reasoning`, `risk`, `buy_low`, `buy_high`
 

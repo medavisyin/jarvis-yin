@@ -347,8 +347,8 @@ flowchart TB
 
     subgraph ScannerLayer["Market Scanner"]
         L1["Layer 1: Filter<br/>(5000+ → 100)<br/>Price, PE, Turnover"]
-        L2["Layer 2: Score<br/>(100 → 20)<br/>TA + Sentiment"]
-        L3["Layer 3: LLM Rank<br/>(20 → TOP 5)<br/>Ollama + optional DeepSeek pass"]
+        L2["Layer 2: Score<br/>(100 → 30)<br/>Fund-flow + TA + Fundamentals"]
+        L3["Layer 3: LLM Judge<br/>(30 → 0-5)<br/>DeepSeek TOP 10 + Ollama rest"]
     end
 
     subgraph OutputLayer["Output"]
@@ -676,7 +676,7 @@ timeline
     section Advanced
         Stock Module : TA + fundamentals + sentiment
         ML Prediction : XGBoost walk-forward
-        Market Scanner : 3-layer (5000→100→20→5)
+        Market Scanner : 3-layer (5000→100→30→0-5)
         Reranking : Cross-encoder + feedback scores
         World News : 6 international sources + translation
         Telegram Bot : Remote access via phone

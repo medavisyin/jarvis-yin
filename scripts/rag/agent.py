@@ -6498,7 +6498,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="send-btn" id="btnScanStart" onclick="startScan()" style="padding:8px 18px;font-size:0.86em">&#127775; 开始扫描</button>
         <button type="button" class="toolbar-btn" id="btnScanStop" onclick="stopScan()" style="font-size:0.78em" disabled>&#9724; 停止</button>
         <button type="button" class="toolbar-btn" onclick="loadScanHistory()" style="font-size:0.78em">&#128203; 历史记录</button>
-        <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;cursor:pointer;margin-left:8px" title="TOP 5 使用 DeepSeek API 深度分析">
+        <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;cursor:pointer;margin-left:8px" title="Layer 3 使用 DeepSeek 判断 TOP 10（替代本地LLM，更科学）">
           <input type="checkbox" id="scanUseDeepseek" style="accent-color:#3b82f6">
           <span>&#128171; DeepSeek</span>
         </label>
@@ -8871,11 +8871,12 @@ async function pollScanStatus() {
       bar.style.width = pct + '%'; txt.textContent = done + '/' + total;
       phase.textContent = 'Layer 2: 详细分析中 (' + done + '/' + total + ')';
     } else if (d.status === 'layer3') {
-      bar.style.width = '90%'; txt.textContent = ''; phase.textContent = 'Layer 3: LLM综合评分...';
+      var l3mode = d.layer3_mode === 'deepseek+local' ? 'Layer 3: &#128171; DeepSeek + 本地 LLM 判断...' : 'Layer 3: LLM综合评分...';
+      bar.style.width = '90%'; txt.textContent = ''; phase.textContent = l3mode;
     } else if (d.status === 'comprehensive') {
       bar.style.width = '93%'; txt.textContent = ''; phase.textContent = '综合分析: ' + (d.comprehensive_current || '运行中...');
     } else if (d.status === 'deepseek') {
-      bar.style.width = '97%'; txt.textContent = ''; phase.textContent = '&#128171; DeepSeek 深度分析: ' + (d.deepseek_current || '运行中...');
+      bar.style.width = '97%'; txt.textContent = ''; phase.textContent = '&#128171; DeepSeek 补充报告: ' + (d.deepseek_current || '运行中...');
     } else if (d.status === 'done') {
       bar.style.width = '100%'; txt.textContent = '完成'; phase.textContent = '';
       st.textContent = '扫描完成';
@@ -8938,8 +8939,10 @@ function renderScanResult(picks) {
     if (p.is_hot) h += '<span style="color:#f59e0b">🔥 热门</span>';
     h += '</div>';
     if (p.buy_low && p.buy_high) h += '<div style="margin-top:6px;color:#38bdf8;font-size:0.83em">📊 建议买入区间: ¥' + p.buy_low + ' ~ ¥' + p.buy_high + '</div>';
-    if (p.reasoning) h += '<div style="margin-top:4px;color:#a3e635;font-size:0.85em">💡 ' + p.reasoning + '</div>';
+    var judgeTag = p.judged_by === 'deepseek' ? '<span style="color:#3b82f6;font-size:0.75em;margin-left:8px">&#128300; DeepSeek判断</span>' : '<span style="color:#8b8fa4;font-size:0.75em;margin-left:8px">&#129302; 本地LLM判断</span>';
+    if (p.reasoning) h += '<div style="margin-top:4px;color:#a3e635;font-size:0.85em">💡 ' + p.reasoning + judgeTag + '</div>';
     if (p.risk) h += '<div style="margin-top:2px;color:#f87171;font-size:0.8em">⚠️ ' + p.risk + '</div>';
+    if (p.strategy) h += '<div style="margin-top:2px;color:#38bdf8;font-size:0.82em">📋 ' + p.strategy + '</div>';
     if (p.comprehensive) h += _renderComprehensive(p.comprehensive);
     if (p.deepseek) h += _renderDeepseekResult(p.deepseek, i);
     h += '</div>';
@@ -8950,9 +8953,11 @@ function _renderDeepseekResult(ds, idx) {
   if (ds.error) {
     return '<div style="margin-top:8px;padding:8px 12px;background:#1c1113;border:1px solid #7f1d1d;border-radius:6px;font-size:0.8em;color:#f87171">DeepSeek: ' + ds.error + '</div>';
   }
+  var isJudgment = ds.judgment === true;
+  var dsTitle = isJudgment ? '&#128300; DeepSeek Layer 3 判断' : '&#128171; DeepSeek 深度分析';
   var h = '<div style="margin-top:10px;padding:10px 12px;background:#0c1220;border:1px solid #1e3a5f;border-radius:8px">';
   h += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
-  h += '<span style="font-size:0.85em;color:#3b82f6;font-weight:600">&#128171; DeepSeek 深度分析</span>';
+  h += '<span style="font-size:0.85em;color:#3b82f6;font-weight:600">' + dsTitle + '</span>';
   if (ds.model) h += '<span style="font-size:0.7em;color:#64748b">' + ds.model + '</span>';
   h += '</div>';
   if (ds.reasoning) {

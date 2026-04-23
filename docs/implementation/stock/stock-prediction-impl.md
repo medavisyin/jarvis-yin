@@ -100,12 +100,14 @@ The AI scanner was redesigned from a **momentum-biased "top-5 always"** system t
 
 | Layer | Old Design | New Design |
 |-------|-----------|------------|
-| **L1 Filter** | Favored today's gainers (change×2 weight) | Balanced: PE weight ↑, momentum weight ↓ |
+| **L1 Filter** | Favored today's gainers (change×2 weight) | **Bell-curve scoring**: PE sweet-spot 10~25, pullback preferred, moderate turnover |
 | **L1 PE cap** | < 100 | **< 80** |
-| **L2 Scoring** | Tech 40% + sentiment 30% + L1 30% | **Fund 35%** + tech 25% + sentiment 15% + L1 15% + **valuation 10%** |
+| **L2 Scoring** | Tech 40% + sentiment 30% + L1 30% | **Fund-flow 30%** + fundamental 25% + tech 20% + sentiment 10% + L1 10% + valuation 5% |
+| **L2 Sentiment** | Simple keyword count | **Weighted impact scoring** (negative news weighted heavier) |
 | **L2 Fundamentals** | Not checked | `fetch_fundamentals` + `score_fundamentals` per stock |
 | **L2 Overbought** | Not checked | **RSI > 75 → auto-reject** before Layer 3 |
-| **L3 LLM Prompt** | "Score this stock" | **"Is this stock worth buying NOW?"** with strict criteria |
+| **L3 LLM Prompt** | "Score this stock" | **"Is this stock worth buying NOW?"** with strict criteria; DeepSeek gets rich data |
+| **L3 Strategy** | All 20 by local LLM | **TOP 10 → DeepSeek judgment** + rest → local LLM (with DeepSeek enabled) |
 | **L3 Output** | Always top 5 | **0 to 5** — only stocks with verdict="买入" AND score≥60 |
 | **L3 CAP** | 20 | **30** (more candidates evaluated) |
 | **Report (0 result)** | N/A | Explicit "no recommendation" message |
@@ -165,7 +167,7 @@ See [market-signals-impl.md](./market-signals-impl.md) for full details.
 | Analysis | `POST /api/stock/analyze` | Run analysis modes |
 | Analysis (DeepSeek) | `POST /api/stock/analyze/deepseek` | Final synthesis only via `generate_prediction_deepseek()` (all upstream data computed locally first) |
 | Watchlist | `GET/POST/DELETE /api/stock/watchlist` | CRUD + refresh |
-| Scanner | `POST scan/start` (body may include `use_deepseek`), `GET scan/status/result/dates` | 3-layer AI scan; optional DeepSeek pass on **TOP 5** picks after Layer 3 |
+| Scanner | `POST scan/start` (body: `{use_deepseek: bool}`), `GET scan/status/result/dates` | 3-layer AI scan; if `use_deepseek`, Layer 3 TOP 10 judged by DeepSeek |
 | Training | `POST train/daily`, `GET train/status` | Price prediction training |
 | Prediction | `GET predict/<symbol>` | Per-stock prediction + accuracy |
 | Sentiment | `GET sentiment` | Fear & Greed + VIX |
@@ -247,5 +249,5 @@ For the full **phased engineering roadmap** with concrete module designs, verifi
 |------|--------------|---------|
 | FAST | qwen3:1.7b | Sentiment per article |
 | NORMAL | qwen3.5:4b | Reserved |
-| HEAVY | qwen3.5:4b | LLM synthesis, scanner Layer 3 |
-| Cloud (opt.) | deepseek-reasoner | `generate_prediction_deepseek`, scanner TOP 5 enrichment — **optional DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings**; not used for per-article sentiment |
+| HEAVY | qwen3.5:4b | LLM synthesis, scanner Layer 3 (local fallback) |
+| Cloud (opt.) | deepseek-reasoner | `generate_prediction_deepseek`, **scanner Layer 3 TOP 10 judgment** — optional via Global Settings; not used for per-article sentiment |

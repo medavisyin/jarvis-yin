@@ -151,18 +151,41 @@ def _layer1_quick_filter(hot_stocks: set[str]) -> tuple[list[dict], int]:
     change = candidates["涨跌幅"].clip(-7, 8)
     turnover = candidates["换手率"].clip(0, 15)
 
-    chase_penalty = (change > 6).astype(int) * -5
-    pullback_bonus = ((change < 0) & (change > -5)).astype(int) * 3
+    # --- Improved scoring (2026-04 science rework) ---
+    # PE: bell-curve bonus — sweet spot 10~25, punish both extremes
+    pe_score = (
+        ((pe >= 8) & (pe < 15)).astype(float) * 90
+        + ((pe >= 15) & (pe < 25)).astype(float) * 80
+        + ((pe >= 25) & (pe < 40)).astype(float) * 55
+        + ((pe >= 40) & (pe < 60)).astype(float) * 30
+        + (pe >= 60).astype(float) * 10
+        + (pe < 8).astype(float) * 40
+    )
+
+    # Intraday change: prefer mild green / mild red (pullback buying)
+    # Punish chase-high aggressively (A-share T+1 lock-in risk)
+    chg_score = (
+        (change > 7).astype(float) * 10
+        + ((change > 5) & (change <= 7)).astype(float) * 25
+        + ((change > 2) & (change <= 5)).astype(float) * 45
+        + ((change >= -1) & (change <= 2)).astype(float) * 70
+        + ((change >= -4) & (change < -1)).astype(float) * 80
+        + (change < -4).astype(float) * 50
+    )
+
+    # Turnover: moderate is healthy, extreme is risky
+    turn_score = turnover.apply(
+        lambda t: 80 if 1 <= t <= 5 else (60 if 5 < t <= 10 else (30 if t > 10 else 40))
+    )
 
     candidates["score_l1"] = (
-        (80 - pe) * 0.4
-        + change * 0.8
-        + turnover * 0.3
-        + chase_penalty
-        + pullback_bonus
+        pe_score * 0.30
+        + chg_score * 0.30
+        + turn_score * 0.20
+        + (candidates["成交额"] / 1e8).clip(0, 20) * 0.5  # liquidity floor
     )
     candidates["is_hot"] = candidates["代码"].isin(hot_stocks)
-    candidates.loc[candidates["is_hot"], "score_l1"] += 5
+    candidates.loc[candidates["is_hot"], "score_l1"] += 3
 
     candidates = candidates.sort_values("score_l1", ascending=False)
     result = candidates.head(LAYER2_CANDIDATE_CAP)
@@ -250,12 +273,29 @@ def _layer2_analyze_batch(batch: list[dict], progress: dict) -> list[dict]:
         try:
             news = fetch_stock_news(sym, limit=5)
             if news:
-                pos_keywords = {"涨", "增长", "突破", "利好", "创新", "盈利", "超预期", "签约", "中标"}
-                neg_keywords = {"跌", "下降", "亏损", "利空", "减持", "处罚", "风险", "退市"}
-                pos_count = sum(1 for a in news if any(k in a.get("标题", "") for k in pos_keywords))
-                neg_count = sum(1 for a in news if any(k in a.get("标题", "") for k in neg_keywords))
-                total = len(news)
-                sentiment_score = int((pos_count - neg_count) / max(total, 1) * 50 + 50)
+                # Weighted keyword scoring: differentiate impact levels
+                _HIGH_POS = {"超预期", "中标", "签约", "突破新高", "大幅增长", "扭亏为盈"}
+                _MID_POS = {"增长", "利好", "创新", "盈利", "分红", "回购"}
+                _LOW_POS = {"涨", "突破", "上涨"}
+                _HIGH_NEG = {"退市", "ST", "暴雷", "造假", "立案", "违规"}
+                _MID_NEG = {"亏损", "减持", "处罚", "下调", "风险"}
+                _LOW_NEG = {"跌", "下降", "利空"}
+
+                total_weight = 0
+                for a in news:
+                    title = a.get("标题", "")
+                    w = 0
+                    if any(k in title for k in _HIGH_POS): w += 3
+                    if any(k in title for k in _MID_POS):  w += 2
+                    if any(k in title for k in _LOW_POS):  w += 1
+                    if any(k in title for k in _HIGH_NEG): w -= 4  # negative news hits harder
+                    if any(k in title for k in _MID_NEG):  w -= 2.5
+                    if any(k in title for k in _LOW_NEG):  w -= 1
+                    total_weight += w
+
+                max_possible = len(news) * 3
+                norm = total_weight / max(max_possible, 1)
+                sentiment_score = int(norm * 50 + 50)
                 sentiment_score = max(0, min(100, sentiment_score))
             else:
                 sentiment_score = 50
@@ -349,11 +389,22 @@ def _valuation_bonus(pe) -> float:
 # Layer 3 — LLM comprehensive scoring + reasoning
 # ---------------------------------------------------------------------------
 
+DEEPSEEK_LAYER3_CAP = 10  # only send top 10 to DeepSeek (cost control)
+
+
 def _layer3_llm_rank(candidates: list[dict]) -> list[dict]:
     """
     Use LLM to judge **buyability** — not just rank.
-    Only returns stocks the LLM deems "worth buying NOW".
-    May return 0 stocks if nothing qualifies.
+
+    Strategy (2026-04 science rework):
+      - If DeepSeek enabled AND API key present:
+        TOP 10 by score → DeepSeek makes buy/no-buy judgment (high quality)
+        Remaining 11~30 → local LLM quick filter (saves tokens)
+      - If no DeepSeek:
+        All 30 → local LLM (as before, fallback)
+
+    DeepSeek gets a RICH prompt with all Layer 2 data.
+    Only returns stocks that pass the buyability check.
     """
     log.info("Layer 3: LLM 买入判断 (%d 只候选)...", len(candidates))
 
@@ -365,10 +416,183 @@ def _layer3_llm_rank(candidates: list[dict]) -> list[dict]:
     candidates_sorted = sorted(viable, key=lambda x: x.get("score_l2", 0), reverse=True)
     top = candidates_sorted[:LAYER3_CAP]
 
-    model = MODEL_USAGE.get("prediction_reasoning", "qwen3.5:4b")
+    use_ds = _use_deepseek
+    has_ds_key = False
+    if use_ds:
+        try:
+            from config import get_deepseek_key
+            has_ds_key = bool(get_deepseek_key())
+        except Exception:
+            pass
+
     all_evaluated = []
 
-    for stock in top:
+    if has_ds_key and use_ds:
+        ds_batch = top[:DEEPSEEK_LAYER3_CAP]
+        local_batch = top[DEEPSEEK_LAYER3_CAP:]
+        log.info("Layer 3: DeepSeek 判断 TOP %d, 本地 LLM 判断剩余 %d",
+                 len(ds_batch), len(local_batch))
+        all_evaluated.extend(_layer3_deepseek_judge(ds_batch))
+        all_evaluated.extend(_layer3_local_judge(local_batch))
+    else:
+        log.info("Layer 3: 全部使用本地 LLM 判断 (%d 只)", len(top))
+        all_evaluated.extend(_layer3_local_judge(top))
+
+    buyable = [s for s in all_evaluated
+               if s.get("verdict") == "买入"
+               and s.get("final_score", 0) >= MIN_BUYABILITY_SCORE]
+
+    if not buyable:
+        log.info("Layer 3: 本次扫描没有找到值得买入的股票 (这是正常的)")
+        buyable = []
+
+    buyable.sort(key=lambda x: x.get("final_score", 0), reverse=True)
+    result = buyable[:TOP_N]
+
+    log.info("Layer 3: %d 只通过买入判断 (共评估 %d 只)", len(result), len(all_evaluated))
+    return result
+
+
+def _layer3_deepseek_judge(stocks: list[dict]) -> list[dict]:
+    """Use DeepSeek to make high-quality buy/no-buy decisions with rich data."""
+    from config import call_deepseek
+
+    system_prompt = (
+        "你是一位顶级A股量化分析师，专注于判断股票是否值得**现在**买入。\n\n"
+        "判断标准（必须全部考量）：\n"
+        "1. 聪明钱信号：资金持续流入但股价未大涨=主力吸筹期（最佳买点）\n"
+        "2. 追高惩罚：连续大涨、接近涨停板不追买（A股T+1，买入后当日无法卖出）\n"
+        "3. 估值安全边际：PE在行业合理区间，PB不过高\n"
+        "4. 技术面确认：不在超买区（RSI<70），有支撑位保护\n"
+        "5. 基本面底线：盈利能力和财务健康至少中等\n"
+        "6. 资金-价格背离：资金进但价格不涨 = 吸筹（好），资金出但价格涨 = 出货（危险）\n\n"
+        "如果不确定或风险 > 收益，必须判定'不买入'。宁可错过，不可追高。\n\n"
+        "输出要求：只输出一个JSON对象，格式如下（不要输出任何其他文字）：\n"
+        '{"verdict":"买入","score":75,"reason":"核心理由3-5条","risk":"主要风险","buy_low":9.50,"buy_high":10.00,"strategy":"建议仓位和策略"}\n'
+        "verdict 只能是 \"买入\" 或 \"不买入\"。score 0-100。buy_low/buy_high 是建议买入价区间。"
+    )
+
+    evaluated = []
+    for stock in stocks:
+        if _stop_event.is_set():
+            break
+
+        sym = stock["symbol"]
+        log.info("Layer 3 DeepSeek: 判断 %s (%s)...", sym, stock["name"])
+
+        prompt = _build_deepseek_scoring_prompt(stock)
+        try:
+            result = call_deepseek(system_prompt, prompt, max_tokens=1200, temperature=0.3)
+            if result["ok"]:
+                raw = result["content"]
+                parsed = _parse_llm_score(raw, stock)
+                parsed["judged_by"] = "deepseek"
+                # Store DeepSeek data for UI display
+                parsed["deepseek"] = {
+                    "report": parsed.get("reasoning", ""),
+                    "reasoning": result.get("reasoning_content", ""),
+                    "model": result.get("model", ""),
+                    "usage": result.get("usage", {}),
+                    "judgment": True,  # marks this as a Layer 3 judgment, not Phase 5 report
+                }
+                evaluated.append(parsed)
+                log.info("  DeepSeek → %s (score=%s, tokens=%s)",
+                         parsed.get("verdict"), parsed.get("final_score"),
+                         result.get("usage", {}).get("total_tokens", "?"))
+            else:
+                log.warning("  DeepSeek 调用失败: %s, 降级到本地LLM", result.get("error"))
+                evaluated.extend(_layer3_local_judge([stock]))
+        except Exception as e:
+            log.warning("  DeepSeek 异常: %s, 降级到本地LLM", e)
+            evaluated.extend(_layer3_local_judge([stock]))
+
+    return evaluated
+
+
+def _build_deepseek_scoring_prompt(stock: dict) -> str:
+    """Build a rich prompt for DeepSeek with all Layer 2 data."""
+    signals_text = "\n".join(f"  - {k}: {v}" for k, v in stock.get("signals", {}).items())
+    if not signals_text:
+        signals_text = "  (无信号数据)"
+
+    price = stock.get('price', 0)
+    try:
+        price_f = float(price)
+    except (TypeError, ValueError):
+        price_f = 0
+
+    fund_text = ""
+    dims = stock.get("fund_dimensions", {})
+    if dims:
+        parts = []
+        for k, v in dims.items():
+            parts.append(f"  - {k}: {v.get('score', 'N/A')}/100 ({v.get('detail', '')})")
+        fund_text = "\n".join(parts)
+    else:
+        fund_text = "  (无基本面数据)"
+
+    rsi_text = f"{stock.get('rsi', 'N/A')}"
+    if stock.get("overbought"):
+        rsi_text += " ⚠ 超买"
+
+    ff_text = ""
+    ff_signals = stock.get("ff_signals", {})
+    if ff_signals:
+        phase = ff_signals.get("smart_money_phase", "无信号")
+        accum_s = ff_signals.get("accumulation_score", 0)
+        detail = ff_signals.get("detail", "")
+        divergence = ff_signals.get("fund_price_divergence", 0)
+        ff_text = (
+            f"  聪明钱阶段: {phase} (布局得分 {accum_s}/100)\n"
+            f"  3日主力净流入: {ff_signals.get('main_net_3d', 'N/A')}\n"
+            f"  10日主力净流入: {ff_signals.get('main_net_10d', 'N/A')}\n"
+            f"  3日主力净占比: {ff_signals.get('main_pct_3d', 'N/A')}%\n"
+            f"  超大单占比: {ff_signals.get('super_large_ratio', 'N/A')}\n"
+            f"  价格-资金背离度: {divergence}\n"
+            f"  吸筹信号: {'是' if ff_signals.get('accumulation_signal') else '否'}\n"
+            f"  判断: {detail}"
+        )
+    else:
+        ff_text = "  (无资金流向数据)"
+
+    return f"""判断 {stock['name']} ({stock['symbol']}) 现在是否值得买入。
+
+【行情快照】
+  最新价: ¥{price}
+  今日涨跌: {stock.get('change_pct', 'N/A')}%
+  换手率: {stock.get('turnover_rate', 'N/A')}%
+  成交额: {_format_amount(stock.get('amount'))}
+  市盈率(PE): {stock.get('pe', 'N/A')}
+  总市值: {_format_amount(stock.get('market_cap'))}
+
+【Layer 2 各维度评分】
+  资金流向评分: {stock.get('ff_score', 'N/A')}/100
+  基本面评分: {stock.get('fund_score', 'N/A')}/100
+  技术面评分: {stock.get('tech_score', 'N/A')}/100
+  情绪评分: {stock.get('sentiment_score', 'N/A')}/100
+  L1初筛分: {stock.get('score_l1', 'N/A')}
+  L2综合分: {stock.get('score_l2', 'N/A')}
+
+【资金流向详情】
+{ff_text}
+
+【基本面详情】
+{fund_text}
+
+【技术面信号】
+  RSI: {rsi_text}
+{signals_text}
+
+请严格按照系统提示的JSON格式输出判断结果。
+buy_low 和 buy_high 必须是数字（建议买入价区间，参考当前价 ¥{price_f:.2f}）。"""
+
+
+def _layer3_local_judge(stocks: list[dict]) -> list[dict]:
+    """Use local Ollama LLM for buy/no-buy judgment (fallback or for remaining stocks)."""
+    model = MODEL_USAGE.get("prediction_reasoning", "qwen3.5:4b")
+    evaluated = []
+
+    for stock in stocks:
         if _stop_event.is_set():
             break
 
@@ -396,27 +620,17 @@ def _layer3_llm_rank(candidates: list[dict]) -> list[dict]:
             resp.raise_for_status()
             raw = resp.json().get("message", {}).get("content", "")
             parsed = _parse_llm_score(raw, stock)
-            all_evaluated.append(parsed)
+            parsed["judged_by"] = "local"
+            evaluated.append(parsed)
         except Exception as e:
             log.warning("LLM 评分 %s 失败: %s, 使用数值评分", stock["symbol"], e)
             stock["final_score"] = stock.get("score_l2", 0)
             stock["reasoning"] = "LLM评分不可用, 基于数值分析"
             stock["verdict"] = "观望"
-            all_evaluated.append(stock)
+            stock["judged_by"] = "fallback"
+            evaluated.append(stock)
 
-    buyable = [s for s in all_evaluated
-               if s.get("verdict") == "买入"
-               and s.get("final_score", 0) >= MIN_BUYABILITY_SCORE]
-
-    if not buyable:
-        log.info("Layer 3: 本次扫描没有找到值得买入的股票 (这是正常的)")
-        buyable = []
-
-    buyable.sort(key=lambda x: x.get("final_score", 0), reverse=True)
-    result = buyable[:TOP_N]
-
-    log.info("Layer 3: %d 只通过买入判断 (共评估 %d 只)", len(result), len(all_evaluated))
-    return result
+    return evaluated
 
 
 def _build_scoring_prompt(stock: dict) -> str:
@@ -519,6 +733,7 @@ def _parse_llm_score(raw: str, stock: dict) -> dict:
             stock["risk"] = parsed.get("risk", "")
             stock["buy_low"] = _safe_float(parsed.get("buy_low"))
             stock["buy_high"] = _safe_float(parsed.get("buy_high"))
+            stock["strategy"] = parsed.get("strategy", "")
             verdict_raw = str(parsed.get("verdict", "")).strip()
             stock["verdict"] = "买入" if "买入" in verdict_raw and "不" not in verdict_raw else "观望"
             return stock
@@ -729,31 +944,42 @@ def _run_comprehensive_for_picks(top_picks: list[dict], progress: dict) -> list[
 
 
 def _run_deepseek_for_picks(top_picks: list[dict], progress: dict) -> list[dict]:
-    """Run DeepSeek API analysis for final TOP picks (only if API key is available)."""
+    """Generate DeepSeek deep-dive reports for TOP picks (post-Layer 3).
+
+    NOTE: Since 2026-04 rework, DeepSeek's primary role is in Layer 3 (judgment).
+    This Phase 5 now generates *supplementary detailed reports* only for picks that
+    were judged by local LLM (not already handled by DeepSeek in Layer 3).
+    Picks that already have DeepSeek reasoning from Layer 3 skip Phase 5.
+    """
     from config import call_deepseek, get_deepseek_key
 
     if not get_deepseek_key():
-        log.info("DeepSeek: 无API key, 跳过")
+        log.info("DeepSeek Phase 5: 无API key, 跳过")
+        return top_picks
+
+    # Only generate reports for picks NOT already judged by DeepSeek in Layer 3
+    needs_report = [p for p in top_picks if p.get("judged_by") != "deepseek"]
+    if not needs_report:
+        log.info("DeepSeek Phase 5: 所有推荐已由DeepSeek判断, 跳过报告生成")
         return top_picks
 
     system_prompt = (
-        "你是一位资深A股市场分析师。你的任务是对以下股票进行深度分析，判断是否值得买入。\n"
-        "请用中文撰写分析报告，包含：\n"
-        "1. 综合判断（买入/观望/回避）\n"
+        "你是一位资深A股市场分析师。请对以下股票进行深度分析报告。\n"
+        "报告要求：\n"
+        "1. 综合判断（买入/观望/回避）及信心水平\n"
         "2. 核心理由（3-5条）\n"
-        "3. 风险提示\n"
-        "4. 建议操作策略（包括仓位、止损价、目标价）\n"
-        "5. 信心水平（高/中/低）\n"
+        "3. 风险提示（量化风险）\n"
+        "4. 建议操作策略（仓位、止损价、目标价）\n"
         "注意：A股是T+1市场，买入即锁仓一天，追高风险极大。"
     )
 
-    for i, pick in enumerate(top_picks):
+    for i, pick in enumerate(needs_report):
         if _stop_event.is_set():
             break
 
         sym = pick["symbol"]
         name = pick.get("name", sym)
-        progress["deepseek_current"] = f"{sym} ({i+1}/{len(top_picks)})"
+        progress["deepseek_current"] = f"{sym} ({i+1}/{len(needs_report)})"
         _save_progress(progress)
 
         comp = pick.get("comprehensive", {})
@@ -803,7 +1029,7 @@ def _run_deepseek_for_picks(top_picks: list[dict], progress: dict) -> list[dict]
         user_prompt = "\n".join(parts)
 
         try:
-            log.info("DeepSeek 分析 %s (%d/%d)...", sym, i+1, len(top_picks))
+            log.info("DeepSeek 报告 %s (%d/%d)...", sym, i+1, len(needs_report))
             result = call_deepseek(system_prompt, user_prompt, max_tokens=2048)
             if result["ok"]:
                 pick["deepseek"] = {
@@ -812,7 +1038,7 @@ def _run_deepseek_for_picks(top_picks: list[dict], progress: dict) -> list[dict]
                     "model": result.get("model", ""),
                     "usage": result.get("usage", {}),
                 }
-                log.info("DeepSeek 分析 %s 完成 (tokens: %s)",
+                log.info("DeepSeek 报告 %s 完成 (tokens: %s)",
                          sym, result.get("usage", {}).get("total_tokens", "?"))
             else:
                 pick["deepseek"] = {"error": result.get("error", "Unknown")}
@@ -867,20 +1093,24 @@ def _generate_report(top_picks: list[dict], scan_meta: dict) -> str:
         ])
 
         for i, pick in enumerate(top_picks, 1):
+            judged = pick.get("judged_by", "local")
+            judge_tag = "🔬 DeepSeek" if judged == "deepseek" else "🤖 本地LLM"
             lines.extend([
                 f"### {i}. {pick['name']} ({pick['symbol']})",
                 "",
-                f"- **买入判定**: ✅ 值得买入",
+                f"- **买入判定**: ✅ 值得买入 ({judge_tag}判断)",
                 f"- **综合得分**: {pick.get('final_score', 'N/A'):.1f}/100",
                 f"- **最新价**: ¥{pick.get('price', 'N/A')}",
                 f"- **涨跌幅**: {pick.get('change_pct', 'N/A')}%",
                 f"- **市盈率(PE)**: {pick.get('pe', 'N/A')}",
+                f"- **资金流向评分**: {pick.get('ff_score', 'N/A')}/100",
                 f"- **基本面得分**: {pick.get('fund_score', 'N/A')}/100",
                 f"- **技术得分**: {pick.get('tech_score', 'N/A')}/100",
                 f"- **情绪得分**: {pick.get('sentiment_score', 'N/A')}/100",
                 f"- **RSI**: {pick.get('rsi', 'N/A')}",
                 f"- **推荐理由**: {pick.get('reasoning', 'N/A')}",
                 f"- **主要风险**: {pick.get('risk', 'N/A')}",
+                f"- **操作策略**: {pick.get('strategy', 'N/A')}",
                 f"- **建议买入区间**: {_buy_range_str(pick)}",
                 "",
             ])
@@ -1069,7 +1299,10 @@ def _execute_layer2_and_3(progress: dict, candidates: list[dict], resume: bool =
         _save_progress(progress)
         return
 
+    use_ds = progress.get("use_deepseek", False)
     progress["status"] = "layer3"
+    if use_ds:
+        progress["layer3_mode"] = "deepseek+local"
     _save_progress(progress)
 
     top_picks = _layer3_llm_rank(all_l2)
@@ -1081,12 +1314,16 @@ def _execute_layer2_and_3(progress: dict, candidates: list[dict], resume: bool =
         log.info("Phase 4: 对 %d 只推荐股票运行综合分析...", len(top_picks))
         top_picks = _run_comprehensive_for_picks(top_picks, progress)
 
-    use_ds = progress.get("use_deepseek", False)
+    # Phase 5: supplementary DeepSeek reports only for picks judged by local LLM
     if use_ds and top_picks and not _stop_event.is_set():
-        progress["status"] = "deepseek"
-        _save_progress(progress)
-        log.info("Phase 5: DeepSeek 深度分析 TOP %d...", len(top_picks))
-        top_picks = _run_deepseek_for_picks(top_picks, progress)
+        local_judged = [p for p in top_picks if p.get("judged_by") != "deepseek"]
+        if local_judged:
+            progress["status"] = "deepseek"
+            _save_progress(progress)
+            log.info("Phase 5: DeepSeek 补充报告 for %d 只本地判断股票...", len(local_judged))
+            top_picks = _run_deepseek_for_picks(top_picks, progress)
+        else:
+            log.info("Phase 5: 跳过 — 所有推荐已由 DeepSeek 在 Layer 3 判断")
 
     progress["status"] = "done"
     progress["top_picks"] = top_picks

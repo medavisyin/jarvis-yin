@@ -77,7 +77,7 @@
 - Analysis Engines (TA, Fundamental, Sentiment)
 - ML Pipeline (XGBoost, Walk-forward)
 - Market Signals (Fear & Greed, VIX)
-- Scanner (5000→100→20→TOP 5)
+- Scanner (5000→100→30→0-5, DeepSeek Layer 3)
 - LLM Synthesis
 - API Routes
 
