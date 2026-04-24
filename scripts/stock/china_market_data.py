@@ -920,13 +920,13 @@ def _append_history(snapshot: dict):
     history = _load_national_history()
 
     entry = {
-        "date": snapshot["date"],
+        "date": _normalize_date(snapshot["date"]),
         "total_broad_shares_yi": snapshot["total_broad_shares_yi"],
         "total_sector_shares_yi": snapshot["total_sector_shares_yi"],
         "etf_snapshot": snapshot["etf_snapshot"],
     }
 
-    if history and history[-1].get("date") == entry["date"]:
+    if history and _normalize_date(history[-1].get("date", "")) == entry["date"]:
         history[-1] = entry
     else:
         history.append(entry)
@@ -1068,6 +1068,265 @@ def national_team_trend(days: int = 30) -> dict:
     }
 
 
+def _normalize_date(d: str) -> str:
+    """Normalize date string to YYYY-MM-DD format."""
+    d = d.strip()
+    if len(d) == 8 and d.isdigit():
+        return f"{d[:4]}-{d[4:6]}-{d[6:8]}"
+    return d
+
+
+def national_team_backfill_history(days: int = 90) -> dict:
+    """Backfill history.json with weekly snapshots going back `days` days.
+
+    Fetches both SSE and SZSE ETF share data for dates not already in history,
+    sampling roughly every 5 trading days. Also patches existing entries that
+    are missing SZSE data and normalizes all history dates to YYYY-MM-DD format.
+    """
+    history = _load_national_history()
+    normalized = False
+    for h in history:
+        old_date = h.get("date", "")
+        new_date = _normalize_date(old_date)
+        if new_date != old_date:
+            h["date"] = new_date
+            normalized = True
+    existing_dates = {h["date"] for h in history}
+
+    now = datetime.now()
+    target_dates = []
+    for offset in range(0, days, 5):
+        d = now - timedelta(days=offset)
+        while d.weekday() >= 5:
+            d -= timedelta(days=1)
+        ds = d.strftime("%Y-%m-%d")
+        if ds not in existing_dates:
+            target_dates.append((ds, d.strftime("%Y%m%d")))
+
+    target_dates = sorted(set(target_dates), key=lambda x: x[0])
+
+    szse_codes = {e["code"] for e in CORE_ETF_LIST if e["exchange"] == "szse"}
+    entries_needing_szse = [
+        h for h in history
+        if any(
+            e["code"] in szse_codes and e.get("shares") is None
+            for e in h.get("etf_snapshot", [])
+        )
+    ]
+    need_szse_patch = len(entries_needing_szse) > 0
+
+    if not target_dates and not need_szse_patch:
+        return {"backfilled": 0, "total_history": len(history), "message": "历史数据已完整"}
+
+    szse_daily_cache = {}
+
+    def _fetch_szse_for_date(date_yyyymmdd: str) -> pd.DataFrame:
+        if date_yyyymmdd in szse_daily_cache:
+            return szse_daily_cache[date_yyyymmdd]
+        try:
+            df = _retry(ak.fund_scale_daily_szse,
+                        start_date=date_yyyymmdd,
+                        end_date=date_yyyymmdd,
+                        symbol="ETF")
+            if df is not None and not df.empty:
+                szse_daily_cache[date_yyyymmdd] = df
+                return df
+        except Exception as e:
+            log.debug("SZSE daily fetch failed for %s: %s", date_yyyymmdd, e)
+        szse_daily_cache[date_yyyymmdd] = pd.DataFrame()
+        return pd.DataFrame()
+
+    if need_szse_patch:
+        log.info("回填 %d 条历史记录的深交所数据...", len(entries_needing_szse))
+        patched = 0
+        for h_entry in entries_needing_szse:
+            d_str = h_entry["date"].replace("-", "")
+            szse_df = _fetch_szse_for_date(d_str)
+            if szse_df.empty:
+                time.sleep(0.3)
+                continue
+            szse_share_map = {}
+            code_col = share_col = None
+            for c in ["基金代码", "代码", "证券代码"]:
+                if c in szse_df.columns:
+                    code_col = c
+                    break
+            for c in ["基金份额", "份额", "流通份额"]:
+                if c in szse_df.columns:
+                    share_col = c
+                    break
+            if code_col and share_col:
+                for _, row in szse_df.iterrows():
+                    code = str(row[code_col]).strip()
+                    val = pd.to_numeric(row[share_col], errors="coerce")
+                    if code in szse_codes and pd.notna(val):
+                        szse_share_map[code] = float(val)
+
+            broad_total = 0
+            sector_total = 0
+            for etf_e in h_entry.get("etf_snapshot", []):
+                if etf_e["code"] in szse_share_map and etf_e.get("shares") is None:
+                    share = szse_share_map[etf_e["code"]]
+                    etf_e["shares"] = share
+                    etf_e["shares_yi"] = round(share / 1e8, 2)
+                if etf_e.get("shares_yi"):
+                    if etf_e.get("type") == "宽基":
+                        broad_total += etf_e["shares_yi"]
+                    else:
+                        sector_total += etf_e["shares_yi"]
+            h_entry["total_broad_shares_yi"] = round(broad_total, 2)
+            h_entry["total_sector_shares_yi"] = round(sector_total, 2)
+            patched += 1
+            time.sleep(0.3)
+        log.info("深交所数据回填: 修补了 %d 条记录", patched)
+
+    backfilled = 0
+
+    for date_str, date_sse in target_dates:
+        try:
+            sse_df = ak.fund_etf_scale_sse(date=date_sse)
+            if sse_df is None or sse_df.empty or len(sse_df) < 5:
+                continue
+        except Exception:
+            time.sleep(0.3)
+            continue
+
+        szse_df = _fetch_szse_for_date(date_sse)
+
+        broad_total = 0
+        sector_total = 0
+        etf_snap = []
+        for etf in CORE_ETF_LIST:
+            share = _get_etf_share(etf["code"], sse_df, szse_df)
+            shares_yi = round(share / 1e8, 2) if share else None
+            etf_snap.append({
+                "code": etf["code"], "name": etf["name"],
+                "index": etf["index"], "type": etf["type"],
+                "shares": share, "shares_yi": shares_yi,
+            })
+            if shares_yi:
+                if etf["type"] == "宽基":
+                    broad_total += shares_yi
+                else:
+                    sector_total += shares_yi
+
+        if broad_total > 0:
+            entry = {
+                "date": date_str,
+                "total_broad_shares_yi": round(broad_total, 2),
+                "total_sector_shares_yi": round(sector_total, 2),
+                "etf_snapshot": etf_snap,
+            }
+            history.append(entry)
+            backfilled += 1
+
+        time.sleep(0.5)
+
+    history.sort(key=lambda h: h.get("date", ""))
+    if len(history) > 365:
+        history = history[-365:]
+
+    history_path = os.path.join(_CACHE_NATIONAL, "history.json")
+    with open(history_path, "w", encoding="utf-8") as f:
+        json.dump(history, f, ensure_ascii=False, indent=2, default=str)
+
+    log.info("国家队历史回填: 新增 %d 个数据点, 总计 %d 个", backfilled, len(history))
+    return {
+        "backfilled": backfilled,
+        "total_history": len(history),
+        "message": f"回填完成: 新增 {backfilled} 个历史数据点",
+    }
+
+
+def national_team_period_stats() -> dict:
+    """Calculate ETF share changes over 1 week, 1 month, and 3 months from history."""
+    history = _load_national_history()
+    if len(history) < 2:
+        return {"periods": [], "per_etf_periods": []}
+
+    today = datetime.now()
+    period_defs = [
+        {"label": "1周", "key": "1w", "days": 7, "tolerance": 3},
+        {"label": "1月", "key": "1m", "days": 30, "tolerance": 5},
+        {"label": "3月", "key": "3m", "days": 90, "tolerance": 10},
+    ]
+
+    def _find_closest_entry(target_date_str: str, tolerance: int = 3) -> dict | None:
+        target = datetime.strptime(target_date_str, "%Y-%m-%d")
+        best = None
+        best_delta = None
+        for h in history:
+            try:
+                hd = datetime.strptime(h["date"], "%Y-%m-%d")
+            except (KeyError, ValueError):
+                continue
+            delta = abs((hd - target).days)
+            if delta <= tolerance and (best_delta is None or delta < best_delta):
+                best = h
+                best_delta = delta
+        return best
+
+    latest = history[-1]
+    latest_broad = latest.get("total_broad_shares_yi", 0)
+    latest_sector = latest.get("total_sector_shares_yi", 0)
+
+    periods = []
+    for pdef in period_defs:
+        target_date = (today - timedelta(days=pdef["days"])).strftime("%Y-%m-%d")
+        past_entry = _find_closest_entry(target_date, pdef["tolerance"])
+        if not past_entry:
+            periods.append({
+                "key": pdef["key"], "label": pdef["label"],
+                "broad_change_pct": None, "sector_change_pct": None,
+                "broad_from": None, "broad_to": latest_broad,
+                "sector_from": None, "sector_to": latest_sector,
+                "ref_date": None,
+            })
+            continue
+        past_broad = past_entry.get("total_broad_shares_yi", 0)
+        past_sector = past_entry.get("total_sector_shares_yi", 0)
+        broad_pct = ((latest_broad - past_broad) / past_broad * 100) if past_broad > 0 else None
+        sector_pct = ((latest_sector - past_sector) / past_sector * 100) if past_sector > 0 else None
+        periods.append({
+            "key": pdef["key"], "label": pdef["label"],
+            "broad_change_pct": round(broad_pct, 2) if broad_pct is not None else None,
+            "sector_change_pct": round(sector_pct, 2) if sector_pct is not None else None,
+            "broad_from": round(past_broad, 2),
+            "broad_to": round(latest_broad, 2),
+            "sector_from": round(past_sector, 2),
+            "sector_to": round(latest_sector, 2),
+            "ref_date": past_entry.get("date"),
+        })
+
+    latest_etfs = {e["code"]: e for e in latest.get("etf_snapshot", [])}
+    per_etf = []
+    for etf_info in CORE_ETF_LIST:
+        code = etf_info["code"]
+        curr = latest_etfs.get(code)
+        if not curr or curr.get("shares_yi") is None:
+            continue
+        curr_yi = curr["shares_yi"]
+        etf_periods = {"code": code, "name": etf_info["name"],
+                       "type": etf_info["type"], "current_yi": round(curr_yi, 2)}
+        for pdef in period_defs:
+            target_date = (today - timedelta(days=pdef["days"])).strftime("%Y-%m-%d")
+            past_entry = _find_closest_entry(target_date, pdef["tolerance"])
+            pct = None
+            past_yi = None
+            if past_entry:
+                past_etfs = {e["code"]: e for e in past_entry.get("etf_snapshot", [])}
+                pe = past_etfs.get(code)
+                if pe and pe.get("shares_yi") is not None:
+                    past_yi = pe["shares_yi"]
+                    if past_yi > 0:
+                        pct = round((curr_yi - past_yi) / past_yi * 100, 2)
+            etf_periods[pdef["key"]] = pct
+            etf_periods[f"{pdef['key']}_from"] = round(past_yi, 2) if past_yi is not None else None
+        per_etf.append(etf_periods)
+
+    return {"periods": periods, "per_etf_periods": per_etf}
+
+
 def fetch_institution_holdings(quarter: str = "") -> pd.DataFrame:
     """获取机构持股一览 (含汇金/社保/保险等)。
 
@@ -1097,6 +1356,229 @@ def fetch_institution_holdings(quarter: str = "") -> pd.DataFrame:
     except Exception as e:
         log.warning("机构持股获取失败: %s", e)
     return pd.DataFrame()
+
+
+def national_team_fund_signals() -> dict:
+    """Aggregate fund flow + institution data to supplement ETF share monitoring.
+
+    Returns market-wide main-force flow summary and institution holding highlights.
+    """
+    result = {"market_flow": None, "institution": None}
+
+    try:
+        df_flow = fetch_market_fund_flow(days=10)
+        if df_flow is not None and not df_flow.empty:
+            net_col = None
+            for c in ["主力净流入-净额", "主力净流入", "净流入"]:
+                if c in df_flow.columns:
+                    net_col = c
+                    break
+            if net_col:
+                df_flow[net_col] = pd.to_numeric(df_flow[net_col], errors="coerce")
+                recent = df_flow.tail(5)
+                latest_val = recent.iloc[-1][net_col] if len(recent) > 0 else 0
+                avg_5d = recent[net_col].mean()
+                consecutive = 0
+                for val in reversed(recent[net_col].tolist()):
+                    if val > 0:
+                        consecutive += 1
+                    else:
+                        break
+                consec_out = 0
+                for val in reversed(recent[net_col].tolist()):
+                    if val < 0:
+                        consec_out += 1
+                    else:
+                        break
+                latest_yi = round(latest_val / 1e8, 2) if abs(latest_val) > 1000 else round(latest_val, 2)
+                avg_5d_yi = round(avg_5d / 1e8, 2) if abs(avg_5d) > 1000 else round(avg_5d, 2)
+
+                if latest_val > 0 and consecutive >= 3:
+                    signal = "主力持续流入"
+                elif latest_val > 0:
+                    signal = "主力净流入"
+                elif latest_val < 0 and consec_out >= 3:
+                    signal = "主力持续流出"
+                elif latest_val < 0:
+                    signal = "主力净流出"
+                else:
+                    signal = "资金平衡"
+
+                result["market_flow"] = {
+                    "latest_net_yi": latest_yi,
+                    "avg_5d_net_yi": avg_5d_yi,
+                    "consecutive_inflow": consecutive,
+                    "consecutive_outflow": consec_out,
+                    "signal": signal,
+                }
+    except Exception as e:
+        log.warning("国家队资金信号-大盘资金流获取失败: %s", e)
+
+    try:
+        df_inst = fetch_institution_holdings()
+        if df_inst is not None and not df_inst.empty:
+            total = len(df_inst)
+            name_col = None
+            for c in ["机构名称", "名称", "持股机构"]:
+                if c in df_inst.columns:
+                    name_col = c
+                    break
+            highlights = []
+            national_keywords = ["汇金", "社保", "保险", "证金", "梧桐树", "外管局"]
+            if name_col:
+                for kw in national_keywords:
+                    matched = df_inst[df_inst[name_col].str.contains(kw, na=False)]
+                    if not matched.empty:
+                        highlights.append({"type": kw, "count": len(matched)})
+            result["institution"] = {
+                "total_records": total,
+                "highlights": highlights,
+            }
+    except Exception as e:
+        log.warning("国家队资金信号-机构持股获取失败: %s", e)
+
+    return result
+
+
+def national_team_institution_detail() -> dict:
+    """Fetch institution holding details from quarterly reports.
+
+    Queries 社保/QFII/保险 holding data via stock_report_fund_hold,
+    providing concrete evidence of national-team-adjacent institutional activity.
+    Returns top movers (biggest increases) for each category.
+    """
+    result = {"quarter": "", "categories": []}
+    now = datetime.now()
+    quarter_dates = []
+    for y in range(now.year, now.year - 2, -1):
+        for q_date in ["1231", "0930", "0630", "0331"]:
+            quarter_dates.append(f"{y}{q_date}")
+    quarter_dates = [d for d in quarter_dates if d <= now.strftime("%Y%m%d")]
+
+    categories = [
+        {"symbol": "社保持仓", "label": "社保基金", "icon": "shield"},
+        {"symbol": "QFII持仓", "label": "QFII", "icon": "globe"},
+        {"symbol": "保险持仓", "label": "保险资金", "icon": "umbrella"},
+    ]
+
+    cache_path = os.path.join(_CACHE_NATIONAL, "inst_detail.json")
+    if _cache_fresh(cache_path, max_age_hours=24):
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+
+    found_quarter = ""
+    for cat in categories:
+        cat_data = None
+        for qd in quarter_dates:
+            try:
+                df = _retry(ak.stock_report_fund_hold, symbol=cat["symbol"], date=qd)
+                if df is not None and not df.empty and len(df) >= 10:
+                    cat_data = df
+                    if not found_quarter:
+                        y, md = qd[:4], qd[4:]
+                        q_map = {"0331": "Q1", "0630": "Q2", "0930": "Q3", "1231": "Q4"}
+                        found_quarter = f"{y} {q_map.get(md, md)}"
+                    break
+            except Exception:
+                continue
+
+        if cat_data is None:
+            continue
+
+        code_col = "股票代码" if "股票代码" in cat_data.columns else None
+        name_col = "股票简称" if "股票简称" in cat_data.columns else None
+        change_col = "持股变化" if "持股变化" in cat_data.columns else None
+        pct_col = "持股变动比例" if "持股变动比例" in cat_data.columns else None
+        count_col = "持有基金家数" if "持有基金家数" in cat_data.columns else None
+        value_col = "持股市值" if "持股市值" in cat_data.columns else None
+
+        top_increase = []
+        top_new = []
+        if change_col:
+            increased = cat_data[cat_data[change_col] == "增仓"]
+            if pct_col and not increased.empty:
+                increased = increased.copy()
+                increased[pct_col] = pd.to_numeric(increased[pct_col], errors="coerce")
+                top5 = increased.nlargest(5, pct_col)
+                for _, row in top5.iterrows():
+                    entry = {
+                        "code": str(row.get(code_col, "")),
+                        "name": str(row.get(name_col, "")),
+                        "change": "增仓",
+                        "change_pct": round(float(row[pct_col]), 2) if pd.notna(row[pct_col]) else None,
+                    }
+                    if count_col and pd.notna(row.get(count_col)):
+                        entry["fund_count"] = int(row[count_col])
+                    if value_col and pd.notna(row.get(value_col)):
+                        entry["market_value_yi"] = round(float(row[value_col]) / 1e8, 2)
+                    top_increase.append(entry)
+
+            new_entries = cat_data[cat_data[change_col] == "新进"]
+            if not new_entries.empty and value_col:
+                new_entries = new_entries.copy()
+                new_entries[value_col] = pd.to_numeric(new_entries[value_col], errors="coerce")
+                top3 = new_entries.nlargest(3, value_col)
+                for _, row in top3.iterrows():
+                    entry = {
+                        "code": str(row.get(code_col, "")),
+                        "name": str(row.get(name_col, "")),
+                        "change": "新进",
+                    }
+                    if count_col and pd.notna(row.get(count_col)):
+                        entry["fund_count"] = int(row[count_col])
+                    if value_col and pd.notna(row.get(value_col)):
+                        entry["market_value_yi"] = round(float(row[value_col]) / 1e8, 2)
+                    top_new.append(entry)
+
+        top_decrease = []
+        if change_col:
+            decreased = cat_data[cat_data[change_col] == "减仓"]
+            if pct_col and not decreased.empty:
+                decreased = decreased.copy()
+                decreased[pct_col] = pd.to_numeric(decreased[pct_col], errors="coerce")
+                top5_dec = decreased.nsmallest(5, pct_col)
+                for _, row in top5_dec.iterrows():
+                    entry = {
+                        "code": str(row.get(code_col, "")),
+                        "name": str(row.get(name_col, "")),
+                        "change": "减仓",
+                        "change_pct": round(float(row[pct_col]), 2) if pd.notna(row[pct_col]) else None,
+                    }
+                    if count_col and pd.notna(row.get(count_col)):
+                        entry["fund_count"] = int(row[count_col])
+                    if value_col and pd.notna(row.get(value_col)):
+                        entry["market_value_yi"] = round(float(row[value_col]) / 1e8, 2)
+                    top_decrease.append(entry)
+
+        summary = {
+            "total": len(cat_data),
+            "increased": int((cat_data[change_col] == "增仓").sum()) if change_col else 0,
+            "decreased": int((cat_data[change_col] == "减仓").sum()) if change_col else 0,
+            "new": int((cat_data[change_col] == "新进").sum()) if change_col else 0,
+        }
+
+        result["categories"].append({
+            "symbol": cat["symbol"],
+            "label": cat["label"],
+            "icon": cat["icon"],
+            "summary": summary,
+            "top_increase": top_increase,
+            "top_decrease": top_decrease,
+            "top_new": top_new,
+        })
+
+    result["quarter"] = found_quarter
+
+    try:
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2, default=str)
+    except Exception:
+        pass
+
+    return result
 
 
 # ── Composite: Fetch All ────────────────────────────────────

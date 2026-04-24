@@ -197,7 +197,7 @@ The agent's `_run_daily_fetch` function generates **two separate audio files** f
 
 ### Chinese News Audio (`china-news.mp3`)
 - Contains only **China-sourced** items (Sina, People's Daily, CLS, Toutiao, Weibo)
-- Up to 6 items per category (vs 4 for world news)
+- Up to **15 items per category** (vs 4 for world news), yielding ~15-20 minute audio for typical 100+ item days
 - Language controlled by `audio_lang_china` setting
 - Cross-day dedup ensures minimal repeat content between consecutive days
 

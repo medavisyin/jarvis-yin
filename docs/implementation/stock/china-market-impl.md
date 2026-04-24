@@ -49,6 +49,8 @@ Three new modules implement A-share specific data acquisition, timing models, an
 | `market_temperature()` | zt_count, dt_count, ratio, mood | Market mood |
 | **`national_team_monitor()`** | etf_snapshot (16只), totals, anomalies | 国家队建仓/撤退信号 |
 | **`national_team_trend(days)`** | total_change_pct, trend label | 长期国家队动向 |
+| **`national_team_period_stats()`** | 1w/1m/3m changes for total + per-ETF | 多时间窗口监控指标 |
+| **`national_team_backfill_history(days)`** | Backfill weekly snapshots from SSE | 历史数据自动回填 |
 
 ### National Team ETF Monitoring (国家队)
 
@@ -60,6 +62,8 @@ Tracks 16 core ETFs (9 broad-based + 7 sector) across SSE and SZSE:
 Features:
 - Daily share snapshot with automatic date fallback (tries today, then past 5 trading days)
 - Historical snapshot accumulation (up to 365 days) for trend analysis
+- **Automatic 90-day history backfill** from SSE on each fetch — samples every 5 trading days, skips dates already in history, normalizes all dates to `YYYY-MM-DD` format
+- **Multi-period indicators (1周/1月/3月):** Total broad/sector share changes and per-ETF changes across 3 time windows, with ±3 day tolerance for matching historical snapshots
 - Anomaly detection: flags any ETF with >3% share change vs previous snapshot
 - Aggregate signals: 大幅增持/温和增持/平稳/温和减持/大幅减持
 - Trend analysis: 大规模建仓/持续增持/小幅增持/小幅减持/持续减持/大规模撤退

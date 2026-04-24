@@ -3734,6 +3734,55 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                     except Exception as e:
                         wiki_results.append(f"[{user}] error: {str(e)[:80]}")
                 wiki_text = "\n".join(wiki_results)
+                # --- Generate AI change summaries for wiki pages ---
+                def _wiki_ai_summary(page_detail: dict) -> str:
+                    """Use Ollama to summarize what changed on a wiki page."""
+                    title = page_detail.get("title", "")
+                    raw_summary = page_detail.get("summary", "").strip()
+                    headings = page_detail.get("headings", [])
+                    if not raw_summary:
+                        return ""
+                    context_parts = [f"Page title: {title}"]
+                    if headings:
+                        context_parts.append(f"Sections: {', '.join(headings[:8])}")
+                    context_parts.append(f"Content excerpt:\n{raw_summary}")
+                    context = "\n".join(context_parts)
+                    try:
+                        import requests as _req
+                        resp = _req.post(
+                            f"{OLLAMA_HOST}/api/chat",
+                            json={
+                                "model": OLLAMA_MODEL_FAST,
+                                "messages": [
+                                    {"role": "system", "content": (
+                                        "You are a concise technical writer. Given a Confluence wiki page's content, "
+                                        "write a 1-2 sentence summary of what this page covers or what was likely updated. "
+                                        "Focus on the key changes or topics. Be specific and factual. "
+                                        "Output only the summary, no labels or prefixes."
+                                    )},
+                                    {"role": "user", "content": context},
+                                ],
+                                "stream": False,
+                                "think": False,
+                                "options": {"temperature": 0.3, "num_predict": 200},
+                            },
+                            timeout=30,
+                        )
+                        resp.raise_for_status()
+                        result = resp.json().get("message", {}).get("content", "").strip()
+                        result = re.sub(r"</?think>", "", result).strip()
+                        return result
+                    except Exception:
+                        return ""
+
+                if all_user_pages_detail:
+                    job["step"] = "Generating AI summaries for wiki pages..."
+                    for user, details in all_user_pages_detail.items():
+                        for pg in details:
+                            ai_sum = _wiki_ai_summary(pg)
+                            if ai_sum:
+                                pg["ai_summary"] = ai_sum
+
                 wiki_report_path = os.path.join(output_dir, f"wiki-fetch-{today}.md")
                 with open(wiki_report_path, "w", encoding="utf-8") as wf:
                     wf.write(f"# Wiki Fetch Report — {today}\n\n")
@@ -3750,8 +3799,8 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                                 url = pg.get("url", "")
                                 space = pg.get("space", "")
                                 modified = pg.get("modified_at", "")
-                                summary = pg.get("summary", "").strip()
                                 headings = pg.get("headings", [])
+                                ai_summary = pg.get("ai_summary", "")
                                 if url:
                                     wf.write(f"- **[{title}]({url})**")
                                 else:
@@ -3761,11 +3810,15 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                                 if modified:
                                     wf.write(f" (modified: {modified})")
                                 wf.write("\n")
-                                if summary:
-                                    brief = summary[:200] + ("..." if len(summary) > 200 else "")
+                                if ai_summary:
+                                    wf.write(f"  > **Summary:** {ai_summary}\n")
+                                elif pg.get("summary", "").strip():
+                                    brief = pg["summary"].strip()[:200] + ("..." if len(pg["summary"].strip()) > 200 else "")
                                     wf.write(f"  > {brief}\n")
                                 if headings:
                                     wf.write(f"  > Sections: {', '.join(headings[:5])}\n")
+                                if url:
+                                    wf.write(f"  > [Open in Confluence]({url})\n")
                                 wf.write("\n")
                 steps.append({"step": "wiki_fetch", "exit_code": 0,
                               "output": f"{total_wiki_pages} wiki pages ({total_wiki_chunks} chunks) from {len(_WIKI_USERS)} users"})
@@ -4013,7 +4066,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                         categories,
                         source_filter=lambda s: _CHINA_SOURCE_TAG in s,
                         prefer_zh=(cn_lang == "zh"),
-                        max_per_cat=6,
+                        max_per_cat=15,
                     )
                     if cn_segments:
                         job["step"] = f"Generating China narration ({len(cn_segments)} segments, lang={cn_lang})..."
@@ -5678,10 +5731,17 @@ def api_stock_fund_flow(symbol):
 def api_stock_national_team():
     """Monitor national team ETF share changes."""
     try:
-        from china_market_data import national_team_monitor, national_team_trend
+        from china_market_data import (national_team_monitor, national_team_trend,
+                                       national_team_period_stats, national_team_backfill_history,
+                                       national_team_fund_signals)
         snapshot = national_team_monitor()
+        backfill = national_team_backfill_history(days=90)
         trend = national_team_trend()
-        return jsonify({"snapshot": snapshot, "trend": trend})
+        period_stats = national_team_period_stats()
+        fund_signals = national_team_fund_signals()
+        return jsonify({"snapshot": snapshot, "trend": trend,
+                        "period_stats": period_stats, "backfill": backfill,
+                        "fund_signals": fund_signals})
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500
@@ -9391,8 +9451,8 @@ function closeNationalTeamModal() {
 async function fetchNationalTeam() {
   const st = document.getElementById('ntStatus');
   const el = document.getElementById('ntResult');
-  st.textContent = '获取数据中... (约10-30秒)';
-  el.innerHTML = '<p style="color:#60a5fa">&#9203; 正在从上交所/深交所获取ETF份额数据...</p>';
+  st.textContent = '获取数据中... (含历史回填约30-60秒)';
+  el.innerHTML = '<p style="color:#60a5fa">&#9203; 正在从上交所/深交所获取ETF份额数据 + 回填历史数据...</p>';
   document.getElementById('btnNTFetch').disabled = true;
   try {
     const r = await fetch('/api/stock/national-team');
@@ -9407,6 +9467,7 @@ function renderNationalTeam(d) {
   const el = document.getElementById('ntResult');
   const snap = d.snapshot || {};
   const trend = d.trend || {};
+  const ps = d.period_stats || {};
   const etfs = snap.etf_snapshot || [];
   const sigs = snap.signals || {};
   let h = '';
@@ -9438,6 +9499,64 @@ function renderNationalTeam(d) {
   h += '</div>';
   h += '</div>';
 
+  var periods = (ps.periods || []);
+  if (periods.length > 0) {
+    h += '<div style="margin-bottom:16px">';
+    h += '<div style="font-size:0.85em;font-weight:600;color:#e0e0e0;margin-bottom:8px">&#128200; 历史区间变化</div>';
+    h += '<table style="width:100%;border-collapse:collapse;font-size:0.82em;background:#0f1117;border-radius:8px;border:1px solid #2a2d3e">';
+    h += '<tr style="border-bottom:1px solid #2a2d3e;color:#8b8fa4">';
+    h += '<th style="text-align:left;padding:8px 10px">区间</th>';
+    h += '<th style="text-align:center;padding:8px 10px">参考日期</th>';
+    h += '<th style="text-align:right;padding:8px 10px">宽基变化</th>';
+    h += '<th style="text-align:right;padding:8px 10px">宽基份额</th>';
+    h += '<th style="text-align:right;padding:8px 10px">行业变化</th>';
+    h += '<th style="text-align:right;padding:8px 10px">行业份额</th>';
+    h += '</tr>';
+    periods.forEach(function(p) {
+      var bPct = p.broad_change_pct;
+      var sPct = p.sector_change_pct;
+      var bStr = bPct != null ? ((bPct > 0 ? '+' : '') + bPct.toFixed(2) + '%') : 'N/A';
+      var sStr = sPct != null ? ((sPct > 0 ? '+' : '') + sPct.toFixed(2) + '%') : 'N/A';
+      var bColor = bPct != null ? (bPct > 0 ? '#ef4444' : bPct < 0 ? '#10b981' : '#8b8fa4') : '#8b8fa4';
+      var sColor = sPct != null ? (sPct > 0 ? '#ef4444' : sPct < 0 ? '#10b981' : '#8b8fa4') : '#8b8fa4';
+      var bRange = (p.broad_from != null && p.broad_to != null) ? (p.broad_from.toFixed(1) + ' \u2192 ' + p.broad_to.toFixed(1)) : '-';
+      var sRange = (p.sector_from != null && p.sector_to != null) ? (p.sector_from.toFixed(1) + ' \u2192 ' + p.sector_to.toFixed(1)) : '-';
+      h += '<tr style="border-bottom:1px solid #1a1d2e">';
+      h += '<td style="padding:8px 10px;font-weight:700;color:#e0e0e0">' + p.label + '</td>';
+      h += '<td style="padding:8px 10px;text-align:center;color:#8b8fa4;font-size:0.9em">' + (p.ref_date || '-') + '</td>';
+      h += '<td style="padding:8px 10px;text-align:right;font-weight:700;color:' + bColor + '">' + bStr + '</td>';
+      h += '<td style="padding:8px 10px;text-align:right;color:#8b8fa4;font-size:0.88em">' + bRange + '</td>';
+      h += '<td style="padding:8px 10px;text-align:right;font-weight:700;color:' + sColor + '">' + sStr + '</td>';
+      h += '<td style="padding:8px 10px;text-align:right;color:#8b8fa4;font-size:0.88em">' + sRange + '</td>';
+      h += '</tr>';
+    });
+    h += '</table>';
+    h += '</div>';
+  }
+
+  var fs = d.fund_signals || {};
+  if (fs.market_flow) {
+    h += '<div style="margin-bottom:16px">';
+    h += '<div style="font-size:0.85em;font-weight:600;color:#e0e0e0;margin-bottom:8px">&#128176; 资金信号</div>';
+    var mf = fs.market_flow;
+    var mfColor = mf.latest_net_yi > 0 ? '#ef4444' : mf.latest_net_yi < 0 ? '#10b981' : '#8b8fa4';
+    var mfIcon = mf.latest_net_yi > 0 ? '&#9650;' : mf.latest_net_yi < 0 ? '&#9660;' : '&#9644;';
+    h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:12px 16px;max-width:400px">';
+    h += '<div style="font-size:0.78em;color:#8b8fa4;margin-bottom:4px">全市场主力资金 <span style="color:#6b7280;font-size:0.9em" title="主力=超大单(>100万)+大单(20-100万), 代表机构/大户资金行为。此为A股全市场数据，不只是上方16只ETF。">(超大单+大单 · 全A股)</span></div>';
+    h += '<div style="font-size:1.2em;font-weight:700;color:' + mfColor + '">' + mfIcon + ' ' + mf.signal + '</div>';
+    h += '<div style="font-size:0.78em;color:#8b8fa4;margin-top:4px">今日净流入: <span style="color:' + mfColor + ';font-weight:600">' + (mf.latest_net_yi > 0 ? '+' : '') + mf.latest_net_yi + ' 亿</span></div>';
+    h += '<div style="font-size:0.78em;color:#8b8fa4">5日均净流入: ' + (mf.avg_5d_net_yi > 0 ? '+' : '') + mf.avg_5d_net_yi + ' 亿</div>';
+    if (mf.consecutive_inflow > 0) h += '<div style="font-size:0.78em;color:#ef4444">连续流入 ' + mf.consecutive_inflow + ' 日</div>';
+    if (mf.consecutive_outflow > 0) h += '<div style="font-size:0.78em;color:#10b981">连续流出 ' + mf.consecutive_outflow + ' 日</div>';
+    h += '</div>';
+    h += '<div style="font-size:0.7em;color:#6b7280;margin-top:6px;line-height:1.4">';
+    h += '\u2139\ufe0f <b>\u4e3b\u529b</b> = \u8d85\u5927\u5355(>100\u4e07) + \u5927\u5355(20-100\u4e07)\uff0c\u4ee3\u8868\u673a\u6784/\u5927\u6237\u8d44\u91d1\u884c\u4e3a\u3002'
+    h += '<br>\u2139\ufe0f <b>\u8303\u56f4\u533a\u522b:</b> \u4e0a\u65b9\u201cETF\u4efd\u989d\u53d8\u52a8\u201d\u53cd\u6620\u7684\u662f<u>16\u53ea\u6838\u5fc3ETF</u>\u7684\u88ab\u52a8\u8d44\u91d1\uff0c\u4e0b\u65b9\u201c\u5168\u5e02\u573a\u4e3b\u529b\u8d44\u91d1\u201d\u662f<u>\u6240\u6709A\u80a1</u>\u7684\u4e3b\u52a8\u8d44\u91d1\u3002\u4e24\u8005\u53ef\u80fd\u77db\u76fe(\u5982\u5927\u76d8\u6d41\u51fa\u4f46\u56fd\u5bb6\u961f\u5355\u72ec\u589e\u6301ETF)\uff0c\u8fd9\u6b63\u662f\u62a4\u76d8\u7684\u5178\u578b\u4fe1\u53f7\u3002'
+    h += '<br>\u2139\ufe0f \u673a\u6784\u6301\u4ed3\u4e3a\u5b63\u62a5\u6570\u636e\uff0c\u6709\u6ede\u540e\u6027\u3002';
+    h += '</div>';
+    h += '</div>';
+  }
+
   if (sigs.anomalies && sigs.anomalies.length > 0) {
     h += '<div style="background:#1a0a0a;border:1px solid #ef4444;border-radius:8px;padding:10px 14px;margin-bottom:14px">';
     h += '<div style="color:#ef4444;font-weight:600;font-size:0.85em;margin-bottom:6px">&#9888; 异常变动</div>';
@@ -9451,21 +9570,88 @@ function renderNationalTeam(d) {
     h += '</div>';
   }
 
+  // ── 综合研判 ──
+  var _fs = d.fund_signals || {};
+  var _mf = _fs.market_flow || {};
+  var _etfSig = sigs.broad_total_change || '';
+  var _tc = trend.total_change_pct;
+  var _mfNet = _mf.latest_net_yi || 0;
+  var _mfConsecIn = _mf.consecutive_inflow || 0;
+  var _mfConsecOut = _mf.consecutive_outflow || 0;
+
+  var _etfUp = _etfSig.indexOf('增持') >= 0;
+  var _etfDown = _etfSig.indexOf('减持') >= 0;
+  var _mfIn = _mfNet > 0;
+  var _mfOut = _mfNet < 0;
+
+  var _verdicts = [];
+  if (_etfUp && _mfOut) {
+    _verdicts.push({icon: '\ud83d\udee1\ufe0f', text: 'ETF\u4efd\u989d\u589e\u52a0\u4f46\u5168\u5e02\u573a\u4e3b\u529b\u8d44\u91d1\u6d41\u51fa \u2014 \u56fd\u5bb6\u961f\u9006\u5e02\u62a4\u76d8\u6982\u7387\u8f83\u9ad8', color: '#ef4444'});
+  } else if (_etfUp && _mfIn) {
+    _verdicts.push({icon: '\ud83d\ude80', text: 'ETF\u4efd\u989d\u4e0e\u5168\u5e02\u573a\u4e3b\u529b\u540c\u65f6\u6d41\u5165 \u2014 \u5e02\u573a\u6574\u4f53\u770b\u591a\uff0c\u8d44\u91d1\u5171\u632f', color: '#f59e0b'});
+  } else if (_etfDown && _mfIn) {
+    _verdicts.push({icon: '\u26a0\ufe0f', text: 'ETF\u4efd\u989d\u51cf\u5c11\u4f46\u5e02\u573a\u4e3b\u529b\u6d41\u5165 \u2014 \u8d44\u91d1\u7ed5\u8fc7ETF\u6e20\u9053\u5165\u573a\uff0c\u56fd\u5bb6\u961f\u53ef\u80fd\u51cf\u4ed3', color: '#3b82f6'});
+  } else if (_etfDown && _mfOut) {
+    _verdicts.push({icon: '\u2744\ufe0f', text: 'ETF\u4efd\u989d\u4e0e\u5168\u5e02\u573a\u4e3b\u529b\u540c\u65f6\u6d41\u51fa \u2014 \u5e02\u573a\u5168\u9762\u8c28\u614e', color: '#10b981'});
+  }
+  if (_tc != null && _tc > 5) {
+    _verdicts.push({icon: '\ud83d\udcc8', text: 'ETF\u4efd\u989d\u8fd1\u671f\u7d2f\u8ba1\u589e\u957f' + _tc + '%\uff0c\u589e\u6301\u529b\u5ea6\u663e\u8457', color: '#ef4444'});
+  } else if (_tc != null && _tc < -3) {
+    _verdicts.push({icon: '\ud83d\udcc9', text: 'ETF\u4efd\u989d\u8fd1\u671f\u7d2f\u8ba1\u4e0b\u964d' + Math.abs(_tc) + '%\uff0c\u51cf\u6301\u8d8b\u52bf\u660e\u663e', color: '#10b981'});
+  }
+  if (_mfConsecIn >= 3) {
+    _verdicts.push({icon: '\ud83d\udd25', text: '\u5168\u5e02\u573a\u4e3b\u529b\u8fde\u7eed' + _mfConsecIn + '\u65e5\u6d41\u5165\uff0c\u77ed\u671f\u505a\u591a\u60c5\u7eea\u5f3a\u70c8', color: '#f97316'});
+  } else if (_mfConsecOut >= 3) {
+    _verdicts.push({icon: '\ud83d\udca8', text: '\u5168\u5e02\u573a\u4e3b\u529b\u8fde\u7eed' + _mfConsecOut + '\u65e5\u6d41\u51fa\uff0c\u77ed\u671f\u505a\u7a7a\u538b\u529b\u8f83\u5927', color: '#10b981'});
+  }
+  var _p1w = null, _p1m = null, _p3m = null;
+  (ps.periods || []).forEach(function(p) {
+    if (p.label === '1\u5468') _p1w = p.broad_change_pct;
+    if (p.label === '1\u6708') _p1m = p.broad_change_pct;
+    if (p.label === '3\u6708') _p3m = p.broad_change_pct;
+  });
+  if (_p3m != null && _p1w != null) {
+    if (_p3m > 3 && _p1w > 0) {
+      _verdicts.push({icon: '\ud83c\udfaf', text: '3\u6708\u7d2f\u8ba1+' + _p3m.toFixed(1) + '%\u4e14\u8fd1\u5468\u4ecd\u5728\u589e\u6301 \u2014 \u957f\u7ebf\u5e03\u5c40\u6301\u7eed\u4e2d', color: '#f59e0b'});
+    } else if (_p3m < -3 && _p1w < 0) {
+      _verdicts.push({icon: '\u23f3', text: '3\u6708\u7d2f\u8ba1' + _p3m.toFixed(1) + '%\u4e14\u8fd1\u5468\u7ee7\u7eed\u51cf\u6301 \u2014 \u957f\u671f\u6301\u7eed\u64a4\u9000', color: '#10b981'});
+    }
+  }
+
+  if (_verdicts.length > 0) {
+    h += '<div style="margin-bottom:16px;background:linear-gradient(135deg,#0f1117 0%,#1a1530 100%);border:1px solid #6366f1;border-radius:10px;padding:14px 18px">';
+    h += '<div style="font-size:0.88em;font-weight:700;color:#a78bfa;margin-bottom:10px">\ud83e\udde0 \u7efc\u5408\u7814\u5224</div>';
+    _verdicts.forEach(function(v) {
+      h += '<div style="font-size:0.84em;color:' + v.color + ';margin-bottom:6px;line-height:1.5">' + v.icon + ' ' + v.text + '</div>';
+    });
+    h += '</div>';
+  }
+
   var broad = etfs.filter(function(e) { return e.type === '宽基'; });
   var sector = etfs.filter(function(e) { return e.type === '行业'; });
+  var perEtf = (ps.per_etf_periods || []);
+  var perEtfMap = {};
+  perEtf.forEach(function(pe) { perEtfMap[pe.code] = pe; });
 
   h += '<h3 style="color:#60a5fa;margin:8px 0 6px">&#127970; 宽基ETF (' + broad.length + '只)</h3>';
-  h += _ntTable(broad);
+  h += _ntTable(broad, perEtfMap);
 
   h += '<h3 style="color:#a78bfa;margin:12px 0 6px">&#127981; 行业ETF (' + sector.length + '只)</h3>';
-  h += _ntTable(sector);
+  h += _ntTable(sector, perEtfMap);
 
-  h += '<div style="margin-top:12px;font-size:0.72em;color:#6b7280">数据来源: 上交所/深交所 ETF份额公告 | 更新时间: ' + (snap.date||'') + '</div>';
+  var bf = d.backfill || {};
+  var bfMsg = bf.message ? (' | ' + bf.message + ' (总计 ' + (bf.total_history||0) + ' 个数据点)') : '';
+  h += '<div style="margin-top:12px;font-size:0.72em;color:#6b7280">数据来源: 上交所/深交所 ETF份额公告 | 更新时间: ' + (snap.date||'') + bfMsg + '</div>';
   el.innerHTML = h;
 }
-function _ntTable(etfs) {
+function _ntTable(etfs, perEtfMap) {
+  perEtfMap = perEtfMap || {};
+  var hasPeriods = Object.keys(perEtfMap).length > 0;
   var h = '<table style="width:100%;border-collapse:collapse;font-size:0.82em">';
-  h += '<tr style="border-bottom:1px solid #2a2d3e;color:#8b8fa4"><th style="text-align:left;padding:5px">名称</th><th style="padding:5px">代码</th><th style="padding:5px">跟踪指数</th><th style="text-align:right;padding:5px">份额(亿份)</th><th style="text-align:right;padding:5px">变化</th></tr>';
+  h += '<tr style="border-bottom:1px solid #2a2d3e;color:#8b8fa4">';
+  h += '<th style="text-align:left;padding:5px">名称</th><th style="padding:5px">代码</th><th style="padding:5px">跟踪指数</th><th style="text-align:right;padding:5px">份额(亿份)</th><th style="text-align:right;padding:5px">变化</th>';
+  if (hasPeriods) h += '<th style="text-align:right;padding:5px;color:#f59e0b">1周</th><th style="text-align:right;padding:5px;color:#f59e0b">1月</th><th style="text-align:right;padding:5px;color:#f59e0b">3月</th>';
+  h += '</tr>';
   etfs.forEach(function(e) {
     var yi = e.shares_yi;
     var chg = e.change_pct;
@@ -9481,6 +9667,15 @@ function _ntTable(etfs) {
     h += '<td style="padding:5px;text-align:center;color:#8b8fa4;font-size:0.9em">' + (e.index||'') + '</td>';
     h += '<td style="padding:5px;text-align:right;font-weight:600">' + (yi != null ? yi.toFixed(1) : 'N/A') + '</td>';
     h += '<td style="padding:5px;text-align:right;color:' + chgColor + ';font-weight:600">' + chgStr + '</td>';
+    if (hasPeriods) {
+      var pe = perEtfMap[e.code] || {};
+      ['1w','1m','3m'].forEach(function(k) {
+        var v = pe[k];
+        var vs = v != null ? ((v > 0 ? '+' : '') + v.toFixed(1) + '%') : '-';
+        var vc = v != null ? (v > 0 ? '#ef4444' : v < 0 ? '#10b981' : '#8b8fa4') : '#8b8fa4';
+        h += '<td style="padding:5px;text-align:right;color:' + vc + ';font-size:0.88em">' + vs + '</td>';
+      });
+    }
     h += '</tr>';
   });
   h += '</table>';

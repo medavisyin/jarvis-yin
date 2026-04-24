@@ -255,7 +255,7 @@ The agent toolbar is grouped into these categories:
 - **Medavis**: Wiki Fetch, Jira Daily, Commit Summary, Team Activity
 - **Usage Tools**: Audio from Knowledge, Explain This
 - **Data Analysis**: Trend Analysis, AI News KB
-- **Personal**: Donor Analysis, Daily Fetch (includes AI/World/China news fetch, commit report, Jira, Wiki Fetch with page details & links, world news merge recovery, segmented audio with anti-duplication narration)
+- **Personal**: Donor Analysis, Daily Fetch (includes AI/World/China news fetch, commit report, Jira, Wiki Fetch with AI change summaries & Confluence links, world news merge recovery, segmented audio with up to 15 items/category for Chinese news)
 - **Learning**: AI Learning, Tech English, Casual English, AWS AIF-C01, My Notes
 - **Stock**: Stock Analysis, Watchlist, AI Scanner, Price Prediction, National Team ETF (国家队)
 
@@ -726,14 +726,14 @@ Output: `world-news-data.json` categorized by politics, economics, technology, s
 |--------|------|---------|---------|----------|
 | GET | `/api/stock/china-data` | All China market data summary | — | `{ northbound, sector_flow, national_team, ... }` |
 | GET | `/api/stock/china-data/fund-flow/<symbol>` | Individual stock fund flow | Path param | Fund flow signals |
-| GET | `/api/stock/national-team` | National team ETF share monitor | — | `{ snapshot, trend }` |
+| GET | `/api/stock/national-team` | National team ETF share monitor + 1w/1m/3m indicators | — | `{ snapshot, trend, period_stats, backfill }` |
 | POST | `/api/stock/timing/train` | Train buy/exit timing model | `{ symbol }` | `{ ok, message }` |
 | GET | `/api/stock/timing/status` | Timing training status | — | Status JSON |
 | GET | `/api/stock/timing/predict/<symbol>` | Timing signal | Path param | Buy/exit/hold signal |
 | POST | `/api/stock/backtest/<symbol>` | Run backtest | `{ strategy?, initial_capital? }` | BacktestResult |
 | GET | `/api/stock/backtest/<symbol>/results` | Get cached backtest | Path param | BacktestResult |
 
-**National team monitors 16 core ETFs** (9 broad-based + 7 sector) from SSE and SZSE. Each fetch also saves a Markdown knowledge file to `C:/reports/ai/knowledge/stock/national-team-YYYYMMDD.md` for RAG indexing.
+**National team monitors 16 core ETFs** (9 broad-based + 7 sector) from SSE and SZSE. Each fetch automatically backfills 90 days of historical data from SSE, computes 1-week/1-month/3-month period indicators (total + per-ETF), and saves a Markdown knowledge file to `C:/reports/ai/knowledge/stock/national-team-YYYY-MM-DD.md` for RAG indexing.
 
 ### Agent SSE Event Types
 

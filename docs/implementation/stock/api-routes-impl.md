@@ -93,23 +93,36 @@ The DeepSeek endpoint sends the same data as `generate_prediction` but uses the 
 |--------|------|-------------|----------|
 | `GET` | `/api/stock/china-data` | — | All China market data summary (northbound, fund flow, margin, national team) |
 | `GET` | `/api/stock/china-data/fund-flow/<symbol>` | Path: 6-digit symbol | Fund flow signals + smart money phase/score/detail |
-| `GET` | `/api/stock/national-team` | — | `{ snapshot, trend }` — 16 core ETF shares + anomaly + history |
+| `GET` | `/api/stock/national-team` | — | `{ snapshot, trend, period_stats, backfill }` — 16 core ETF shares + anomaly + history + 1w/1m/3m indicators |
 
 **National Team response shape:**
 ```json
 {
   "snapshot": {
-    "date": "20260422",
+    "date": "2026-04-24",
     "etf_snapshot": [{ "code": "510300", "name": "300ETF", "shares_yi": 424.4, "change_pct": 0.0, ... }],
     "total_broad_shares_yi": 1704.7,
     "total_sector_shares_yi": 1614.8,
     "signals": { "broad_total_change": "平稳", "anomalies": [] }
   },
-  "trend": { "trend": "数据不足", "total_change_pct": 0, "data_points": 1, "history": [...] }
+  "trend": { "trend": "小幅增持", "total_change_pct": 1.5, "data_points": 18, "history": [...] },
+  "period_stats": {
+    "periods": [
+      { "key": "1w", "label": "1周", "broad_change_pct": 0.15, "sector_change_pct": -0.08, "ref_date": "2026-04-17" },
+      { "key": "1m", "label": "1月", "broad_change_pct": 1.2, "sector_change_pct": 0.5, "ref_date": "2026-03-25" },
+      { "key": "3m", "label": "3月", "broad_change_pct": 2.8, "sector_change_pct": 1.1, "ref_date": "2026-01-29" }
+    ],
+    "per_etf_periods": [
+      { "code": "510300", "name": "300ETF", "type": "宽基", "current_yi": 424.4, "1w": 0.1, "1m": 1.5, "3m": 3.2 }
+    ]
+  },
+  "backfill": { "backfilled": 0, "total_history": 18, "message": "历史数据已完整" }
 }
 ```
 
-**Side-effect:** Each call saves a Markdown knowledge file to `C:/reports/ai/knowledge/stock/national-team-YYYYMMDD.md` for RAG indexing.
+**Automatic history backfill:** Each API call runs `national_team_backfill_history(days=90)`, fetching weekly SSE ETF share snapshots for the past 90 days. Already-existing dates are skipped. All dates normalized to `YYYY-MM-DD`.
+
+**Side-effect:** Each call saves a Markdown knowledge file to `C:/reports/ai/knowledge/stock/national-team-YYYY-MM-DD.md` for RAG indexing.
 
 ---
 
