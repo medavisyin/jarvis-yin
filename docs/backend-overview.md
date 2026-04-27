@@ -716,7 +716,7 @@ Output: `world-news-data.json` categorized by politics, economics, technology, s
 | Layer 2 | 100 candidates | Fund-flow 30% + fundamental 25% + tech 20% + weighted sentiment 10% + L1 10% + valuation 5% | Top 30 |
 | Layer 3 | 30 candidates | DeepSeek judges TOP 10 (rich data) + local LLM for rest; buyability verdict | 0–5 |
 
-**Scanner LLM (Layer 3):** With DeepSeek enabled, TOP 10 candidates are judged by `deepseek-reasoner` with rich multi-dimensional data. Remaining candidates use local Ollama (`POST /api/chat` with `"think": false`). Without DeepSeek, all 30 use local LLM. Only stocks with verdict="买入" AND score≥60 pass.
+**Scanner LLM (Layer 3):** With DeepSeek enabled, TOP 10 candidates are judged by `deepseek-v4-pro` (with thinking enabled via OpenAI SDK) with rich multi-dimensional data. Remaining candidates use local Ollama (`POST /api/chat` with `"think": false`). Without DeepSeek, all 30 use local LLM. Only stocks with verdict="买入" AND score≥60 pass.
 
 **Top pick fields:** `symbol`, `name`, `final_score`, `price`, `change_pct`, `pe`, `tech_score`, `sentiment_score`, `is_hot`, `reasoning`, `risk`, `buy_low`, `buy_high`
 

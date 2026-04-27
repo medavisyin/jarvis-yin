@@ -442,7 +442,7 @@ def _build_deepseek_prompt(symbol: str, data: dict) -> str:
 
 
 def generate_prediction_deepseek(symbol: str) -> dict:
-    """生成 AI 综合预测报告 via DeepSeek API (deepseek-reasoner).
+    """生成 AI 综合预测报告 via DeepSeek API (deepseek-v4-pro with thinking).
 
     与本地 Ollama 版本相比，DeepSeek 版本:
     1. 提供完整 20 日 OHLCV 原始数据供模型自行分析趋势
@@ -454,7 +454,7 @@ def generate_prediction_deepseek(symbol: str) -> dict:
 
     Returns dict with:
       - report: str (full markdown report)
-      - reasoning: str (chain-of-thought from deepseek-reasoner)
+      - reasoning: str (chain-of-thought from deepseek-v4-pro thinking)
       - model: str
       - usage: dict (token usage)
       - error: str (if failed)
@@ -469,7 +469,7 @@ def generate_prediction_deepseek(symbol: str) -> dict:
 
     system_prompt = (
         "你是一位顶级A股量化分析师，精通技术分析、基本面分析、资金流向分析和市场微观结构。\n"
-        "你正在使用 deepseek-reasoner 进行深度推理分析，请充分利用你的推理能力。\n\n"
+        "你正在使用 deepseek-v4-pro (thinking mode) 进行深度推理分析，请充分利用你的推理能力。\n\n"
         "分析要求（必须全部满足）：\n"
         "1. **多维度交叉验证**: 不要简单罗列每个维度的结论，而是找出不同维度之间的矛盾和共振点。"
         "例如：资金在流入但技术面偏弱意味着什么？基本面优秀但估值偏高怎么解读？\n"
@@ -504,7 +504,7 @@ def generate_prediction_deepseek(symbol: str) -> dict:
         f"特别注意：请自行从原始OHLCV数据中发现量价关系趋势，不要只看我提供的技术指标摘要。"
     )
 
-    result = call_deepseek(system_prompt, user_prompt, max_tokens=8192, temperature=0.6)
+    result = call_deepseek(system_prompt, user_prompt, max_tokens=8192)
 
     if not result["ok"]:
         log.error("DeepSeek 预测 %s 失败: %s", symbol, result.get("error"))

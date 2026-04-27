@@ -30,7 +30,7 @@ Comprehensive documentation for the Jarvis Chinese A-share stock analysis and pr
 | [analysis-engines-impl.md](./analysis-engines-impl.md) | `technical_analysis`, `report_technical`, `fundamental_analysis`, `sentiment` — four analysis engines |
 | [ml-pipeline-impl.md](./ml-pipeline-impl.md) | `features`, `model_xgboost`, `model_price_predictor`, `prediction_tracker` — ML pipeline with anti-overfitting measures |
 | [market-signals-impl.md](./market-signals-impl.md) | `market_sentiment`, `black_swan_detector` — Fear & Greed, VIX, world news risk scanning |
-| [scanner-impl.md](./scanner-impl.md) | `scanner` + `hot_sectors` — 3-layer fund-driven AI recommendation engine; optional **DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings** for TOP 5 follow-up |
+| [scanner-impl.md](./scanner-impl.md) | `scanner` + `hot_sectors` — 3-layer fund-driven AI recommendation engine; optional **DeepSeek API (deepseek-v4-pro with thinking) for stock analysis via Global Settings** for TOP 5 follow-up |
 | [llm-synthesis-impl.md](./llm-synthesis-impl.md) | `llm_reasoning` — Ollama- or optional DeepSeek-powered Chinese narrative report (`generate_prediction_deepseek`, `/api/stock/analyze/deepseek`) |
 | [api-routes-impl.md](./api-routes-impl.md) | All Flask API endpoints, thread safety, error handling |
 | **[china-market-impl.md](./china-market-impl.md)** | `china_market_data`, `model_timing`, `backtest_engine` — A股特色数据层、择时模型、回测引擎 |

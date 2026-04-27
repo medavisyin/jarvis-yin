@@ -148,7 +148,7 @@ Previous approach: local small LLM (qwen3.5:4b) judged all 30 stocks. Problem: f
 
 ### DeepSeek Judgment (`_layer3_deepseek_judge`)
 
-**Model**: `deepseek-reasoner` via `config.call_deepseek()`
+**Model**: `deepseek-v4-pro` via `config.call_deepseek()` (OpenAI SDK with `reasoning_effort="medium"`, thinking enabled)
 
 **Rich Prompt** (`_build_deepseek_scoring_prompt`):
 - Full market snapshot (price, change, turnover, PE, market cap, amount)

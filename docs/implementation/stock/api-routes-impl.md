@@ -20,7 +20,7 @@ The `fund_flow` mode (and `full`) returns a `fund_flow_report` field with smart 
 
 | `POST` | `/api/stock/analyze/deepseek` | `{ symbol }` | DeepSeek API prediction report |
 
-The DeepSeek endpoint sends the same data as `generate_prediction` but uses the `deepseek-reasoner` model via cloud API. Returns `{ report, reasoning, model, usage }` (reasoning = chain-of-thought).
+The DeepSeek endpoint sends the same data as `generate_prediction` but uses the `deepseek-v4-pro` model via the OpenAI SDK (with thinking enabled). Returns `{ report, reasoning, model, usage }` (reasoning = chain-of-thought).
 
 **Validation:** `symbol` must be non-empty and `symbol.isdigit()`.
 

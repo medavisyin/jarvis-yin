@@ -2,7 +2,7 @@
 
 ## Overview
 
-The stock module provides a **Chinese A-share (A股) individual stock prediction and analysis workflow**: market data ingestion, technical and fundamental engines, LLM-based news sentiment, **XGBoost** walk-forward classifiers and regressors, market sentiment signals (Fear & Greed, VIX), black swan detection from world news, a full-market **3-layer AI scanner with buyability filtering**, and consolidated Chinese narrative reports via **Ollama**, with an optional **DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings** for the same final synthesis step (dual tab “A股分析 & AI预测”: local vs DeepSeek).
+The stock module provides a **Chinese A-share (A股) individual stock prediction and analysis workflow**: market data ingestion, technical and fundamental engines, LLM-based news sentiment, **XGBoost** walk-forward classifiers and regressors, market sentiment signals (Fear & Greed, VIX), black swan detection from world news, a full-market **3-layer AI scanner with buyability filtering**, and consolidated Chinese narrative reports via **Ollama**, with an optional **DeepSeek API (deepseek-v4-pro with thinking) for stock analysis via Global Settings** for the same final synthesis step (dual tab “A股分析 & AI预测”: local vs DeepSeek).
 
 **Primary code location:** `scripts/stock/` (17 modules)
 **HTTP integration:** Flask routes in `scripts/rag/agent.py`
@@ -250,4 +250,4 @@ For the full **phased engineering roadmap** with concrete module designs, verifi
 | FAST | qwen3:1.7b | Sentiment per article |
 | NORMAL | qwen3.5:4b | Reserved |
 | HEAVY | qwen3.5:4b | LLM synthesis, scanner Layer 3 (local fallback) |
-| Cloud (opt.) | deepseek-reasoner | `generate_prediction_deepseek`, **scanner Layer 3 TOP 10 judgment** — optional via Global Settings; not used for per-article sentiment |
+| Cloud (opt.) | deepseek-v4-pro (thinking) | `generate_prediction_deepseek`, **scanner Layer 3 TOP 10 judgment** — optional via Global Settings; not used for per-article sentiment |

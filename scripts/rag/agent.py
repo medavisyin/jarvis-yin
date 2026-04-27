@@ -1739,38 +1739,31 @@ def api_deepseek_test():
         return jsonify({"ok": False, "error": "No API key configured"}), 400
 
     try:
-        import requests as _req
-        resp = _req.post(
-            "https://api.deepseek.com/chat/completions",
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
-            json={
-                "model": "deepseek-chat",
-                "messages": [
-                    {"role": "system", "content": "You are a helpful assistant."},
-                    {"role": "user", "content": "Say hello in one sentence."},
-                ],
-                "max_tokens": 50,
-                "stream": False,
-            },
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        response = client.chat.completions.create(
+            model="deepseek-v4-pro",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": "Say hello in one sentence."},
+            ],
+            max_tokens=50,
+            stream=False,
+            reasoning_effort="high",
+            extra_body={"thinking": {"type": "enabled"}},
             timeout=30,
         )
-        if resp.status_code == 200:
-            body = resp.json()
-            reply = body.get("choices", [{}])[0].get("message", {}).get("content", "")
-            model = body.get("model", "unknown")
-            usage = body.get("usage", {})
-            return jsonify({
-                "ok": True,
-                "model": model,
-                "reply": reply,
-                "usage": usage,
-            })
-        else:
-            err = resp.text[:300]
-            return jsonify({"ok": False, "error": f"HTTP {resp.status_code}: {err}"}), resp.status_code
+        msg = response.choices[0].message
+        return jsonify({
+            "ok": True,
+            "model": response.model or "unknown",
+            "reply": msg.content or "",
+            "usage": {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            } if response.usage else {},
+        })
     except Exception as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 

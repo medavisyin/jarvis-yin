@@ -57,10 +57,12 @@ Used by: `fetch_market_data`, `market_sentiment`, `hot_sectors`, `scanner`
 
 ## DeepSeek API Integration
 
+Uses the **OpenAI SDK** (`from openai import OpenAI`) with `base_url="https://api.deepseek.com"`.
+
 | Variable | Default | Source |
 |----------|---------|--------|
-| `DEEPSEEK_API_URL` | `https://api.deepseek.com/chat/completions` | Hardcoded |
-| `DEEPSEEK_MODEL` | `deepseek-reasoner` | Hardcoded |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | Hardcoded |
+| `DEEPSEEK_MODEL` | `deepseek-v4-pro` | Hardcoded |
 | API Key | `""` | `.global_settings.json` > env `DEEPSEEK_API_KEY` |
 
 ### Key Functions
@@ -68,7 +70,10 @@ Used by: `fetch_market_data`, `market_sentiment`, `hot_sectors`, `scanner`
 | Function | Purpose |
 |----------|---------|
 | `get_deepseek_key()` | Resolve API key (settings file → env var) |
-| `call_deepseek(system, user, max_tokens, temp)` | Generic chat completion call, returns `{ok, content, reasoning_content, model, usage}` |
+| `_get_deepseek_client()` | Create an `OpenAI` client configured for DeepSeek |
+| `call_deepseek(system, user, max_tokens, reasoning_effort)` | Chat completion with thinking enabled, returns `{ok, content, reasoning_content, model, usage}` |
+
+All calls use `reasoning_effort="high"` (default) with `extra_body={"thinking": {"type": "enabled"}}` for chain-of-thought reasoning.
 
 Used by: `llm_reasoning.generate_prediction_deepseek()`, `scanner._run_deepseek_for_picks()`
 

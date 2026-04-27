@@ -482,7 +482,7 @@ def _layer3_deepseek_judge(stocks: list[dict]) -> list[dict]:
 
         prompt = _build_deepseek_scoring_prompt(stock)
         try:
-            result = call_deepseek(system_prompt, prompt, max_tokens=1200, temperature=0.3)
+            result = call_deepseek(system_prompt, prompt, max_tokens=1200, reasoning_effort="medium")
             if result["ok"]:
                 raw = result["content"]
                 parsed = _parse_llm_score(raw, stock)

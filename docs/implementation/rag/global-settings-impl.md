@@ -76,17 +76,21 @@ Key resolution order: settings file → `DEEPSEEK_API_KEY` environment variable.
 
 ### Test Endpoint
 
-`POST /api/deepseek/test` sends a simple chat completion to `https://api.deepseek.com/chat/completions`:
+`POST /api/deepseek/test` uses the **OpenAI SDK** (`from openai import OpenAI`) with `base_url="https://api.deepseek.com"` to send a simple chat completion:
 
-```json
-{
-  "model": "deepseek-chat",
-  "messages": [
-    {"role": "system", "content": "You are a helpful assistant."},
-    {"role": "user", "content": "Say hello in one sentence."}
-  ],
-  "max_tokens": 50
-}
+```python
+client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+response = client.chat.completions.create(
+    model="deepseek-v4-pro",
+    messages=[
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user", "content": "Say hello in one sentence."},
+    ],
+    max_tokens=50,
+    stream=False,
+    reasoning_effort="high",
+    extra_body={"thinking": {"type": "enabled"}},
+)
 ```
 
 Returns `{ ok, model, reply, usage }` on success, `{ ok: false, error }` on failure.

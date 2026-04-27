@@ -54,15 +54,15 @@ Jarvis combines a daily briefing pipeline (fetch, merge, deduplicate, render) wi
 
 ---
 
-### DeepSeek API (`deepseek-reasoner`, optional, stock only)
+### DeepSeek API (`deepseek-v4-pro`, optional, stock only)
 
-**What it is:** A hosted large-language-model API with an **OpenAI-compatible** `chat/completions` surface. When enabled, Jarvis uses the **`deepseek-reasoner`** model for the **last mile** of certain stock flows.
+**What it is:** A hosted large-language-model API accessed via the **OpenAI SDK** (`from openai import OpenAI` with `base_url="https://api.deepseek.com"`). When enabled, Jarvis uses the **`deepseek-v4-pro`** model with **thinking enabled** (`reasoning_effort="high"`, `extra_body={"thinking": {"type": "enabled"}}`) for the **last mile** of certain stock flows.
 
 **Why Jarvis uses it (optionally):** The stock module can delegate **final Chinese narrative synthesis** to a strong reasoning model while keeping **all feature computation** (technical, fundamental, XGBoost, fund-flow inputs, scanner filtering) **local**. This path is **not** used for RAG chat, agent SSE, or the daily briefing pipeline.
 
-**Version / model:** The stock integration targets **`deepseek-reasoner`**. The API key is set in the **Global Settings** UI and persisted in **`scripts/rag/.global_settings.json`**.
+**Version / model:** The stock integration targets **`deepseek-v4-pro`** with chain-of-thought reasoning via the thinking API. The API key is set in the **Global Settings** UI and persisted in **`scripts/rag/.global_settings.json`**.
 
-**Architecture role:** **`config.py`** exposes **`get_deepseek_key()`** and **`call_deepseek()`**; **`llm_reasoning.generate_prediction_deepseek()`** and the **AI 股票推荐** scanner (TOP 5 enrichment when `use_deepseek` is true) call into it. See [stock/llm-synthesis-impl.md](./stock/llm-synthesis-impl.md) and [stock/stock-prediction-impl.md](./stock/stock-prediction-impl.md).
+**Architecture role:** **`config.py`** exposes **`get_deepseek_key()`**, **`_get_deepseek_client()`**, and **`call_deepseek()`**; **`llm_reasoning.generate_prediction_deepseek()`** and the **AI 股票推荐** scanner (TOP 5 enrichment when `use_deepseek` is true) call into it. See [stock/llm-synthesis-impl.md](./stock/llm-synthesis-impl.md) and [stock/stock-prediction-impl.md](./stock/stock-prediction-impl.md).
 
 ---
 
@@ -144,7 +144,7 @@ Jarvis combines a daily briefing pipeline (fetch, merge, deduplicate, render) wi
 | Entry | Flow |
 |--------|------|
 | **`search_ui.py`** | User query → embed with the same embedding stack → **Qdrant search** → return ranked results. **No LLM** is required for this path. |
-| **`agent.py`** | User query → **automatic RAG search** (Qdrant) → inject retrieved chunks into the prompt → **Ollama** (`qwen3.5:4b` at `localhost:11434`) → **SSE** stream of the answer to the client. **(RAG does not use DeepSeek;** optional **DeepSeek API (deepseek-reasoner) for stock analysis via Global Settings** is stock-only.) |
+| **`agent.py`** | User query → **automatic RAG search** (Qdrant) → inject retrieved chunks into the prompt → **Ollama** (`qwen3.5:4b` at `localhost:11434`) → **SSE** stream of the answer to the client. **(RAG does not use DeepSeek;** optional **DeepSeek API (deepseek-v4-pro with thinking) for stock analysis via Global Settings** is stock-only.) |
 
 ---
 
