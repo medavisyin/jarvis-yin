@@ -875,7 +875,15 @@ def _detect_share_anomalies(result: dict):
     if not history:
         return
 
-    prev = history[-1]
+    today = _normalize_date(result.get("date", _today_str()))
+    prev = None
+    for h in reversed(history):
+        if _normalize_date(h.get("date", "")) != today:
+            prev = h
+            break
+    if prev is None:
+        return
+
     prev_broad = prev.get("total_broad_shares_yi", 0)
     curr_broad = result["total_broad_shares_yi"]
 

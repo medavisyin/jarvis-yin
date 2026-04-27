@@ -283,7 +283,8 @@ HELP_TEXT = """Jarvis Bot Commands:
 /knowledge — Refresh knowledge docs
 /stock <code> — Stock analysis
 /train — Train stock models
-/scan — Run stock scanner"""
+/scan — Run short-term stock scanner
+/longscan — Run long-term stock scanner"""
 
 
 @owner_only
@@ -549,6 +550,71 @@ async def cmd_scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Scan error: {e}")
 
 
+def _fmt_lt_scan_result(data: dict) -> str:
+    picks = data.get("picks", [])
+    themes = data.get("themes", [])
+    metals = data.get("precious_metals", {})
+    header = "🔮 AI Long-Term Scan Complete\n"
+    lines = [header]
+    for key, label in [("gold", "Gold"), ("silver", "Silver")]:
+        m = metals.get(key)
+        if m and m.get("data_available"):
+            lines.append(
+                f"{'🥇' if key == 'gold' else '🥈'} {label}: ¥{m.get('latest_price', '?')}"
+                f"  Trend: {m.get('trend', '?')}  Upside: {m.get('upside_score', '?')}/100"
+                f"  14d: {m.get('change_14d_pct', 0):+.1f}%"
+            )
+    outlook = metals.get("llm_outlook", {})
+    for key, label in [("gold", "Gold"), ("silver", "Silver")]:
+        o = outlook.get(key)
+        if o:
+            lines.append(f"  {label} outlook: {o.get('trend', '?')} — {o.get('advice', '')}")
+    if themes:
+        lines.append(f"\nThemes: {len(themes)}")
+        for i, t in enumerate(themes[:5], 1):
+            lines.append(f"  {i}. {t.get('name', '?')} ({t.get('confidence', '?')})")
+    if not picks:
+        lines.append("\nNo stock picks this round (check metals & themes above).")
+    else:
+        lines.append(f"\nRecommended: {len(picks)} stock(s)\n")
+        for i, p in enumerate(picks, 1):
+            us = (p.get("upside") or {}).get("upside_score", "?")
+            lines.append(
+                f"{i}. {p.get('name', '?')} ({p.get('symbol', '?')})\n"
+                f"   Theme: {p.get('theme', '?')}  Upside: {us}/100\n"
+                f"   Reason: {p.get('recommendation_reason', 'N/A')}\n"
+                f"   Risk: {p.get('recommendation_risk', 'N/A')}"
+            )
+    return "\n".join(lines)
+
+
+@owner_only
+async def cmd_longscan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Starting long-term scanner...")
+    try:
+        resp = await _agent_post("/api/stock/long-term/start")
+        msg = resp.get("message", "started")
+        await update.message.reply_text(f"Long-term scanner: {msg}")
+        for _ in range(60):
+            await asyncio.sleep(10)
+            try:
+                st = await _agent_get("/api/stock/long-term/status")
+                status = st.get("status", "")
+                if status in ("idle", "done"):
+                    result = await _agent_get("/api/stock/long-term/result")
+                    text = _fmt_lt_scan_result(result)
+                    await update.message.reply_text(_truncate(text))
+                    return
+                if status == "error":
+                    await update.message.reply_text(f"Long-term scan error: {st.get('error', 'unknown')}")
+                    return
+            except Exception:
+                continue
+        await update.message.reply_text("Long-term scan still running (stopped polling after 10 min).")
+    except Exception as e:
+        await update.message.reply_text(f"Long-term scan error: {e}")
+
+
 @owner_only
 async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Unknown command. /help for list.")
@@ -590,6 +656,7 @@ async def _run_bot():
     app.add_handler(CommandHandler("stock", cmd_stock))
     app.add_handler(CommandHandler("train", cmd_train))
     app.add_handler(CommandHandler("scan", cmd_scan))
+    app.add_handler(CommandHandler("longscan", cmd_longscan))
     app.add_handler(MessageHandler(filters.COMMAND, cmd_unknown))
 
     async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):

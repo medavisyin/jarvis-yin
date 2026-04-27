@@ -1058,7 +1058,7 @@ def _generate_report(top_picks: list[dict], scan_meta: dict) -> str:
     """Generate a Markdown report suitable for RAG indexing."""
     date_str = datetime.now().strftime("%Y-%m-%d")
     lines = [
-        f"# AI股票推荐报告 — {date_str}",
+        f"# AI股票推荐报告(短期) — {date_str}",
         "",
         f"**扫描时间**: {scan_meta.get('started_at', 'N/A')}",
         f"**全市场股票数**: {scan_meta.get('market_total', 'N/A')}",
@@ -1138,6 +1138,46 @@ def _generate_report(top_picks: list[dict], scan_meta: dict) -> str:
     return "\n".join(lines)
 
 
+def _index_scan_report_to_rag(report_path: str, date_str: str):
+    """Index the short-term scan report into Qdrant RAG."""
+    import uuid as _uuid
+    _base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+    _rag_dir = os.path.join(_base, "rag")
+    if _base not in sys.path:
+        sys.path.insert(0, _base)
+    if _rag_dir not in sys.path:
+        sys.path.insert(0, _rag_dir)
+    from index_briefing import _get_model, _get_client, _save_snapshot, _chunk_text, COLLECTION
+    from qdrant_client.models import PointStruct
+
+    with open(report_path, "r", encoding="utf-8") as f:
+        text = f.read()
+    if not text.strip():
+        return
+    model = _get_model()
+    chunks = _chunk_text(text, max_chars=400, overlap=60)
+    client = _get_client()
+    points = []
+    for i, chunk in enumerate(chunks):
+        vec = model.encode(chunk).tolist()
+        points.append(PointStruct(
+            id=str(_uuid.uuid4()),
+            vector=vec,
+            payload={
+                "text": chunk,
+                "source": f"stock_scan_short/{date_str}",
+                "title": f"AI短期推荐 {date_str}",
+                "type": "stock_scan_short",
+                "date": date_str,
+                "chunk_index": i,
+            },
+        ))
+    if points:
+        client.upsert(collection_name=COLLECTION, points=points)
+        _save_snapshot(client)
+        log.info("短期推荐报告已索引到 RAG: %d chunks", len(points))
+
+
 def _save_results(top_picks: list[dict], all_candidates: list[dict], scan_meta: dict):
     """Persist scan results and generate report."""
     _ensure_dirs()
@@ -1159,6 +1199,11 @@ def _save_results(top_picks: list[dict], all_candidates: list[dict], scan_meta: 
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report)
     log.info("推荐报告已保存 → %s", report_path)
+
+    try:
+        _index_scan_report_to_rag(report_path, date_str)
+    except Exception as e:
+        log.warning("短期报告 RAG 索引失败（不影响结果）: %s", e)
 
 
 # ---------------------------------------------------------------------------

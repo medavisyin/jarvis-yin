@@ -5,14 +5,14 @@ tags:
   - system-overview
 category: design
 status: current
-last-updated: 2026-04-23
+last-updated: 2026-04-27
 ---
 
 # Jarvis — System Architecture
 
 > A comprehensive architecture document describing the Jarvis personal AI assistant system: components, data flow, integration points, and deployment topology.
 
-**Last updated:** 2026-04-23
+**Last updated:** 2026-04-27
 
 ---
 
@@ -345,14 +345,24 @@ flowchart TB
         Tracker["Prediction Tracker<br/>(accuracy stats)"]
     end
 
-    subgraph ScannerLayer["Market Scanner"]
+    subgraph ScannerLayer["Market Scanner (Short-Term)"]
         L1["Layer 1: Filter<br/>(5000+ → 100)<br/>Price, PE, Turnover"]
         L2["Layer 2: Score<br/>(100 → 30)<br/>Fund-flow + TA + Fundamentals"]
         L3["Layer 3: LLM Judge<br/>(30 → 0-5)<br/>DeepSeek TOP 10 + Ollama rest"]
     end
 
+    subgraph LongTermLayer["Market Scanner (Long-Term)"]
+        LT1["Signal Collection<br/>(14-day news + events)"]
+        LT2["Precious Metals<br/>(Gold / Silver analysis)"]
+        LT3["LLM Theme Analysis<br/>(投资主题识别)"]
+        LT4["Stock Mapping<br/>(主题 → 候选个股)"]
+        LT5["Upside Assessment<br/>(行业自适应分位法)"]
+        LT6["LLM Final Selection<br/>(0-5 推荐)"]
+    end
+
     subgraph OutputLayer["Output"]
         Reports["Markdown Reports"]
+        PDFExport["PDF Reports<br/>(stock_pdf.py, 6 types)"]
         APIResp["REST API Responses"]
         UIStock["Stock UI Panel"]
     end
@@ -377,6 +387,13 @@ flowchart TB
     Sent --> L2
     L2 --> L3
     L3 --> OutputLayer
+
+    LT1 --> LT3
+    LT2 --> LT3
+    LT3 --> LT4
+    LT4 --> LT5
+    LT5 --> LT6
+    LT6 --> OutputLayer
 
     TA --> Reports
     FA --> Reports
@@ -468,7 +485,9 @@ graph TB
 │  │ C:\reports\stock\                                             ││        │
 │  │ ├── data/{symbol}/   (OHLCV, news, analysis results)        ││        │
 │  │ ├── models/{symbol}/ (persisted XGBoost models)              ││        │
-│  │ ├── scans/           (daily scanner results)                 ││        │
+│  │ ├── scans/           (daily short-term scanner results)      ││        │
+│  │ ├── long_term/       (long-term scanner results + reports)  ││        │
+│  │ ├── pdf/             (exported PDF reports, all stock types) ││        │
 │  │ └── watchlist.json   (user stock portfolio)                  ││        │
 │  ├──────────────────────────────────────────────────────────────┤│        │
 │  │ C:\jarvis\           (project source code)                    ││        │
@@ -628,10 +647,13 @@ localhost
     │                 GET  /api/health    → System status
     │                 *    /api/sessions  → Chat history CRUD
     │                 *    /api/toolbar/* → Tools & pipelines
-    │                 *    /api/stock/*   → Stock analysis & scanner
+    │                 *    /api/stock/*            → Stock analysis & short-term scanner
+    │                 *    /api/stock/long-term/* → Long-term scanner
+    │                 POST /api/stock/export-pdf  → Unified PDF export (6 report types)
+    │                 GET  /api/stock/pdf-file/*  → Serve generated PDFs
     │
     └── (outbound) ── Telegram Bot (polling, SOCKS proxy optional)
-                       Receives: /start, /fetch, /search, /ask, /stock
+                       Receives: /start, /fetch, /search, /ask, /stock, /scan, /longscan
                        Calls: agent.py + search_ui.py APIs internally
 ```
 
@@ -677,7 +699,9 @@ timeline
     section Advanced
         Stock Module : TA + fundamentals + sentiment
         ML Prediction : XGBoost walk-forward
-        Market Scanner : 3-layer (5000→100→30→0-5)
+        Market Scanner (Short) : 3-layer (5000→100→30→0-5)
+        Market Scanner (Long) : News+Metals+Theme→0-5
+        Stock PDF Export : 6 report types unified
         Reranking : Cross-encoder + feedback scores
         World News : 6 international sources + translation
         Telegram Bot : Remote access via phone

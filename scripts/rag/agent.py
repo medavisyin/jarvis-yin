@@ -5015,7 +5015,7 @@ _STOCK_MODULES = [
     "config", "fetch_market_data", "technical_analysis", "report_technical",
     "fundamental_analysis", "sentiment", "features", "model_xgboost",
     "model_price_predictor", "prediction_tracker", "llm_reasoning",
-    "watchlist", "scanner", "hot_sectors", "market_sentiment",
+    "watchlist", "scanner", "long_term_scanner", "hot_sectors", "market_sentiment",
     "black_swan_detector", "china_market_data", "model_timing",
     "backtest_engine",
 ]
@@ -5298,6 +5298,143 @@ def api_stock_scan_result_by_date(date_str):
         if result:
             return jsonify(result)
         return jsonify({"error": "该日期无扫描结果"}), 404
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+# --- Stock PDF Export ---
+
+@app.route("/api/stock/export-pdf", methods=["POST"])
+@_with_stock_imports
+def api_stock_export_pdf():
+    """Generate a PDF report for any stock feature."""
+    try:
+        body = request.get_json(silent=True) or {}
+        report_type = body.get("type", "")
+        data = body.get("data", {})
+        if not report_type or not data:
+            return jsonify({"error": "Missing 'type' or 'data'"}), 400
+
+        from stock_pdf import generate_stock_pdf, ALLOWED_TYPES
+        if report_type not in ALLOWED_TYPES:
+            return jsonify({"error": f"Unknown type '{report_type}'. Allowed: {sorted(ALLOWED_TYPES)}"}), 400
+
+        pdf_path = generate_stock_pdf(report_type, data)
+        filename = os.path.basename(pdf_path)
+        date_str = data.get("date", datetime.now().strftime("%Y-%m-%d"))
+        pdf_url = f"/api/stock/pdf-file/{date_str}/{filename}"
+        return jsonify({"pdf_url": pdf_url, "path": pdf_path})
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/pdf-file/<date_str>/<filename>", methods=["GET"])
+def api_stock_pdf_file(date_str, filename):
+    """Serve a generated stock PDF file."""
+    try:
+        stock_reports = os.environ.get("STOCK_REPORTS_ROOT", r"C:\reports\stock")
+        pdf_dir = os.path.join(stock_reports, "pdf")
+        fpath = os.path.join(pdf_dir, filename)
+        if not os.path.isfile(fpath):
+            return jsonify({"error": "PDF not found"}), 404
+        return send_file(fpath, mimetype="application/pdf", download_name=filename)
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+# --- Long-Term Scanner ---
+
+@app.route("/api/stock/long-term/start", methods=["POST"])
+@_with_stock_imports
+def api_stock_lt_start():
+    """Start long-term stock scanner."""
+    try:
+        body = request.get_json(silent=True) or {}
+        use_ds = body.get("use_deepseek", False)
+        from long_term_scanner import start_lt_scan
+        result = start_lt_scan(use_deepseek=use_ds)
+        return jsonify(result)
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/long-term/status", methods=["GET"])
+@_with_stock_imports
+def api_stock_lt_status():
+    """Get long-term scan progress."""
+    try:
+        from long_term_scanner import get_lt_status
+        return jsonify(get_lt_status())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/long-term/stop", methods=["POST"])
+@_with_stock_imports
+def api_stock_lt_stop():
+    """Stop long-term scan."""
+    try:
+        from long_term_scanner import stop_lt_scan
+        return jsonify(stop_lt_scan())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/long-term/result", methods=["GET"])
+@_with_stock_imports
+def api_stock_lt_result():
+    """Get latest long-term scan result."""
+    try:
+        from long_term_scanner import get_lt_latest_result
+        result = get_lt_latest_result()
+        if result:
+            return jsonify(result)
+        return jsonify({"error": "暂无长期推荐结果"}), 404
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/long-term/history", methods=["GET"])
+@_with_stock_imports
+def api_stock_lt_history():
+    """Get long-term scan history."""
+    try:
+        from long_term_scanner import get_lt_history
+        return jsonify({"history": get_lt_history()})
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/long-term/dates", methods=["GET"])
+@_with_stock_imports
+def api_stock_lt_dates():
+    """List available long-term scan dates."""
+    try:
+        from long_term_scanner import list_lt_scan_dates
+        return jsonify({"dates": list_lt_scan_dates()})
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@app.route("/api/stock/long-term/result/<date_str>", methods=["GET"])
+@_with_stock_imports
+def api_stock_lt_result_by_date(date_str):
+    """Get long-term scan result for a specific date."""
+    try:
+        from long_term_scanner import get_lt_result_by_date
+        result = get_lt_result_by_date(date_str)
+        if result:
+            return jsonify(result)
+        return jsonify({"error": "该日期无长期推荐结果"}), 404
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500
@@ -6079,7 +6216,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
       <div class="toolbar-cat-body">
         <button type="button" class="toolbar-btn" onclick="openStockModal()" title="A股个股分析与AI预测">&#128200; 股票分析</button>
         <button type="button" class="toolbar-btn" onclick="openWatchlistModal()" title="管理自选股列表">&#11088; 自选股</button>
-        <button type="button" class="toolbar-btn" onclick="openScannerModal()" title="AI全市场扫描推荐TOP5">&#127775; AI推荐</button>
+        <button type="button" class="toolbar-btn" onclick="openScannerModal()" title="AI短期买入推荐 (当日行情+技术面+资金流)">&#128293; 短期推荐</button>
+        <button type="button" class="toolbar-btn" onclick="openLongTermModal()" title="AI长期趋势推荐 (新闻+政策+贵金属分析)">&#128302; 长期推荐</button>
         <button type="button" class="toolbar-btn" onclick="openPriceTrainModal()" title="明日价格预测训练 (自选股)">&#127919; 价格预测</button>
         <button type="button" class="toolbar-btn" onclick="openNationalTeamModal()" title="国家队ETF份额监控 (汇金/社保等)">&#127961; 国家队</button>
       </div>
@@ -6486,6 +6624,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" id="btnStockSent" onclick="runStockSent()" style="font-size:0.78em">情绪分析</button>
         <button type="button" class="toolbar-btn" id="btnStockXGB" onclick="runStockXGB()" style="font-size:0.78em">ML预测</button>
         <button type="button" class="toolbar-btn" id="btnStockFF" onclick="runStockFF()" style="font-size:0.78em">&#128176; 聪明钱</button>
+        <button type="button" class="toolbar-btn" id="btnStockPdf" onclick="exportStockPdf('stock_analysis','stockAnalysis')" style="font-size:0.78em">&#128196; 导出PDF</button>
         <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;cursor:pointer;margin-left:8px" title="同时使用 DeepSeek API 分析">
           <input type="checkbox" id="stockUseDeepseek" style="accent-color:#3b82f6">
           <span>&#128171; DeepSeek</span>
@@ -6518,6 +6657,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <input type="text" id="watchlistAddSector" placeholder="行业" style="background:#1a1d2e;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:6px 10px;font-size:0.82em;width:80px">
         <button type="button" class="send-btn" onclick="addToWatchlist()" style="padding:6px 14px;font-size:0.82em">+ 添加</button>
         <button type="button" class="toolbar-btn" onclick="refreshWatchlist()" style="font-size:0.78em">&#8635; 刷新数据</button>
+        <button type="button" class="toolbar-btn" onclick="exportStockPdf('watchlist','watchlist')" style="font-size:0.78em">&#128196; 导出PDF</button>
         <span id="watchlistStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
       </div>
       <div id="watchlistTable" style="max-height:60vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px">
@@ -6543,7 +6683,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 <div id="scannerModal" class="modal-overlay" role="dialog" aria-modal="true">
   <div class="modal-panel" style="max-width:96vw;max-height:94vh;width:950px;background:#0f1117;border:1px solid #2a2d3e">
     <div class="modal-head" style="border-bottom:1px solid #2a2d3e">
-      <h2>&#127775; AI 股票推荐</h2>
+      <h2>&#128293; AI 股票推荐(短期)</h2>
       <button type="button" class="modal-close" onclick="closeScannerModal()" title="Close">&times;</button>
     </div>
     <div class="modal-content" style="padding:14px 18px;background:#0f1117">
@@ -6551,6 +6691,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="send-btn" id="btnScanStart" onclick="startScan()" style="padding:8px 18px;font-size:0.86em">&#127775; 开始扫描</button>
         <button type="button" class="toolbar-btn" id="btnScanStop" onclick="stopScan()" style="font-size:0.78em" disabled>&#9724; 停止</button>
         <button type="button" class="toolbar-btn" onclick="loadScanHistory()" style="font-size:0.78em">&#128203; 历史记录</button>
+        <button type="button" class="toolbar-btn" id="btnScanPdf" onclick="exportStockPdf('short_term','scan')" style="font-size:0.78em">&#128196; 导出PDF</button>
         <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;cursor:pointer;margin-left:8px" title="Layer 3 使用 DeepSeek 判断 TOP 10（替代本地LLM，更科学）">
           <input type="checkbox" id="scanUseDeepseek" style="accent-color:#3b82f6">
           <span>&#128171; DeepSeek</span>
@@ -6566,9 +6707,45 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <div id="scanPhase" style="font-size:0.76em;color:#8b8fa4;margin-top:4px"></div>
       </div>
       <div id="scanResult" style="max-height:62vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:14px;background:#1a1d2e;font-size:0.84em;line-height:1.6;color:#c4c8f0">
-        <p style="color:#6b7280">点击"开始扫描"启动AI全市场分析。扫描过程分3层：</p>
-        <p style="color:#6b7280">1. 全市场快速筛选 → 2. 分批详细分析 → 3. LLM综合评分</p>
+        <p style="color:#6b7280">点击"开始扫描"启动AI短期推荐分析（基于当日行情）。扫描过程分3层：</p>
+        <p style="color:#6b7280">1. 全市场快速筛选 → 2. 分批详细分析 → 3. LLM买入判断</p>
         <p style="color:#6b7280;font-size:0.9em;margin-top:8px">扫描过程中可以查看部分结果，中断后可继续。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Long-Term Scanner Modal -->
+<div id="longTermModal" class="modal-overlay" role="dialog" aria-modal="true">
+  <div class="modal-panel" style="max-width:96vw;max-height:94vh;width:980px;background:#0f1117;border:1px solid #2a2d3e">
+    <div class="modal-head" style="border-bottom:1px solid #2a2d3e">
+      <h2>&#128302; AI 股票推荐(长期)</h2>
+      <button type="button" class="modal-close" onclick="closeLongTermModal()" title="Close">&times;</button>
+    </div>
+    <div class="modal-content" style="padding:14px 18px;background:#0f1117">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <button type="button" class="send-btn" id="btnLtStart" onclick="startLtScan()" style="padding:8px 18px;font-size:0.86em">&#128302; 开始分析</button>
+        <button type="button" class="toolbar-btn" id="btnLtStop" onclick="stopLtScan()" style="font-size:0.78em" disabled>&#9724; 停止</button>
+        <button type="button" class="toolbar-btn" onclick="loadLtHistory()" style="font-size:0.78em">&#128203; 历史记录</button>
+        <button type="button" class="toolbar-btn" id="btnLtPdf" onclick="exportStockPdf('long_term','lt')" style="font-size:0.78em">&#128196; 导出PDF</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;cursor:pointer;margin-left:8px" title="使用 DeepSeek 进行趋势分析">
+          <input type="checkbox" id="ltUseDeepseek" style="accent-color:#8b5cf6">
+          <span>&#128171; DeepSeek</span>
+        </label>
+        <span id="ltStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
+      </div>
+      <div id="ltProgress" style="display:none;margin-bottom:12px">
+        <div style="background:#1a1d2e;border-radius:8px;overflow:hidden;height:24px;border:1px solid #2a2d3e">
+          <div id="ltProgressBar" style="height:100%;background:linear-gradient(90deg,#8b5cf6,#ec4899);transition:width 0.5s;width:0%;display:flex;align-items:center;justify-content:center">
+            <span id="ltProgressText" style="font-size:0.72em;color:#fff;font-weight:600"></span>
+          </div>
+        </div>
+        <div id="ltPhase" style="font-size:0.76em;color:#8b8fa4;margin-top:4px"></div>
+      </div>
+      <div id="ltResult" style="max-height:62vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:14px;background:#1a1d2e;font-size:0.84em;line-height:1.6;color:#c4c8f0">
+        <p style="color:#6b7280">点击"开始分析"启动AI长期趋势推荐。分析流程：</p>
+        <p style="color:#6b7280">1. 收集近14天新闻信号 → 2. 贵金属分析 → 3. LLM趋势研判 → 4. 选股+空间评估 → 5. 精选推荐</p>
+        <p style="color:#6b7280;font-size:0.9em;margin-top:8px">基于国际/国内新闻、政策趋势、板块轮动进行中长期预判(1-3个月)。</p>
       </div>
     </div>
   </div>
@@ -6584,6 +6761,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
     <div class="modal-content" style="padding:14px 18px;background:#0f1117">
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
         <button type="button" class="send-btn" id="btnTrainStart" onclick="startDailyTraining()" style="padding:8px 18px;font-size:0.86em">&#128640; 开始训练</button>
+        <button type="button" class="toolbar-btn" id="btnTrainPdf" onclick="exportStockPdf('price_prediction','train')" style="font-size:0.78em">&#128196; 导出PDF</button>
         <span id="trainStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
       </div>
       <div id="trainProgress" style="display:none;margin-bottom:12px">
@@ -6613,6 +6791,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
     <div class="modal-content" style="padding:14px 18px;background:#0f1117">
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
         <button type="button" class="send-btn" id="btnNTFetch" onclick="fetchNationalTeam()" style="padding:8px 18px;font-size:0.86em">&#128202; 获取最新数据</button>
+        <button type="button" class="toolbar-btn" onclick="exportStockPdf('national_team','nt')" style="font-size:0.78em">&#128196; 导出PDF</button>
         <span id="ntStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
       </div>
       <div id="ntResult" style="max-height:68vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:14px;background:#1a1d2e;font-size:0.84em;line-height:1.6;color:#c4c8f0">
@@ -8733,7 +8912,7 @@ async function runStockAnalysis() {
     const r = await fetch('/api/stock/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({symbol: sym, mode: 'full'})});
     const d = await r.json();
     if (d.error) { res.innerHTML = '<p style="color:#f87171">'+d.error+'</p>'; }
-    else { res.innerHTML = _renderStockMd(d); }
+    else { res.innerHTML = _renderStockMd(d); d.symbol = sym; _cachePdfData('stockAnalysis', d); }
     st.textContent = useDs ? 'DeepSeek 分析中...' : '';
   } catch(e) { res.innerHTML = '<p style="color:#f87171">请求失败: '+e.message+'</p>'; st.textContent = ''; }
   document.getElementById('btnStockAnalyze').disabled = false;
@@ -8869,6 +9048,40 @@ async function refreshWatchlist() {
   } catch(e) { st.textContent = '刷新失败'; }
 }
 
+// --- Stock PDF Export ---
+var _pdfDataCache = {};
+function _cachePdfData(key, data) { _pdfDataCache[key] = data; }
+
+async function exportStockPdf(reportType, dataKey) {
+  var data = null;
+  if (reportType === 'short_term') {
+    if (_pdfDataCache['scan']) { data = _pdfDataCache['scan']; }
+    else { try { var r = await fetch('/api/stock/scan/result'); data = await r.json(); } catch(e) {} }
+  } else if (reportType === 'long_term') {
+    if (_pdfDataCache['lt']) { data = _pdfDataCache['lt']; }
+    else { try { var r = await fetch('/api/stock/long-term/result'); data = await r.json(); } catch(e) {} }
+  } else if (reportType === 'stock_analysis') {
+    data = _pdfDataCache['stockAnalysis'] || null;
+  } else if (reportType === 'price_prediction') {
+    data = _pdfDataCache['train'] || null;
+  } else if (reportType === 'watchlist') {
+    if (_pdfDataCache['watchlist']) { data = _pdfDataCache['watchlist']; }
+    else { try { var r = await fetch('/api/stock/watchlist'); data = await r.json(); } catch(e) {} }
+  } else if (reportType === 'national_team') {
+    data = _pdfDataCache['nt'] || null;
+  }
+  if (!data || data.error) { showToast('暂无数据, 请先运行分析'); return; }
+  if (!data.date) data.date = new Date().toISOString().split('T')[0];
+  showToast('生成PDF中...');
+  try {
+    var r = await fetch('/api/stock/export-pdf', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({type: reportType, data: data})});
+    var d = await r.json();
+    if (d.error) { showToast('PDF生成失败: ' + d.error); return; }
+    window.open(d.pdf_url, '_blank');
+    showToast('PDF已生成');
+  } catch(e) { showToast('PDF请求失败: ' + e.message); }
+}
+
 // --- AI Scanner ---
 let _scanPollTimer = null;
 function openScannerModal() {
@@ -8937,6 +9150,7 @@ async function pollScanStatus() {
       document.getElementById('btnScanStop').disabled = true;
       if (_scanPollTimer) { clearInterval(_scanPollTimer); _scanPollTimer = null; }
       renderScanResult(d.top_picks || []);
+      try { var fr = await fetch('/api/stock/scan/result'); var fd = await fr.json(); if (!fd.error) _cachePdfData('scan', fd); } catch(_e) {}
     } else if (d.status === 'stopped') {
       bar.style.width = bar.style.width; phase.textContent = '已暂停 (可重新启动继续)';
       st.textContent = '已暂停';
@@ -9153,6 +9367,216 @@ async function loadScanHistory() {
   } catch(e) { el.innerHTML = '<p style="color:#f87171">加载失败</p>'; }
 }
 
+// --- Long-Term Scanner ---
+let _ltPollTimer = null;
+function openLongTermModal() {
+  document.getElementById('longTermModal').classList.add('open');
+  pollLtStatus();
+}
+function closeLongTermModal() {
+  document.getElementById('longTermModal').classList.remove('open');
+  if (_ltPollTimer) { clearInterval(_ltPollTimer); _ltPollTimer = null; }
+}
+async function startLtScan() {
+  const st = document.getElementById('ltStatus');
+  st.textContent = '启动中...';
+  document.getElementById('btnLtStart').disabled = true;
+  document.getElementById('btnLtStop').disabled = false;
+  document.getElementById('ltProgress').style.display = 'block';
+  var useDs = document.getElementById('ltUseDeepseek').checked;
+  document.getElementById('ltResult').innerHTML = '<p style="color:#a78bfa">⏳ 正在分析长期趋势...' + (useDs ? ' (DeepSeek enabled)' : '') + '</p>';
+  try {
+    const r = await fetch('/api/stock/long-term/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({use_deepseek: useDs})});
+    const d = await r.json();
+    if (d.error) { st.textContent = d.error; document.getElementById('btnLtStart').disabled = false; return; }
+    st.textContent = '分析进行中';
+    if (!_ltPollTimer) _ltPollTimer = setInterval(pollLtStatus, 5000);
+  } catch(e) { st.textContent = '启动失败'; document.getElementById('btnLtStart').disabled = false; }
+}
+async function stopLtScan() {
+  try { await fetch('/api/stock/long-term/stop', {method:'POST'}); } catch(e) {}
+  document.getElementById('ltStatus').textContent = '正在停止...';
+}
+async function pollLtStatus() {
+  try {
+    const r = await fetch('/api/stock/long-term/status');
+    const d = await r.json();
+    const st = document.getElementById('ltStatus');
+    const bar = document.getElementById('ltProgressBar');
+    const txt = document.getElementById('ltProgressText');
+    const phase = document.getElementById('ltPhase');
+    const prog = document.getElementById('ltProgress');
+    if (!d.status || d.status === '') return;
+    prog.style.display = 'block';
+    const phases = {
+      'collecting_signals': {pct: '15%', text: '收集近14天新闻信号...'},
+      'analyzing_metals': {pct: '30%', text: '贵金属分析 (黄金/白银)...'},
+      'analyzing_themes': {pct: '50%', text: 'LLM 趋势研判...'},
+      'mapping_stocks': {pct: '65%', text: '投资主题 → 候选个股...'},
+      'assessing_upside': {pct: '80%', text: '空间评估: ' + (d.assessed_count||0) + '/' + (d.candidate_count||'?')},
+      'final_selection': {pct: '92%', text: 'LLM 精选推荐...'},
+    };
+    if (d.status === 'done') {
+      bar.style.width = '100%'; txt.textContent = '完成'; phase.textContent = '';
+      st.textContent = '分析完成';
+      document.getElementById('btnLtStart').disabled = false;
+      document.getElementById('btnLtStop').disabled = true;
+      if (_ltPollTimer) { clearInterval(_ltPollTimer); _ltPollTimer = null; }
+      try {
+        var fullR = await fetch('/api/stock/long-term/result');
+        var fullD = await fullR.json();
+        if (!fullD.error) { renderLtResult(fullD); _cachePdfData('lt', fullD); } else { renderLtResult(d); }
+      } catch(_e) { renderLtResult(d); }
+    } else if (d.status === 'stopped') {
+      phase.textContent = '已暂停'; st.textContent = '已暂停';
+      document.getElementById('btnLtStart').disabled = false;
+      document.getElementById('btnLtStop').disabled = true;
+      if (_ltPollTimer) { clearInterval(_ltPollTimer); _ltPollTimer = null; }
+    } else if (d.status === 'error') {
+      phase.textContent = '错误: ' + (d.error || '未知'); st.textContent = '分析失败';
+      document.getElementById('btnLtStart').disabled = false;
+      document.getElementById('btnLtStop').disabled = true;
+      if (_ltPollTimer) { clearInterval(_ltPollTimer); _ltPollTimer = null; }
+    } else if (phases[d.status]) {
+      bar.style.width = phases[d.status].pct; txt.textContent = ''; phase.textContent = phases[d.status].text;
+    }
+    if (d.running) { document.getElementById('btnLtStart').disabled = true; document.getElementById('btnLtStop').disabled = false; }
+  } catch(e) {}
+}
+function renderLtResult(data) {
+  const el = document.getElementById('ltResult');
+  let h = '';
+  var metals = data.precious_metals || {};
+  if (metals.gold || metals.silver) {
+    h += '<div style="margin-bottom:16px"><h3 style="color:#fbbf24;margin:0 0 10px">&#129351; 贵金属分析</h3>';
+    ['gold','silver'].forEach(key => {
+      var m = metals[key];
+      if (!m || !m.data_available) return;
+      var label = key === 'gold' ? '黄金' : '白银';
+      var emoji = key === 'gold' ? '&#129351;' : '&#129352;';
+      var trendColor = m.trend === '上涨' ? '#22c55e' : m.trend === '下跌' ? '#ef4444' : m.trend === '过热' ? '#f59e0b' : '#8b8fa4';
+      h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:10px;margin-bottom:8px">';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center">';
+      h += '<span style="font-size:1em;font-weight:700;color:#e0e0e0">' + emoji + ' ' + label + ' ¥' + (m.latest_price||'-') + '</span>';
+      h += '<span style="color:' + trendColor + ';font-weight:600">' + (m.trend||'') + ' (空间' + (m.upside_score||'?') + '/100)</span>';
+      h += '</div>';
+      h += '<div style="display:flex;gap:12px;margin-top:6px;font-size:0.82em;color:#a0a4b8">';
+      h += '<span>14天: ' + ((m.change_14d_pct||0)>0?'+':'') + (m.change_14d_pct||0).toFixed(1) + '%</span>';
+      h += '<span>60天: ' + ((m.change_60d_pct||0)>0?'+':'') + (m.change_60d_pct||0).toFixed(1) + '%</span>';
+      h += '<span>RSI: ' + (m.rsi_14||'-') + '</span>';
+      h += '<span>52周位: ' + (m.position_vs_52w||'-') + '%</span>';
+      h += '</div></div>';
+    });
+    if (metals.gold_silver_ratio) h += '<div style="font-size:0.82em;color:#a0a4b8;margin-bottom:8px">金银比: ' + metals.gold_silver_ratio + ' (' + (metals.ratio_signal||'') + ')</div>';
+    var outlook = metals.llm_outlook;
+    if (outlook && !outlook.error) {
+      ['gold','silver'].forEach(key => {
+        var o = outlook[key]; if (!o) return;
+        var label = key === 'gold' ? '黄金' : '白银';
+        h += '<div style="background:#0c1220;border:1px solid #1e3a5f;border-radius:6px;padding:8px;margin-bottom:6px;font-size:0.82em">';
+        h += '<span style="color:#60a5fa;font-weight:600">' + label + '展望: ' + (o.trend||'') + '</span>';
+        if (o.drivers) h += '<div style="color:#a0a4b8;margin-top:2px">驱动: ' + o.drivers + '</div>';
+        if (o.advice) h += '<div style="color:#a3e635;margin-top:2px">建议: ' + o.advice + '</div>';
+        if (o.price_range) h += '<div style="color:#38bdf8;margin-top:2px">区间: ' + o.price_range + '</div>';
+        h += '</div>';
+      });
+      if (outlook.summary) h += '<div style="font-size:0.85em;color:#e0e0e0;margin-top:4px">' + outlook.summary + '</div>';
+    }
+    h += '</div>';
+  }
+  var themes = data.themes || [];
+  if (themes.length > 0) {
+    h += '<div style="margin-bottom:16px"><h3 style="color:#a78bfa;margin:0 0 10px">&#128202; 投资主题 (' + themes.length + ')</h3>';
+    themes.forEach((t,i) => {
+      h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:10px;margin-bottom:6px">';
+      h += '<div style="font-weight:700;color:#c4b5fd">' + (i+1) + '. ' + (t.name||'') + '</div>';
+      h += '<div style="font-size:0.82em;color:#a0a4b8;margin-top:4px">' + (t.logic||'') + '</div>';
+      if (t.industries) h += '<div style="font-size:0.8em;color:#8b8fa4;margin-top:2px">行业: ' + (Array.isArray(t.industries) ? t.industries.join(', ') : t.industries) + '</div>';
+      if (t.catalysts) h += '<div style="font-size:0.8em;color:#38bdf8;margin-top:2px">催化剂: ' + (Array.isArray(t.catalysts) ? t.catalysts.join(', ') : t.catalysts) + '</div>';
+      h += '<div style="display:flex;gap:10px;font-size:0.78em;margin-top:4px">';
+      if (t.time_horizon) h += '<span style="color:#a0a4b8">⏱ ' + t.time_horizon + '</span>';
+      if (t.confidence) h += '<span style="color:#fbbf24">置信度: ' + t.confidence + '</span>';
+      h += '</div></div>';
+    });
+    h += '</div>';
+  }
+  var picks = data.picks || [];
+  if (picks.length === 0) {
+    h += '<div style="text-align:center;padding:16px"><p style="color:#fbbf24;font-size:1em">本次分析: 暂无个股推荐</p>';
+    h += '<p style="color:#8b8fa4;font-size:0.82em">未找到空间充裕且趋势明确的标的, 请参考贵金属分析和投资主题。</p></div>';
+  } else {
+    h += '<div><h3 style="color:#22c55e;margin:0 0 10px">✅ 长期推荐 (' + picks.length + ' 只)</h3>';
+    picks.forEach((p,i) => {
+      var upside = p.upside || {};
+      var us = upside.upside_score || 0;
+      var usColor = us >= 75 ? '#22c55e' : us >= 60 ? '#60a5fa' : us >= 40 ? '#fbbf24' : '#ef4444';
+      h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:12px;margin-bottom:8px">';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center">';
+      h += '<div><span style="color:#22c55e;font-weight:700;font-size:1.1em">#' + (i+1) + '</span> ';
+      h += '<span style="color:#60a5fa;font-weight:600">' + (p.name||'') + '</span> <span style="color:#8b8fa4">(' + (p.symbol||'') + ')</span></div>';
+      h += '<div><span style="color:' + usColor + ';font-weight:700">空间 ' + us + '/100</span></div>';
+      h += '</div>';
+      h += '<div style="font-size:0.82em;margin-top:6px"><span style="color:#c4b5fd">主题: ' + (p.theme||'') + '</span>';
+      if (p.time_horizon) h += ' <span style="color:#8b8fa4">| ⏱ ' + p.time_horizon + '</span>';
+      h += '</div>';
+      if (p.recommendation_reason) h += '<div style="margin-top:4px;color:#a3e635;font-size:0.85em">💡 ' + p.recommendation_reason + '</div>';
+      if (p.recommendation_risk) h += '<div style="margin-top:2px;color:#f87171;font-size:0.8em">⚠️ ' + p.recommendation_risk + '</div>';
+      if (p.watch_price) h += '<div style="margin-top:2px;color:#38bdf8;font-size:0.82em">👀 关注价位: ' + p.watch_price + '</div>';
+      var dims = upside.dimensions || {};
+      var dimKeys = Object.keys(dims);
+      if (dimKeys.length > 0) {
+        h += '<details style="margin-top:8px"><summary style="font-size:0.78em;color:#8b8fa4;cursor:pointer">空间评估明细</summary>';
+        h += '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">';
+        dimKeys.forEach(k => {
+          var d = dims[k];
+          var dc = (d.score||0) >= 60 ? '#10b981' : (d.score||0) >= 40 ? '#fbbf24' : '#f87171';
+          h += '<div style="flex:1;min-width:150px;background:#111827;border-radius:4px;padding:4px 6px;font-size:0.76em">';
+          h += '<span style="color:' + dc + '">' + (d.name||k) + ': ' + (d.score||'-') + '/100</span>';
+          if (d.detail) h += '<div style="color:#6b7280">' + d.detail + '</div>';
+          h += '</div>';
+        });
+        h += '</div></details>';
+      }
+      h += '</div>';
+    });
+    h += '</div>';
+  }
+  el.innerHTML = h || '<p style="color:#6b7280">暂无结果</p>';
+}
+async function loadLtHistory() {
+  const el = document.getElementById('ltResult');
+  el.innerHTML = '<p style="color:#a78bfa">加载历史记录...</p>';
+  try {
+    const r = await fetch('/api/stock/long-term/history');
+    const d = await r.json();
+    const hist = d.history || [];
+    if (hist.length === 0) { el.innerHTML = '<p style="color:#6b7280">暂无历史记录</p>'; return; }
+    let h = '<h3 style="color:#a78bfa;margin:0 0 8px">长期推荐历史</h3>';
+    hist.slice().reverse().forEach(entry => {
+      h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:6px;padding:8px;margin-bottom:6px;cursor:pointer" onclick="loadLtDate(\'' + entry.date + '\')">';
+      h += '<div style="display:flex;justify-content:space-between"><span style="color:#60a5fa">' + entry.date + '</span>';
+      h += '<span style="color:#8b8fa4">' + (entry.picks||[]).length + ' 只推荐</span></div>';
+      if (entry.gold_trend) h += '<span style="font-size:0.78em;color:#fbbf24">金: ' + entry.gold_trend + ' ¥' + (entry.gold_price||'-') + '</span> ';
+      if (entry.silver_trend) h += '<span style="font-size:0.78em;color:#a0a4b8">银: ' + entry.silver_trend + ' ¥' + (entry.silver_price||'-') + '</span>';
+      (entry.picks||[]).forEach(p => {
+        h += '<div style="font-size:0.78em;color:#a0a4b8">  ' + (p.name||p.symbol) + ' (空间' + (p.upside_score||'?') + ') — ' + (p.theme||'') + '</div>';
+      });
+      h += '</div>';
+    });
+    el.innerHTML = h;
+  } catch(e) { el.innerHTML = '<p style="color:#f87171">加载失败: ' + e.message + '</p>'; }
+}
+async function loadLtDate(dateStr) {
+  const el = document.getElementById('ltResult');
+  el.innerHTML = '<p style="color:#a78bfa">加载 ' + dateStr + ' 结果...</p>';
+  try {
+    const r = await fetch('/api/stock/long-term/result/' + dateStr);
+    const d = await r.json();
+    if (d.error) { el.innerHTML = '<p style="color:#f87171">' + d.error + '</p>'; return; }
+    renderLtResult(d);
+  } catch(e) { el.innerHTML = '<p style="color:#f87171">加载失败</p>'; }
+}
+
 // --- Price Prediction Training ---
 let _trainPollTimer = null;
 function openPriceTrainModal() {
@@ -9206,6 +9630,7 @@ async function pollTrainStatus() {
       prog.style.display = 'none';
       btn.disabled = false;
       st.textContent = '训练完成 (' + (d.results || []).length + ' 只股票)';
+      _cachePdfData('train', d);
       renderFullTrainReport(d.verifications || [], d.results || [], d.sentiment || null, d.black_swan || null, d.aggregate_stats || null);
     }
   } catch(e) {}
@@ -9451,6 +9876,7 @@ async function fetchNationalTeam() {
     const r = await fetch('/api/stock/national-team');
     const d = await r.json();
     if (d.error) { el.innerHTML = '<p style="color:#f87171">'+d.error+'</p>'; st.textContent = ''; document.getElementById('btnNTFetch').disabled = false; return; }
+    _cachePdfData('nt', d);
     renderNationalTeam(d);
     st.textContent = '';
   } catch(e) { el.innerHTML = '<p style="color:#f87171">请求失败: '+e.message+'</p>'; st.textContent = ''; }
