@@ -234,6 +234,7 @@ Both servers collect user feedback via `/api/feedback`:
 | `/api/toolbar/chunk-analysis` | GET | Chunk breakdown by source/type |
 | `/api/toolbar/wiki-fetch` | POST | Start multi-user wiki fetch job |
 | `/api/toolbar/wiki-fetch/<job_id>` | GET | Poll wiki fetch job status |
+| `/api/toolbar/deep-dive` | POST | Create deep-dive learning session from Learning Guide source URL |
 | `/api/toolbar/commit-summary` | POST | Run commit summary tool |
 | `/api/toolbar/jira-report` | POST | Run Jira report tool |
 | `/api/feedback` | POST | Record user interaction for feedback-weighted ranking |
@@ -456,7 +457,7 @@ Reindex and Wiki Fetch run in background threads. The UI polls `GET /api/toolbar
 
 ## Learning Features
 
-Jarvis includes four specialized learning modes accessible from the toolbar's Learning dropdown. AI Learning and AWS AIF-C01 use persistent sessions; Tech English and Casual English start fresh each time (session is cleared on open) so the user always get new topics.
+Jarvis includes four specialized learning modes accessible from the toolbar's Learning dropdown, plus dynamic deep-dive sessions from the Daily Fetch Learning Guide. AI Learning and AWS AIF-C01 use persistent sessions; Tech English and Casual English start fresh each time (session is cleared on open) so the user always get new topics.
 
 ### Learning Modes
 
@@ -466,6 +467,7 @@ Jarvis includes four specialized learning modes accessible from the toolbar's Le
 | Tech English | `00000000-...-000002` | Fresh each time | AI news (`briefing-data-filtered.json`) | Article analysis: summary → key phrases → presentation patterns → practice |
 | Casual English | `00000000-...-000003` | Fresh each time | World news (`world-news-data.json`) | Article analysis: summary → idioms/expressions → native speaker discussion → practice |
 | AWS AIF-C01 | `00000000-...-000004` | Persistent | `aws-cert-learning-roadmap.md` + study notes in `knowledge/notes/aws_ai_p1/` | TEACH (structured lessons by domain/task) and QUIZ (exam-style practice) modes with per-domain progress tracking. |
+| Deep Dive | Dynamic UUID | Per-session | Learning Guide source URL (live fetch) or `raw/*.md` fallback | Structured overview → significance → technical detail → examples → takeaways → further exploration. Created via `POST /api/toolbar/deep-dive`; triggered from "Deep Dive" button in Learning Guide report preview. |
 
 Tech English and Casual English call `POST /api/sessions/<id>/clear` on open, then generate a new welcome message with fresh topics. This ensures the user always starts with the latest news content.
 

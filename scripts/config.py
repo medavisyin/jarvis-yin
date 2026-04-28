@@ -32,6 +32,7 @@ KNOWLEDGE_ROOT = os.path.join(REPORTS_ROOT, "knowledge")
 TOPIC_INDEX_PATH = os.path.join(REPORTS_ROOT, "topic-index.json")
 MANIFEST_PATH = os.path.join(REPORTS_ROOT, ".index-manifest.json")
 PROJECT_DIRS_PATH = os.path.join(REPORTS_ROOT, ".rag-projects.json")
+PROJECT_GRAPH_PATH = os.path.join(REPORTS_ROOT, ".project-graph.json")
 CHAT_SESSIONS_DIR = os.path.join(REPORTS_ROOT, ".chat-sessions")
 NOTES_FILE = os.path.join(REPORTS_ROOT, ".learning-notes.json")
 

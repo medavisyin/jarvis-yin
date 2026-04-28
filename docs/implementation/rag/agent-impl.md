@@ -128,6 +128,7 @@ Session IDs must be valid UUID strings.
 | `POST` | `/api/toolbar/audio-knowledge` | Generate audio from knowledge base (background job) |
 | `GET` | `/api/toolbar/audio-knowledge/<job_id>` | Poll audio generation job status |
 | `GET` | `/api/toolbar/audio-file/<date>/<filename>` | Serve generated files (MP3, PDF) for playback/download |
+| `POST` | `/api/toolbar/deep-dive` | Create a deep-dive learning session from a Learning Guide source URL. Body: `{ title, source_url?, raw_file? }`. Returns `{ session_id, title }`. |
 | `POST` | `/api/toolbar/daily-fetch` | Start full daily briefing pipeline as background job |
 | `GET` | `/api/toolbar/daily-fetch/<job_id>` | Poll daily fetch job status |
 | `GET` | `/api/settings` | Get global settings (audio language preferences) |
@@ -220,7 +221,7 @@ One-click pipeline that runs the full daily briefing workflow from the Jarvis UI
 2. **Topic deduplication:** Runs `filter_topics.py` in aggressive mode to remove stale items.
 3. **Commit report:** Calls `tool_commit_summary(hours=48)` for the last 2 days of Git activity across all configured repos.
 4. **Jira daily report:** Runs `atlassian-report.ps1` from the Jira skill for team activity.
-5. **Wiki Fetch:** Runs `index_confluence_user.py` for each team member (configurable `_WIKI_USERS` list) with `--date-from` set to yesterday and `--report-json`. Parses stdout for page/chunk counts and page detail JSON (`REPORT_JSON:{...}`). After fetching, generates **AI change summaries** for each wiki page by calling Ollama (`qwen3:1.7b`) to produce a 1-2 sentence summary of what each page covers or what was updated. Writes `wiki-fetch-YYYY-MM-DD.md` with per-user breakdowns, totals, and a **Page Details** section with clickable Confluence links, space names, AI-generated change summaries (with fallback to first 200 chars of raw content if AI summary fails), section headings, and a direct "Open in Confluence" link for each page.
+5. **Wiki Fetch:** Runs `index_confluence_user.py` for each team member (configurable `_WIKI_USERS` list) with `--date-from` set to yesterday and `--report-json`. Parses stdout for page/chunk counts and page detail JSON (`REPORT_JSON:{...}` — now includes `version_number` and `change_summary`). For **existing pages** (version > 1), the script fetches the previous page version via the Confluence REST API (`?status=historical&version=N-1`), computes a text diff, and produces a **change summary** describing what was added/removed. For **new pages** (version = 1), only the current content excerpt is available. After fetching, generates **AI summaries** via Ollama (`qwen3:1.7b`): existing pages receive a **diff-based prompt** ("what was changed") while new pages receive a **content-based prompt** ("what this page covers"). Writes `wiki-fetch-YYYY-MM-DD.md` with per-user breakdowns, totals, and a **Page Details** section with clickable Confluence links, space names, AI-generated summaries labeled "**Changes:**" (existing) or "**Summary:**" (new, with 🆕 badge), section headings, and a direct "Open in Confluence" link for each page.
 6. **World News merge recovery:** If individual source JSONs exist (e.g., `ap-news.json`, `china-news.json`) but the merged `world-news-data.json` is missing, attempts to merge via `run-world-news.py --no-fetch --no-translate` (or direct `merge_news()` call). This handles cases where the translation step failed during the initial pipeline run.
 7. **AI Briefing audio (segmented):** Splits `per_source_data` by source, generates per-source narrations using the fast narration model (`qwen3:1.7b`) with `think: false`. Chinese prompts explicitly instruct: no English reproduction, only proper nouns in English. Language is determined by `_GLOBAL_SETTINGS["audio_lang_ai"]`.
 8. **World News audio (segmented):** Filters to **international-only** items (excludes China source), generates per-category narrations → `world-news.mp3`. Language: `_GLOBAL_SETTINGS["audio_lang_world"]`.
@@ -333,7 +334,7 @@ Full-featured donor profile analysis with scoring, ranking, AI recommendations, 
 
 ### Learning Session Management
 
-Four fixed-ID sessions for learning. AI Learning and AWS AIF-C01 are persistent; Tech English and Casual English start fresh each time (cleared on open):
+Four fixed-ID sessions for learning, plus dynamic **deep-dive** sessions. AI Learning and AWS AIF-C01 are persistent; Tech English and Casual English start fresh each time (cleared on open):
 
 ```python
 _LEARNING_SESSION_IDS = {
@@ -345,6 +346,8 @@ _LEARNING_SESSION_IDS = {
 ```
 
 Each session type has a dedicated system prompt (`SYSTEM_PROMPT_AI_LEARNING`, `SYSTEM_PROMPT_ENGLISH_LEARNING`, `SYSTEM_PROMPT_CASUAL_ENGLISH`, `SYSTEM_PROMPT_AWS_CERT`) that shapes the LLM's teaching behavior. See `learning-features-impl.md` for full prompt text and modification guide.
+
+**Deep Dive sessions** (`session_type: "deep_dive"`) are created dynamically via `POST /api/toolbar/deep-dive`. Unlike the fixed-ID sessions, each deep dive gets a unique UUID. The endpoint fetches the source URL live (using `_fetch_source_url_content` with the same SOCKS proxy as briefing fetchers), falls back to reading `raw/*.md` files if URL fetch fails, and seeds the session with the content as the first user message. The chat endpoint detects `session_type == "deep_dive"` and applies `SYSTEM_PROMPT_DEEP_DIVE` for structured teaching. Deep dive buttons appear in the Learning Guide report preview in the Daily Fetch history view.
 
 The client-side `_openLearning()` function detects `english_learning` and `casual_english` types and calls `POST /api/sessions/<id>/clear` before generating a fresh welcome message with current news topics.
 

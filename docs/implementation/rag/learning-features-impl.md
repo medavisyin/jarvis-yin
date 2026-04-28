@@ -26,7 +26,7 @@
 ## 1. Session Management
 
 ### What it does
-Four fixed-ID sessions. AI Learning and AWS AIF-C01 are persistent (keep history). Tech English and Casual English start fresh each time (session cleared on open).
+Four fixed-ID sessions plus dynamic **deep-dive** sessions. AI Learning and AWS AIF-C01 are persistent (keep history). Tech English and Casual English start fresh each time (session cleared on open). Deep Dive sessions are created on-demand via `POST /api/toolbar/deep-dive` with unique UUIDs (not in `_LEARNING_SESSION_IDS`).
 
 ### Where the code lives
 
@@ -34,6 +34,8 @@ Four fixed-ID sessions. AI Learning and AWS AIF-C01 are persistent (keep history
 |-----------|----------------------|------------|
 | Session IDs | Python constant | `_LEARNING_SESSION_IDS` |
 | Session detection | `api_agent()` | `if session_id == _LEARNING_SESSION_IDS` |
+| Deep dive detection | `api_agent()` | `session_type == "deep_dive"` |
+| Deep dive endpoint | Flask route | `@app.route("/api/toolbar/deep-dive"` |
 | Fresh-start logic | Client JS `_openLearning()` | `const freshStart =` |
 | Clear endpoint | Flask route | `@app.route("/api/sessions/<session_id>/clear"` |
 
@@ -49,12 +51,19 @@ to:
 const freshStart = true;  // all learning sessions start fresh
 ```
 
-**To add a new learning mode:**
+**To add a new learning mode (fixed-ID approach):**
 1. Add entry to `_LEARNING_SESSION_IDS` dict (use next UUID: `...000005`)
 2. Create a new `SYSTEM_PROMPT_*` constant
 3. Add `elif` branch in `api_agent()` to detect the session ID
 4. Add a new `async function open*()` in the client JS
 5. Add a toolbar button in the HTML
+
+**To add a new learning mode (dynamic session approach, like Deep Dive):**
+1. Create a new `SYSTEM_PROMPT_*` constant
+2. Add a new API endpoint that creates sessions with a unique `session_type`
+3. Add detection in `api_agent()` via `_load_session_file` + `session_type` check
+4. Add helper functions for content fetching if needed
+5. Add UI trigger (button, link, etc.) in the relevant view
 
 ---
 
@@ -71,6 +80,7 @@ Each learning mode has a system prompt that controls the LLM's teaching behavior
 | Tech English | `SYSTEM_PROMPT_ENGLISH_LEARNING` |
 | Casual English | `SYSTEM_PROMPT_CASUAL_ENGLISH` |
 | AWS AIF-C01 | `SYSTEM_PROMPT_AWS_CERT` |
+| Deep Dive | `SYSTEM_PROMPT_DEEP_DIVE` |
 
 ### Current prompt designs
 

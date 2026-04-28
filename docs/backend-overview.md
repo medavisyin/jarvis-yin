@@ -255,7 +255,7 @@ The agent toolbar is grouped into these categories:
 - **Medavis**: Wiki Fetch, Jira Daily, Commit Summary, Team Activity
 - **Usage Tools**: Audio from Knowledge, Explain This
 - **Data Analysis**: Trend Analysis, AI News KB
-- **Personal**: Donor Analysis, Daily Fetch (includes AI/World/China news fetch, commit report, Jira, Wiki Fetch with AI change summaries & Confluence links, world news merge recovery, segmented audio with up to 15 items/category for Chinese news)
+- **Personal**: Donor Analysis, Daily Fetch (includes AI/World/China news fetch, commit report, Jira, Wiki Fetch with diff-based change summaries for existing pages & content summaries for new pages, world news merge recovery, segmented audio with up to 15 items/category for Chinese news, Learning Guide with Deep Dive into source articles)
 - **Learning**: AI Learning, Tech English, Casual English, AWS AIF-C01, My Notes
 - **Stock**: Stock Analysis, Watchlist, AI Scanner, Price Prediction, National Team ETF (国家队)
 
@@ -660,6 +660,7 @@ Output: `world-news-data.json` categorized by politics, economics, technology, s
 | POST | `/api/notes` | Save a note | `{ content }` | `{ id, content, created }` |
 | PUT | `/api/notes/<id>` | Update a note | `{ content }` | `{ updated: true }` |
 | DELETE | `/api/notes/<id>` | Delete a note | — | `{ deleted: true }` |
+| POST | `/api/toolbar/deep-dive` | Create deep-dive learning session | `{ title, source_url?, raw_file? }` | `{ session_id, title }` |
 | POST | `/api/toolbar/daily-fetch` | Start full daily pipeline | — | `{ job_id, status }` |
 | POST | `/api/toolbar/daily-fetch/continue` | Continue missing steps only | `{ steps: [...] }` | `{ job_id, status }` |
 | GET | `/api/toolbar/daily-fetch/<job_id>` | Poll daily fetch job | — | `{ status, ... }` |

@@ -35,6 +35,7 @@ from config import (
     JIRA_REPORT_SCRIPT,
     KNOWLEDGE_ROOT,
     NOTES_FILE,
+    PROJECT_GRAPH_PATH,
     REPORTS_ROOT,
     SNAPSHOT_PATH,
 )
@@ -99,6 +100,7 @@ You also have tools for actions that require live data:
 - `briefing_search` — search AI briefings with date/source filters
 - `rag_search` — deeper search if auto-context is insufficient
 - `analyze_image` — focused re-analysis of an uploaded image
+- `project_query` — query the project knowledge graph for dependencies, relationships, and impact analysis
 
 Rules:
 - Answer using the injected context first. Only call tools if the context is \
@@ -472,6 +474,125 @@ def tool_analyze_image(image_description_request: str) -> str:
     )
 
 
+def _load_project_graph() -> dict:
+    if not os.path.isfile(PROJECT_GRAPH_PATH):
+        return {}
+    try:
+        with open(PROJECT_GRAPH_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def tool_project_query(query_type: str = "list", project_name: str = "") -> str:
+    """Query the project knowledge graph for info, dependencies, impact analysis."""
+    graph = _load_project_graph()
+    if not graph or "projects" not in graph:
+        return "Project graph not available. Run: python scripts/rag/project_graph.py"
+
+    projects = graph["projects"]
+
+    if query_type == "list":
+        lines = [f"Indexed projects ({len(projects)}):"]
+        for name, data in sorted(projects.items()):
+            coords = data.get("coordinates", "no pom")
+            desc = data.get("description", "")
+            line = f"  - {name}: {coords}"
+            if desc:
+                line += f" — {desc[:80]}"
+            lines.append(line)
+        return "\n".join(lines)
+
+    matched = None
+    if project_name:
+        pn_lower = project_name.lower()
+        for name in projects:
+            if pn_lower in name.lower() or name.lower() in pn_lower:
+                matched = name
+                break
+        if not matched:
+            for aid, pname in graph.get("artifact_index", {}).items():
+                if pn_lower in aid.lower():
+                    matched = pname
+                    break
+    if not matched and project_name:
+        return f"Project '{project_name}' not found. Use query_type='list' to see all projects."
+
+    if query_type == "info" and matched:
+        data = projects[matched]
+        internal = data.get("internal_dependencies", [])
+        by = data.get("depended_by", [])
+        lines = [
+            f"Project: {matched}",
+            f"Coordinates: {data.get('coordinates', '')}",
+            f"Path: {data.get('path', '')}",
+            f"Packaging: {data.get('packaging', '')}",
+            f"Description: {data.get('description', 'N/A')}",
+            f"Modules: {', '.join(data.get('modules', [])) or 'none'}",
+            f"POM files: {data.get('pom_count', 0)}",
+        ]
+        if internal:
+            lines.append(f"Depends on: {', '.join(d['target'] for d in internal)}")
+        if by:
+            lines.append(f"Depended by: {', '.join(by)}")
+        return "\n".join(lines)
+
+    if query_type == "dependencies" and matched:
+        data = projects[matched]
+        internal = data.get("internal_dependencies", [])
+        if not internal:
+            return f"{matched} has no internal (cross-project) dependencies."
+        lines = [f"{matched} depends on:"]
+        for dep in internal:
+            lines.append(f"  - {dep['target']} ({dep['artifact']})")
+        return "\n".join(lines)
+
+    if query_type == "dependents" and matched:
+        data = projects[matched]
+        by = data.get("depended_by", [])
+        if not by:
+            return f"No other projects depend on {matched}."
+        return f"Projects that depend on {matched}: {', '.join(by)}"
+
+    if query_type == "impact" and matched:
+        data = projects[matched]
+        by = data.get("depended_by", [])
+        deps = [d["target"] for d in data.get("internal_dependencies", [])]
+        lines = [f"Impact analysis for {matched}:"]
+        lines.append(f"  Changes to {matched} could affect: {', '.join(by) if by else 'no other projects'}")
+        lines.append(f"  {matched} depends on: {', '.join(deps) if deps else 'no internal projects'}")
+        if by:
+            lines.append(f"  CAUTION: {len(by)} downstream project(s) may need testing.")
+        return "\n".join(lines)
+
+    if query_type == "relationships":
+        lines = ["Project dependency relationships:"]
+        for name, data in sorted(projects.items()):
+            internal = data.get("internal_dependencies", [])
+            by = data.get("depended_by", [])
+            if internal or by:
+                lines.append(f"\n  {name}:")
+                if internal:
+                    lines.append(f"    uses: {', '.join(d['target'] for d in internal)}")
+                if by:
+                    lines.append(f"    used by: {', '.join(by)}")
+        return "\n".join(lines)
+
+    return "Invalid query_type. Use: list, info, dependencies, dependents, impact, relationships"
+
+
+SYSTEM_PROMPT_PROJECT_ADDON = """
+When answering about MEDAVIS projects:
+- Use the project_query tool for dependency and relationship questions.
+- Cite specific classes, modules, or Maven coordinates when relevant.
+- For impact analysis, always check both upstream dependencies and downstream dependents.
+- If the user asks about architecture, synthesize from project summaries, README content, and dependency structure.
+- For cross-project questions, query multiple projects and correlate the information.
+- Use the enriched RAG data: AI/ML integration chunks, REST endpoint chunks, technology stack chunks, and config analysis chunks contain detailed feature information.
+- When asked about AI usage, look for ai_integration and project_technology chunks in the retrieved context.
+"""
+
+
 # ===================================================================
 # TOOL REGISTRY (Ollama-compatible JSON schemas)
 # ===================================================================
@@ -483,6 +604,7 @@ TOOL_FUNCTIONS = {
     "jira_report": tool_jira_report,
     "commit_summary": tool_commit_summary,
     "analyze_image": tool_analyze_image,
+    "project_query": tool_project_query,
 }
 
 TOOL_SCHEMAS = [
@@ -600,6 +722,37 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "project_query",
+            "description": (
+                "Query the project knowledge graph for project info, dependencies, "
+                "dependents, impact analysis, or cross-project relationships. "
+                "Use this when the user asks about project structure, what depends on what, "
+                "or the impact of changes to a project."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["query_type"],
+                "properties": {
+                    "query_type": {
+                        "type": "string",
+                        "enum": ["list", "info", "dependencies", "dependents", "impact", "relationships"],
+                        "description": (
+                            "Type of query: list (all projects), info (project details), "
+                            "dependencies (what it uses), dependents (what uses it), "
+                            "impact (change impact analysis), relationships (full graph)"
+                        ),
+                    },
+                    "project_name": {
+                        "type": "string",
+                        "description": "Project name (fuzzy matched). Required for info/dependencies/dependents/impact.",
+                    },
+                },
+            },
+        },
+    },
 ]
 
 
@@ -692,6 +845,39 @@ def _auto_rag_search(user_query: str, q_lower: str) -> tuple[str, list[dict]]:
             user_query, top_k=3, min_score=0.2,
             conditions=wiki_cond, embedding=emb_map[user_query]))
 
+    _project_kw = (
+        "project", "dependency", "dependencies", "depends", "impact",
+        "architecture", "module", "pom", "maven", "connect", "relationship",
+        "rest api", "endpoint", "framework", "service", "microservice",
+        "code", "class", "implement", "api", "review", "source",
+    )
+    if any(kw in q_lower for kw in _project_kw):
+        code_types = ("code_doc", "project_summary", "project_identity", "project_dependency")
+        for ct in code_types:
+            code_cond = [FieldCondition(key="item_type", match=MatchValue(value=ct))]
+            extra_results.extend(_vector_search(
+                user_query, top_k=3, min_score=0.15,
+                conditions=code_cond, embedding=emb_map[user_query]))
+
+        graph = _load_project_graph()
+        if graph:
+            mentioned = []
+            for pname in graph.get("projects", {}):
+                if pname.lower().replace("-", " ") in q_lower or pname.lower() in q_lower:
+                    mentioned.append(pname)
+            for pname in mentioned:
+                pinfo = graph["projects"].get(pname, {})
+                related = {
+                    d["target"] for d in pinfo.get("internal_dependencies", [])
+                    if isinstance(d, dict) and d.get("target")
+                }
+                related.update(pinfo.get("depended_by", []))
+                for rname in list(related)[:5]:
+                    r_cond = [FieldCondition(key="parent_title", match=MatchValue(value=rname))]
+                    extra_results.extend(_vector_search(
+                        user_query, top_k=2, min_score=0.1,
+                        conditions=r_cond, embedding=emb_map[user_query]))
+
     seen_titles = set()
     all_results = []
     for r in auto_results + extra_results:
@@ -715,15 +901,48 @@ def _auto_rag_search(user_query: str, q_lower: str) -> tuple[str, list[dict]]:
     if not all_results:
         return "", sources
 
+    is_project_query = any(kw in q_lower for kw in _project_kw)
+    max_results = 8 if is_project_query else 5
     lines = []
-    for r in all_results[:5]:
+    for r in all_results[:max_results]:
         lines.append(f"- [{r['source']}] {r['title']} ({r['date']}): {r['text'][:150]}")
-        sources.append({"source": r["source"], "title": r["title"]})
+        sources.append({"source": r["source"], "title": r["title"],
+                         "item_type": r.get("item_type", "")})
     context = (
         "\n\n--- Relevant context from knowledge base ---\n"
         + "\n".join(lines)
         + "\n--- End context ---\n"
     )
+
+    project_names_in_results = set()
+    for r in all_results[:max_results]:
+        src = r.get("source", "")
+        if src.startswith("project:"):
+            project_names_in_results.add(src.split(":", 1)[1])
+    if len(project_names_in_results) >= 2:
+        graph = _load_project_graph()
+        if graph:
+            graph_lines = []
+            for pn in sorted(project_names_in_results):
+                pdata = graph.get("projects", {}).get(pn, {})
+                if not pdata:
+                    continue
+                deps = [d["target"] for d in pdata.get("internal_dependencies", [])
+                        if isinstance(d, dict) and d.get("target")]
+                by = pdata.get("depended_by", [])
+                coords = pdata.get("coordinates", "")
+                graph_lines.append(f"- {pn} ({coords})")
+                if deps:
+                    graph_lines.append(f"    depends on: {', '.join(deps)}")
+                if by:
+                    graph_lines.append(f"    used by: {', '.join(by)}")
+            if graph_lines:
+                context += (
+                    "\n\n--- Project Relationships ---\n"
+                    + "\n".join(graph_lines)
+                    + "\n--- End Relationships ---\n"
+                )
+
     return context, sources
 
 
@@ -889,6 +1108,19 @@ def run_agent(user_query: str, image_b64: str | None = None,
         sys_prompt = SYSTEM_PROMPT_COMPACT
     else:
         sys_prompt = SYSTEM_PROMPT_FULL
+
+    _project_item_types = {
+        "project_summary", "project_identity", "project_dependency",
+        "code_doc", "ai_integration", "rest_endpoint", "project_technology",
+        "project_readme", "config_analysis",
+    }
+    has_project_context = any(
+        s.get("item_type", "") in _project_item_types
+        for s in collected_sources
+    )
+    if has_project_context and not system_prompt_override:
+        sys_prompt += "\n\n" + SYSTEM_PROMPT_PROJECT_ADDON
+
     messages.insert(0, {"role": "system", "content": sys_prompt})
 
     if has_auto_context:
@@ -911,8 +1143,11 @@ def run_agent(user_query: str, image_b64: str | None = None,
 
     history_len = sum(len(m.get("content", "")) for m in messages)
     ctx_len = len(augmented_query) + len(sys_prompt) + history_len
+    is_deep_model = "8b" in effective_model
     if system_prompt_override:
         num_ctx = 8192 if ctx_len < 6000 else 16384
+    elif is_deep_model:
+        num_ctx = 8192 if ctx_len < 6000 else 16384 if ctx_len < 14000 else 32768
     else:
         num_ctx = 2048 if ctx_len < 1500 else 4096 if ctx_len < 6000 else 8192 if ctx_len < 14000 else 16384
 
@@ -925,6 +1160,8 @@ def run_agent(user_query: str, image_b64: str | None = None,
     # This saves ~2000 tokens of context and speeds up prefill significantly.
     has_auto_context = bool(context_block.strip())
     use_tools = not has_auto_context
+    if has_project_context:
+        use_tools = True
 
     for iteration in range(MAX_AGENT_ITERATIONS):
         try:
@@ -1043,14 +1280,50 @@ SYSTEM_PROMPT_ENGLISH_LEARNING = """\
 You are a tech English tutor helping a non-native speaker improve their technical communication. \
 The student is a Java developer in healthcare IT.
 
-When the student selects a news article topic, you MUST:
-1. First, give a brief summary of the article in simple English
-2. Then analyze the article content — extract and teach:
-   - Key technical phrases and expressions (with definitions and example usage)
-   - How to pronounce or present difficult terms
-   - Useful sentence patterns for demos/presentations (e.g., "Let me walk you through...", "The key takeaway is...")
-3. Show how a native speaker would explain this topic in a meeting or presentation
-4. Only AFTER the analysis, invite the student to ask questions or practice
+When the student selects a news article topic, produce a COMPREHENSIVE analysis (target 500+ words). \
+You MUST include ALL of the following sections in this order:
+
+## 1. Article Summary (100-150 words)
+Summarize the article content clearly and completely. Cover the main points, key players, \
+and why this matters in the industry. Use simple but professional English.
+
+## 2. Key Technical Vocabulary & Phrases (15-20 items)
+Extract and teach at least 15 technical terms, phrases, and expressions from the article:
+- **Term/Phrase**: definition in simple English
+- **Example sentence**: show how to use it naturally in a work context
+- **Pronunciation tip**: for difficult terms, add IPA or phonetic hint
+Group related terms together (e.g., architecture terms, business terms, ML terms).
+
+## 3. Useful Sentence Patterns (8-10 patterns)
+Provide sentence templates the student can reuse in demos, meetings, and presentations. \
+Each pattern should include:
+- The template with blanks (e.g., "The key advantage of ___ over ___ is that...")
+- A filled example using the article's content
+- When to use this pattern (demo, standup, code review, etc.)
+
+## 4. How a Native Speaker Would Explain This (Presentation Style)
+Write a 150-200 word presentation-style explanation as if the student were presenting \
+this topic at a team meeting or tech talk. Use natural, confident English with:
+- An engaging opening hook
+- Clear structure (problem → solution → impact)
+- Professional but conversational tone
+- A strong closing statement
+This section teaches the student how to SOUND like a confident English speaker.
+
+## 5. Grammar & Usage Spotlight
+Pick 2-3 grammar patterns or English usage points from the article that are \
+commonly tricky for non-native speakers. Explain each with before/after examples.
+
+## 6. Discussion Questions
+Provide 3-4 questions the student could use to start a discussion about this topic \
+in English (e.g., in a team meeting or 1-on-1).
+
+IMPORTANT OUTPUT RULES:
+- Your response MUST be at least 500 words. Aim for 600-800 words.
+- Use markdown formatting with clear section headers.
+- Include ALL six sections above — do not skip any.
+- If the article content is short, expand with your knowledge of the topic.
+- Use the "Next →" hint at the end if you need to continue.
 
 When the student writes free text:
 - ALWAYS correct grammar or word choice errors (show correction + explain why)
@@ -1058,17 +1331,55 @@ When the student writes free text:
 - Answer in English, explain grammar rules simply"""
 
 SYSTEM_PROMPT_CASUAL_ENGLISH = """\
-You are a friendly English conversation tutor helping a non-native speaker improve their everyday English.
+You are a friendly English conversation tutor helping a non-native speaker improve their everyday English. \
+The student is a professional who wants to sound natural in casual and social English.
 
-When the student selects a news article topic, you MUST:
-1. First, give a brief summary of the article in simple, everyday English
-2. Then analyze the article content — extract and teach:
-   - Useful casual phrases, idioms, and natural expressions from the article
-   - Vocabulary for daily life and social situations
-   - How a native speaker would casually tell a friend about this news
-3. Include cultural context when relevant (Western social norms, common reactions)
-4. Show example conversations: "If you were telling a colleague about this, you might say..."
-5. Only AFTER the analysis, invite the student to ask questions or practice
+When the student selects a news article topic, produce a COMPREHENSIVE analysis (target 500+ words). \
+You MUST include ALL of the following sections in this order:
+
+## 1. What Happened? (200-250 words)
+Give a DETAILED summary of the news story in simple, everyday English. Imagine explaining it \
+to a friend over coffee. Cover ALL the key facts: who is involved, what happened, where and when \
+it happened, why it matters, and what the consequences might be. Include specific details, \
+numbers, and quotes from the article. The reader should fully understand the news after reading \
+this section — do not leave out important information.
+
+## 2. Everyday Vocabulary & Expressions (15-20 items)
+Extract and teach casual phrases, idioms, and natural expressions related to this topic:
+- **Phrase/Idiom**: meaning in simple English
+- **Example**: how to use it in a real conversation
+- **Tone note**: formal vs casual, when to use it
+Group by theme (e.g., opinions, reactions, describing events).
+
+## 3. Useful Sentence Patterns (8-10 patterns)
+Provide sentence templates for everyday conversations:
+- The template with blanks
+- A filled example using this news story
+- When to use it (water cooler chat, social media, texting friends, etc.)
+
+## 4. How a Native Speaker Would Tell This Story
+Write a 150-200 word casual retelling as if the student were telling a friend or colleague \
+about this news. Use natural, conversational English with:
+- Casual openers ("So you know what happened?", "Did you hear about...")
+- Filler words and hedges used naturally ("basically", "apparently", "I mean")
+- Personal reactions ("That's crazy!", "I can't believe...")
+- A casual wrap-up
+
+## 5. Cultural Context & Social Cues
+Explain 2-3 cultural or social aspects of this news that a non-native speaker might miss. \
+How would people in English-speaking countries react? What opinions are common?
+
+## 6. Practice Conversations
+Write 2 short dialogue examples (4-6 lines each) showing how to discuss this topic in:
+- A casual work setting (break room, coffee chat)
+- A social setting (with friends, at dinner)
+
+IMPORTANT OUTPUT RULES:
+- Your response MUST be at least 500 words. Aim for 600-800 words.
+- Use markdown formatting with clear section headers.
+- Include ALL six sections above — do not skip any.
+- If the article content is short, expand with your knowledge of the topic.
+- Use the "Next →" hint at the end if you need to continue.
 
 When the student writes free text:
 - ALWAYS correct grammar and word choice errors (show correction + brief explanation)
@@ -1135,6 +1446,22 @@ Key exam facts to always keep in mind:
 - Responsible AI = FEPST (Fairness, Explainability, Privacy, Safety, Transparency)
 - Domains 2+3 = 52% of exam — focus heavily on GenAI and Bedrock"""
 
+SYSTEM_PROMPT_DEEP_DIVE = """\
+You are an expert AI tutor. The user wants to learn about a specific topic from their \
+daily AI briefing. You have been given the source content below.
+
+Your teaching approach:
+1. Start with a clear, structured overview of the key concepts
+2. Explain the significance — why this matters in the field
+3. Break down technical details into digestible pieces
+4. Provide concrete examples or analogies where helpful
+5. Highlight practical takeaways and implications
+6. Suggest related topics for further exploration
+
+Use clear headings, bullet points, and code examples where appropriate. \
+Adapt your depth based on follow-up questions. \
+Respond in the same language as the user's message."""
+
 
 def _resolve_topic_from_history(query: str, history: list[dict]) -> str | None:
     """If query is a topic number reference (e.g. '16', 'topic 16'), resolve it
@@ -1173,9 +1500,151 @@ def _wants_more_topics(query: str) -> bool:
         "more topic", "other topic", "new topic", "different topic",
         "change topic", "switch topic", "another topic",
         "give me more", "show me more", "next topic",
-        "refresh topic", "更多", "换一个",
+        "refresh topic", "recent topic", "latest topic",
+        "list topic", "show topic", "what topic",
+        "更多", "换一个",
     ]
-    return any(s in q for s in signals)
+    if any(s in q for s in signals):
+        return True
+    import re
+    return bool(re.match(r"^(?:topics?|show\s+me|list|recent|latest|refresh)\s*$", q, re.IGNORECASE))
+
+
+def _classify_learning_channel_intent(query: str, topic_titles: list[str], channel_desc: str) -> dict:
+    """Use fast LLM to classify user intent in a learning channel.
+    Returns: {"intent": "select_topic"|"more_topics"|"followup"|"off_topic",
+              "topic": "<resolved topic title or empty>"}"""
+    import requests as _req
+    titles_sample = "\n".join(f"- {t}" for t in topic_titles[:20])
+    try:
+        resp = _req.post(
+            f"{OLLAMA_HOST}/api/chat",
+            json={
+                "model": OLLAMA_MODEL_FAST,
+                "messages": [
+                    {"role": "system", "content": (
+                        f"You classify user input for a learning channel: {channel_desc}\n\n"
+                        "Available topics:\n" + titles_sample + "\n\n"
+                        "Classify the input into ONE intent:\n"
+                        "- select_topic: user wants to learn about a specific topic (number or name)\n"
+                        "- more_topics: user wants to see the topic list, refresh it, or see recent/latest topics\n"
+                        "- followup: user asks a follow-up question about a previously discussed topic\n"
+                        "- off_topic: unrelated to the channel's topics\n\n"
+                        "Output ONLY a JSON object: {\"intent\": \"...\", \"topic\": \"...\"}\n"
+                        "For select_topic, set topic to the EXACT matching title from the list above.\n"
+                        "For other intents, set topic to empty string."
+                    )},
+                    {"role": "user", "content": query},
+                ],
+                "stream": False,
+                "think": False,
+                "options": {"num_predict": 120, "num_ctx": 1024},
+            },
+            timeout=10,
+        )
+        raw = resp.json().get("message", {}).get("content", "").strip()
+        import json as _json
+        import re
+        json_match = re.search(r"\{[^}]+\}", raw)
+        if json_match:
+            result = _json.loads(json_match.group())
+            intent = result.get("intent", "off_topic")
+            topic = result.get("topic", "")
+            if intent in ("select_topic", "more_topics", "followup", "off_topic"):
+                return {"intent": intent, "topic": topic}
+    except Exception:
+        pass
+    return {"intent": "off_topic", "topic": ""}
+
+
+def _resolve_english_topic_by_name(query: str) -> str | None:
+    """Try to match a free-text query to a known AI news topic title.
+    Supports partial matches like 'drill down to Android Coach' or 'Android Coach'."""
+    import re
+    q = query.strip()
+    q = re.sub(r"^(?:drill\s+down\s+(?:to|on|into)?|tell\s+me\s+(?:about|more\s+about)?|"
+               r"analyze|explain|teach\s+me\s+(?:about)?|show\s+me|go\s+(?:deeper\s+(?:on|into)?))\s*",
+               "", q, flags=re.IGNORECASE).strip().strip('"\'')
+    if not q or len(q) < 3:
+        return None
+    q_lower = q.lower()
+    all_titles = _load_recent_ai_news_titles()
+    for title in all_titles:
+        if title.strip().lower() == q_lower:
+            return title.strip()
+    for title in all_titles:
+        if q_lower in title.strip().lower() or title.strip().lower() in q_lower:
+            return title.strip()
+    try:
+        kb = _load_ai_kb()
+        for item in kb.get("items", []):
+            t = item.get("title", "").strip()
+            if t and (t.lower() == q_lower or q_lower in t.lower() or t.lower() in q_lower):
+                return t
+    except Exception:
+        pass
+    return None
+
+
+def _classify_and_resolve_learning_input(query: str, history: list[dict], session_id: str) -> dict:
+    """Classify user input for Tech English or Casual English using LLM + heuristics.
+    Returns: {"intent": "select_topic"|"more_topics"|"followup"|"off_topic",
+              "resolved_topic": "<topic title or None>"}"""
+    import re
+    q = query.strip()
+    if re.match(r"^(?:topic\s*)?#?\s*\d{1,2}\s*$", q, re.IGNORECASE):
+        resolved = _resolve_topic_from_history(query, history)
+        return {"intent": "select_topic", "resolved_topic": resolved}
+    if _wants_more_topics(q):
+        return {"intent": "more_topics", "resolved_topic": None}
+
+    is_tech = session_id == _LEARNING_SESSION_IDS.get("english_learning")
+    if is_tech:
+        all_titles = _load_recent_ai_news_titles()
+        channel_desc = "Tech English - learning English through AI news articles"
+    else:
+        all_items = _load_recent_world_news_titles()
+        all_titles = [it["title"] for it in all_items]
+        channel_desc = "Casual English - learning everyday English through world news"
+
+    name_match = _resolve_english_topic_by_name(q) if is_tech else _resolve_topic_by_name_in_list(q, all_titles)
+    if name_match:
+        return {"intent": "select_topic", "resolved_topic": name_match}
+
+    classified = _classify_learning_channel_intent(q, all_titles, channel_desc)
+    intent = classified["intent"]
+    llm_topic = classified.get("topic", "")
+
+    if intent == "select_topic" and llm_topic:
+        for title in all_titles:
+            if title.strip().lower() == llm_topic.strip().lower():
+                return {"intent": "select_topic", "resolved_topic": title.strip()}
+        if is_tech:
+            fallback = _resolve_english_topic_by_name(llm_topic)
+        else:
+            fallback = _resolve_topic_by_name_in_list(llm_topic, all_titles)
+        if fallback:
+            return {"intent": "select_topic", "resolved_topic": fallback}
+
+    return {"intent": intent, "resolved_topic": None}
+
+
+def _resolve_topic_by_name_in_list(query: str, titles: list[str]) -> str | None:
+    """Match a query to a title from a given list using partial matching."""
+    import re
+    q = re.sub(r"^(?:drill\s+down\s+(?:to|on|into)?|tell\s+me\s+(?:about|more\s+about)?|"
+               r"analyze|explain|teach\s+me\s+(?:about)?|show\s+me|go\s+(?:deeper\s+(?:on|into)?))\s*",
+               "", query.strip(), flags=re.IGNORECASE).strip().strip('"\'')
+    if not q or len(q) < 3:
+        return None
+    q_lower = q.lower()
+    for title in titles:
+        if title.strip().lower() == q_lower:
+            return title.strip()
+    for title in titles:
+        if q_lower in title.strip().lower() or title.strip().lower() in q_lower:
+            return title.strip()
+    return None
 
 
 def _fetch_fresh_topics(session_id: str, history: list[dict]) -> str:
@@ -1185,7 +1654,7 @@ def _fetch_fresh_topics(session_id: str, history: list[dict]) -> str:
         if msg.get("role") != "assistant":
             continue
         import re
-        for _, title in re.findall(r"^\s*\d{1,2}\.\s+(.+)$", msg.get("content", ""), re.MULTILINE):
+        for title in re.findall(r"^\s*\d{1,2}\.\s+(.+)$", msg.get("content", ""), re.MULTILINE):
             already_shown.add(title.strip().lower())
 
     lines = []
@@ -1263,6 +1732,69 @@ def _web_search_references(query: str, num_results: int = 5) -> str:
     except Exception as e:
         print(f"[web-search] Failed: {e}")
         return ""
+
+
+def _fetch_source_url_content(url: str, timeout: int = 20) -> tuple:
+    """Fetch a URL and return (text_content, error_string).
+    Uses the same SOCKS proxy as the fetcher scripts."""
+    if not url:
+        return "", "No URL provided"
+    try:
+        import httpx
+        proxy = os.environ.get("BRIEFING_PROXY", "socks5://localhost:10808")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (compatible; Jarvis/1.0)",
+            "Accept": "text/html,application/xhtml+xml,text/plain,*/*",
+        }
+        with httpx.Client(proxy=proxy, timeout=timeout, follow_redirects=True) as client:
+            r = client.get(url, headers=headers)
+            r.raise_for_status()
+            content_type = r.headers.get("content-type", "")
+            raw = r.text
+
+        if "html" in content_type.lower() or raw.strip().startswith("<!") or raw.strip().startswith("<html"):
+            text = _html_to_text(raw)
+        else:
+            text = raw
+
+        text = re.sub(r'\n{3,}', '\n\n', text).strip()
+        return text, ""
+    except Exception as e:
+        return "", str(e)[:200]
+
+
+def _html_to_text(html: str) -> str:
+    """Convert HTML to readable plain text, stripping tags and scripts."""
+    import html as html_mod
+    text = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<style[^>]*>.*?</style>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<nav[^>]*>.*?</nav>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<footer[^>]*>.*?</footer>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<header[^>]*>.*?</header>', '', text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r'<br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</p>', '\n\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</div>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</h[1-6]>', '\n\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'</li>', '\n', text, flags=re.IGNORECASE)
+    text = html_mod.unescape(text)
+    text = re.sub(r'<[^>]+>', '', text)
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
+
+
+def _read_raw_file_content(raw_file_ref: str) -> str:
+    """Read a raw/*.md file from the most recent reports directory."""
+    for d_offset in range(7):
+        dt = (datetime.now() - timedelta(days=d_offset)).strftime("%Y-%m-%d")
+        raw_path = os.path.join(REPORTS_ROOT, dt, raw_file_ref)
+        if os.path.isfile(raw_path):
+            try:
+                with open(raw_path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except OSError:
+                continue
+    return ""
 
 
 def _fetch_article_content(title: str, session_id: str) -> str:
@@ -1380,47 +1912,108 @@ def _fetch_article_content(title: str, session_id: str) -> str:
                     with open(wn_path, "r", encoding="utf-8") as f:
                         wdata = json.load(f)
                     for cat in wdata.get("categories", []):
+                        cat_name = cat.get("label", cat.get("category", ""))
                         for article in cat.get("items", cat.get("articles", [])):
                             if article.get("title", "").strip().lower() == title_lower:
                                 parts = [f"Title: {article.get('title', '')}"]
+                                if cat_name:
+                                    parts.append(f"Category: {cat_name}")
                                 if article.get("source"):
                                     parts.append(f"Source: {article['source']}")
+                                if article.get("date"):
+                                    parts.append(f"Date: {article['date']}")
                                 if article.get("url"):
                                     parts.append(f"URL: {article['url']}")
                                 if article.get("summary"):
-                                    parts.append(f"\n{article['summary']}")
+                                    parts.append(f"\nSummary:\n{article['summary']}")
+                                if article.get("body"):
+                                    parts.append(f"\nFull content:\n{article['body'][:5000]}")
                                 points = article.get("points", [])
-                                if points:
+                                if points and isinstance(points, list):
                                     parts.append("\nKey points:")
                                     for p in points:
                                         parts.append(f"- {p}")
+                                if article.get("commentary"):
+                                    parts.append(f"\nCommentary:\n{article['commentary']}")
+                                if article.get("analysis"):
+                                    parts.append(f"\nAnalysis:\n{article['analysis']}")
                                 return "\n".join(parts)
                 except Exception:
                     continue
     elif session_id == _LEARNING_SESSION_IDS.get("english_learning"):
+        matched_item = None
+        matched_source_name = ""
         for d_offset in range(7):
+            if matched_item:
+                break
             dt = (datetime.now() - timedelta(days=d_offset)).strftime("%Y-%m-%d")
             for fname in ("briefing-data-filtered.json", "briefing-data.json"):
                 json_path = os.path.join(REPORTS_ROOT, dt, fname)
-                if os.path.isfile(json_path):
-                    try:
-                        with open(json_path, "r", encoding="utf-8") as f:
-                            data = json.load(f)
+                if not os.path.isfile(json_path):
+                    continue
+                try:
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    for src_block in data.get("per_source_data", []):
+                        src_name = src_block.get("name", src_block.get("source", ""))
+                        for item in src_block.get("items", []):
+                            if item.get("title", "").strip().lower() == title_lower:
+                                matched_item = item
+                                matched_source_name = src_name
+                                break
+                        if matched_item:
+                            break
+                    if not matched_item:
                         for section in data.get("sections", []):
                             for item in section.get("items", []):
                                 if item.get("title", "").strip().lower() == title_lower:
-                                    parts = [f"Title: {item.get('title', '')}"]
-                                    if item.get("source"):
-                                        parts.append(f"Source: {item['source']}")
-                                    if item.get("url"):
-                                        parts.append(f"URL: {item['url']}")
-                                    if item.get("summary"):
-                                        parts.append(f"\n{item['summary']}")
-                                    if item.get("body"):
-                                        parts.append(f"\n{item['body'][:2000]}")
-                                    return "\n".join(parts)
-                    except Exception:
-                        continue
+                                    matched_item = item
+                                    matched_source_name = section.get("source", "")
+                                    break
+                            if matched_item:
+                                break
+                except Exception:
+                    continue
+                if matched_item:
+                    break
+        if not matched_item:
+            try:
+                kb = _load_ai_kb()
+                for item in kb.get("items", []):
+                    if item.get("title", "").strip().lower() == title_lower:
+                        matched_item = item
+                        matched_source_name = item.get("source", "")
+                        break
+            except Exception:
+                pass
+        if matched_item:
+            parts = [f"Title: {matched_item.get('title', '')}"]
+            if matched_source_name:
+                parts.append(f"Source: {matched_source_name}")
+            if matched_item.get("source") and matched_item["source"] != matched_source_name:
+                parts.append(f"Publisher: {matched_item['source']}")
+            if matched_item.get("date"):
+                parts.append(f"Date: {matched_item['date']}")
+            if matched_item.get("url"):
+                parts.append(f"URL: {matched_item['url']}")
+            if matched_item.get("category"):
+                parts.append(f"Category: {matched_item['category']}")
+            if matched_item.get("summary"):
+                parts.append(f"\nSummary:\n{matched_item['summary']}")
+            if matched_item.get("body"):
+                parts.append(f"\nFull content:\n{matched_item['body'][:5000]}")
+            if matched_item.get("commentary"):
+                parts.append(f"\nExpert commentary:\n{matched_item['commentary']}")
+            if matched_item.get("prediction"):
+                parts.append(f"\nIndustry prediction:\n{matched_item['prediction']}")
+            points = matched_item.get("points", [])
+            if points and isinstance(points, list):
+                parts.append("\nKey points:")
+                for p in points:
+                    parts.append(f"- {p}")
+            if matched_item.get("_dedup_tag"):
+                parts.append(f"\nContext: {matched_item['_dedup_tag']}")
+            return "\n".join(parts)
     return ""
 
 
@@ -1450,6 +2043,11 @@ def api_agent():
     elif session_id == _LEARNING_SESSION_IDS.get("aws_cert"):
         learning_prompt = SYSTEM_PROMPT_AWS_CERT
         is_learning = True
+    else:
+        _dd_session = _load_session_file(session_id) if session_id else None
+        if _dd_session and _dd_session.get("session_type") == "deep_dive":
+            learning_prompt = SYSTEM_PROMPT_DEEP_DIVE
+            is_learning = True
 
     is_aws_cert = session_id == _LEARNING_SESSION_IDS.get("aws_cert")
     rag_query_override = None
@@ -1544,7 +2142,154 @@ def api_agent():
                     )
 
     elif is_learning:
-        resolved = _resolve_topic_from_history(query, history)
+        if session_id == _LEARNING_SESSION_IDS.get("english_learning"):
+            eng_result = _classify_and_resolve_learning_input(query, history, session_id)
+            eng_intent = eng_result["intent"]
+            eng_topic = eng_result.get("resolved_topic")
+
+            if eng_intent == "select_topic" and eng_topic:
+                rag_query_override = eng_topic
+                article_content = _fetch_article_content(eng_topic, session_id)
+                if article_content:
+                    effective_query = (
+                        f"The student selected topic: \"{eng_topic}\".\n\n"
+                        f"Here is the full article content:\n{article_content}\n\n"
+                        f"PRODUCE A COMPREHENSIVE TECH ENGLISH ANALYSIS (500+ words). "
+                        f"You MUST include ALL six sections from your system instructions:\n"
+                        f"1. Article Summary (100-150 words)\n"
+                        f"2. Key Technical Vocabulary & Phrases (15-20 items)\n"
+                        f"3. Useful Sentence Patterns (8-10 patterns)\n"
+                        f"4. How a Native Speaker Would Explain This (150-200 word presentation)\n"
+                        f"5. Grammar & Usage Spotlight (2-3 patterns)\n"
+                        f"6. Discussion Questions (3-4 questions)\n\n"
+                        f"Do NOT skip any section. Do NOT ask questions first. "
+                        f"Use ALL the article content plus any RAG context to make the analysis rich and detailed. "
+                        f"Original input: {query}"
+                    )
+                else:
+                    effective_query = (
+                        f"The student selected topic: \"{eng_topic}\".\n\n"
+                        f"No article content was found in the briefing data, but use the RAG context below "
+                        f"and your own knowledge about this topic to produce a COMPREHENSIVE TECH ENGLISH "
+                        f"ANALYSIS (500+ words) with ALL six sections from your system instructions. "
+                        f"Do NOT ask questions first — start the analysis directly. "
+                        f"Original input: {query}"
+                    )
+            elif eng_intent == "more_topics":
+                topic_ctx = _fetch_fresh_topics(session_id, history)
+                if topic_ctx:
+                    effective_query = (
+                        f"The student wants to see topics. Here are the current topics:\n\n"
+                        f"{topic_ctx}\n\n"
+                        f"Present these as a numbered list and ask the student to pick one. "
+                        f"Original input: {query}"
+                    )
+                else:
+                    effective_query = (
+                        f"The student wants to see topics but none are available right now. "
+                        f"Let them know and suggest they check back later or paste any tech text for English help."
+                    )
+            elif eng_intent == "followup":
+                pass
+            else:
+                topic_list = _fetch_fresh_topics(session_id, history)
+                effective_query = (
+                    f"The student typed: \"{query}\".\n\n"
+                    f"This doesn't match any AI news topic in our knowledge base. "
+                    f"Politely guide them to pick a topic from the list below, or type a topic name "
+                    f"they're interested in.\n\n"
+                    f"Available topics:\n{topic_list if topic_list else '(none available)'}\n\n"
+                    f"Be brief and helpful."
+                )
+
+                def generate():
+                    for event in run_agent(effective_query, image_b64=image_b64,
+                                           conversation_history=history,
+                                           system_prompt_override=learning_prompt,
+                                           rag_query_override=None):
+                        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+
+                return Response(generate(), mimetype="text/event-stream",
+                                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+        elif session_id == _LEARNING_SESSION_IDS.get("casual_english"):
+            cas_result = _classify_and_resolve_learning_input(query, history, session_id)
+            cas_intent = cas_result["intent"]
+            cas_topic = cas_result.get("resolved_topic")
+
+            if cas_intent == "select_topic" and cas_topic:
+                rag_query_override = cas_topic
+                article_content = _fetch_article_content(cas_topic, session_id)
+                if article_content:
+                    effective_query = (
+                        f"The student selected topic: \"{cas_topic}\".\n\n"
+                        f"Here is the full article content:\n{article_content}\n\n"
+                        f"PRODUCE A COMPREHENSIVE CASUAL ENGLISH ANALYSIS (500+ words). "
+                        f"You MUST include ALL six sections from your system instructions:\n"
+                        f"1. What Happened? (200-250 words) — DETAILED summary covering ALL key facts, "
+                        f"specific details, numbers, and consequences. The reader must fully understand the news.\n"
+                        f"2. Everyday Vocabulary & Expressions (15-20 items)\n"
+                        f"3. Useful Sentence Patterns (8-10 patterns)\n"
+                        f"4. How a Native Speaker Would Tell This Story (150-200 words)\n"
+                        f"5. Cultural Context & Social Cues (2-3 points)\n"
+                        f"6. Practice Conversations (2 dialogues)\n\n"
+                        f"IMPORTANT: Section 1 must be DETAILED and cover all the facts from the article. "
+                        f"Do NOT skip any section. Do NOT ask questions first. "
+                        f"Use ALL the article content plus any RAG context. "
+                        f"Original input: {query}"
+                    )
+                else:
+                    effective_query = (
+                        f"The student selected topic: \"{cas_topic}\".\n\n"
+                        f"No article content found, but use the RAG context below "
+                        f"and your own knowledge to produce a COMPREHENSIVE CASUAL ENGLISH "
+                        f"ANALYSIS (500+ words) with ALL six sections from your system instructions. "
+                        f"Do NOT ask questions first — start the analysis directly. "
+                        f"Original input: {query}"
+                    )
+            elif cas_intent == "more_topics":
+                topic_ctx = _fetch_fresh_topics(session_id, history)
+                if topic_ctx:
+                    effective_query = (
+                        f"The student wants to see topics. Here are the current topics:\n\n"
+                        f"{topic_ctx}\n\n"
+                        f"Present these as a numbered list and ask the student to pick one. "
+                        f"Original input: {query}"
+                    )
+                else:
+                    effective_query = (
+                        f"The student wants to see topics but none are available right now. "
+                        f"Let them know and suggest they check back later."
+                    )
+            elif cas_intent == "followup":
+                pass
+            else:
+                topic_list = _fetch_fresh_topics(session_id, history)
+                effective_query = (
+                    f"The student typed: \"{query}\".\n\n"
+                    f"This doesn't match any world news topic in our knowledge base. "
+                    f"Politely guide them to pick a topic from the list below, or type a topic name.\n\n"
+                    f"Available topics:\n{topic_list if topic_list else '(none available)'}\n\n"
+                    f"Be brief and helpful."
+                )
+
+                def generate():
+                    for event in run_agent(effective_query, image_b64=image_b64,
+                                           conversation_history=history,
+                                           system_prompt_override=learning_prompt,
+                                           rag_query_override=None):
+                        yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                    yield "data: [DONE]\n\n"
+
+                return Response(generate(), mimetype="text/event-stream",
+                                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+        _eng_cas_ids = (_LEARNING_SESSION_IDS.get("english_learning"), _LEARNING_SESSION_IDS.get("casual_english"))
+        if session_id not in _eng_cas_ids:
+            resolved = _resolve_topic_from_history(query, history)
+        else:
+            resolved = None
         if resolved:
             rag_query_override = resolved
             article_content = _fetch_article_content(resolved, session_id)
@@ -2207,6 +2952,70 @@ def api_toolbar_chunk_analysis():
         _chunk_analysis_cache = data
         _chunk_analysis_cache_time = time.time()
     return jsonify(data)
+
+
+@app.route("/api/toolbar/deep-dive", methods=["POST"])
+def api_toolbar_deep_dive():
+    """Create a deep-dive learning session from a Learning Guide source URL."""
+    data = request.get_json(silent=True) or {}
+    source_url = (data.get("source_url") or "").strip()
+    title = (data.get("title") or "").strip()
+    if not source_url and not title:
+        return jsonify({"error": "source_url or title required"}), 400
+
+    fetched_content = ""
+    fetch_error = ""
+    if source_url:
+        fetched_content, fetch_error = _fetch_source_url_content(source_url)
+
+    raw_file = (data.get("raw_file") or "").strip()
+    raw_content = ""
+    if raw_file and not fetched_content:
+        raw_content = _read_raw_file_content(raw_file)
+
+    content = fetched_content or raw_content
+    if not content and not title:
+        return jsonify({"error": "Could not fetch content and no title provided"}), 400
+
+    _ensure_chat_sessions_dir()
+    sid = str(uuid.uuid4())
+    now = _now_iso()
+    session_title = f"Deep Dive \u2014 {title}" if title else f"Deep Dive \u2014 {source_url[:60]}"
+
+    teaching_context = f"Topic: {title}\n" if title else ""
+    if source_url:
+        teaching_context += f"Source: {source_url}\n"
+    if content:
+        max_content = 8000
+        if len(content) > max_content:
+            content = content[:max_content] + "\n\n[Content truncated for context window]"
+        teaching_context += f"\n---\nSource content:\n{content}"
+
+    initial_prompt = (
+        f"I want to learn about this topic from my daily AI briefing. "
+        f"Please provide a comprehensive explanation.\n\n{teaching_context}"
+    )
+
+    session_data = {
+        "id": sid,
+        "title": session_title,
+        "created_at": now,
+        "updated_at": now,
+        "messages": [
+            {"role": "user", "content": initial_prompt},
+        ],
+        "session_type": "deep_dive",
+        "deep_dive_meta": {
+            "source_url": source_url,
+            "title": title,
+            "raw_file": raw_file,
+            "fetch_error": fetch_error,
+        },
+    }
+    if not _save_session_file(session_data):
+        return jsonify({"error": "Failed to create session"}), 500
+
+    return jsonify({"session_id": sid, "title": session_title})
 
 
 @app.route("/api/toolbar/wiki-fetch", methods=["POST"])
@@ -3733,12 +4542,32 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                     title = page_detail.get("title", "")
                     raw_summary = page_detail.get("summary", "").strip()
                     headings = page_detail.get("headings", [])
-                    if not raw_summary:
+                    change_summary = page_detail.get("change_summary", "").strip()
+                    version_number = page_detail.get("version_number", 1)
+                    if not raw_summary and not change_summary:
                         return ""
+
+                    is_update = version_number > 1 and change_summary
                     context_parts = [f"Page title: {title}"]
                     if headings:
                         context_parts.append(f"Sections: {', '.join(headings[:8])}")
-                    context_parts.append(f"Content excerpt:\n{raw_summary}")
+
+                    if is_update:
+                        context_parts.append(f"Changes in this update:\n{change_summary}")
+                        system_prompt = (
+                            "You are a concise technical writer. Given a Confluence wiki page's "
+                            "change diff, write a 1-2 sentence summary of what was actually "
+                            "changed or updated. Focus on what was added, modified, or removed. "
+                            "Be specific and factual. Output only the summary, no labels or prefixes."
+                        )
+                    else:
+                        context_parts.append(f"Content excerpt:\n{raw_summary}")
+                        system_prompt = (
+                            "You are a concise technical writer. Given a new Confluence wiki page's content, "
+                            "write a 1-2 sentence summary of what this page covers. "
+                            "Be specific and factual. Output only the summary, no labels or prefixes."
+                        )
+
                     context = "\n".join(context_parts)
                     try:
                         import requests as _req
@@ -3747,12 +4576,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                             json={
                                 "model": OLLAMA_MODEL_FAST,
                                 "messages": [
-                                    {"role": "system", "content": (
-                                        "You are a concise technical writer. Given a Confluence wiki page's content, "
-                                        "write a 1-2 sentence summary of what this page covers or what was likely updated. "
-                                        "Focus on the key changes or topics. Be specific and factual. "
-                                        "Output only the summary, no labels or prefixes."
-                                    )},
+                                    {"role": "system", "content": system_prompt},
                                     {"role": "user", "content": context},
                                 ],
                                 "stream": False,
@@ -3794,6 +4618,9 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                                 modified = pg.get("modified_at", "")
                                 headings = pg.get("headings", [])
                                 ai_summary = pg.get("ai_summary", "")
+                                version_number = pg.get("version_number", 1)
+                                is_new = version_number <= 1
+
                                 if url:
                                     wf.write(f"- **[{title}]({url})**")
                                 else:
@@ -3802,9 +4629,12 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                                     wf.write(f" — *{space}*")
                                 if modified:
                                     wf.write(f" (modified: {modified})")
+                                if is_new:
+                                    wf.write(" \U0001f195")
                                 wf.write("\n")
                                 if ai_summary:
-                                    wf.write(f"  > **Summary:** {ai_summary}\n")
+                                    label = "Summary" if is_new else "Changes"
+                                    wf.write(f"  > **{label}:** {ai_summary}\n")
                                 elif pg.get("summary", "").strip():
                                     brief = pg["summary"].strip()[:200] + ("..." if len(pg["summary"].strip()) > 200 else "")
                                     wf.write(f"  > {brief}\n")
@@ -4526,18 +5356,30 @@ def _load_recent_ai_news_titles() -> list[str]:
                 try:
                     with open(json_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
-                    for section in data.get("sections", []):
-                        for item in section.get("items", []):
+                    for src_block in data.get("per_source_data", []):
+                        for item in src_block.get("items", []):
                             t = item.get("title", "").strip()
                             if t and len(titles) < 50:
                                 titles.append(t)
+                    if not titles:
+                        for section in data.get("sections", []):
+                            for item in section.get("items", []):
+                                t = item.get("title", "").strip()
+                                if t and len(titles) < 50:
+                                    titles.append(t)
                 except Exception:
                     pass
     return titles
 
 
+def _has_cjk_chars(text: str) -> bool:
+    """Check if text contains CJK (Chinese/Japanese/Korean) characters."""
+    return any(0x4e00 <= ord(ch) <= 0x9fff or 0x3400 <= ord(ch) <= 0x4dbf for ch in text)
+
+
 def _load_recent_world_news_titles() -> list[dict]:
-    """Load recent world news titles for casual English learning."""
+    """Load recent world news titles for casual English learning.
+    Filters out non-English (CJK) articles since this channel focuses on English practice."""
     items = []
     for d_offset in range(7):
         dt = (datetime.now() - timedelta(days=d_offset)).strftime("%Y-%m-%d")
@@ -4552,7 +5394,7 @@ def _load_recent_world_news_titles() -> list[dict]:
                     cat_name = cat.get("label", cat.get("category", "General"))
                     for article in cat.get("items", cat.get("articles", [])):
                         t = article.get("title", "").strip()
-                        if t and len(items) < 50:
+                        if t and len(items) < 50 and not _has_cjk_chars(t):
                             items.append({"title": t, "category": cat_name,
                                           "summary": article.get("summary", "")[:200]})
             except Exception as exc:
@@ -6084,6 +6926,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   <span class="status" id="status">checking...</span>
   <select class="model-select" id="modelSelect" onchange="switchModel(this.value)" title="Switch LLM model">
     <option value="qwen3.5:4b">qwen3.5:4b (default)</option>
+    <option value="qwen3:8b">qwen3:8b (deep)</option>
     <option value="qwen3-vl:8b">qwen3-vl:8b (vision)</option>
     <option value="qwen3:1.7b">qwen3:1.7b (fast)</option>
   </select>
@@ -6168,6 +7011,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" id="btnJiraDaily" onclick="toolbarJiraDaily(this)" title="Jira daily report">&#9776; Jira Daily</button>
         <button type="button" class="toolbar-btn" onclick="openCommitSummaryModal()" title="Ask the agent for commit summary">&#9998; Commit Summary</button>
         <button type="button" class="toolbar-btn" onclick="openTeamActivityModal()" title="Team activity query">&#9673; Team Activity</button>
+        <button type="button" class="toolbar-btn" onclick="openProjectsModal()" title="Ask deep questions about MEDAVIS projects">&#128230; Projects</button>
       </div>
     </div>
     <div class="toolbar-cat" id="toolbarCatUsage">
@@ -6357,6 +7201,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" onclick="modalSelectAll('activityMemberList')" style="font-size:0.78em">Select All</button>
         <button type="button" class="toolbar-btn" onclick="modalSelectNone('activityMemberList')" style="font-size:0.78em">None</button>
         <button type="button" class="send-btn" onclick="startTeamActivity()" style="padding:8px 20px;font-size:0.88em">Generate Report</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="projectsModal" class="modal-overlay" role="dialog" aria-modal="true">
+  <div class="modal-panel" style="max-width:520px">
+    <div class="modal-head">
+      <h2>&#128230; Projects Intelligence</h2>
+      <button type="button" class="modal-close" onclick="closeProjectsModal()" title="Close">&times;</button>
+    </div>
+    <div class="modal-content" style="padding:16px 20px">
+      <p style="font-size:0.82em;color:#8b8fa4;margin-bottom:12px">Ask deep questions about MEDAVIS project architecture, dependencies, and code:</p>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <button type="button" class="toolbar-btn" onclick="projectQuickAsk('List all indexed projects and give me a high-level overview of the system architecture.')" style="text-align:left;padding:10px 14px">&#127959; System Architecture Overview</button>
+        <button type="button" class="toolbar-btn" onclick="projectQuickAsk('What are the key dependencies between all projects? Show me the dependency graph.')" style="text-align:left;padding:10px 14px">&#128279; Project Dependencies Graph</button>
+        <button type="button" class="toolbar-btn" onclick="projectQuickAsk('What would break if I change Core Framework? Do a full impact analysis.')" style="text-align:left;padding:10px 14px">&#9888; Impact Analysis</button>
+        <button type="button" class="toolbar-btn" onclick="projectQuickAsk('What are the main REST API endpoints across all projects?')" style="text-align:left;padding:10px 14px">&#128268; REST Endpoints Discovery</button>
+      </div>
+      <div style="margin-top:14px">
+        <label style="font-size:0.82em;color:#8b8fa4;display:block;margin-bottom:6px">Or ask your own project question:</label>
+        <div style="display:flex;gap:8px">
+          <input type="text" id="projectCustomQuery" placeholder="e.g. How does P4M connect to Admin App?"
+            style="flex:1;background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:8px 12px;font-size:0.88em"
+            onkeydown="if(event.key==='Enter')projectCustomAsk()">
+          <button type="button" class="send-btn" onclick="projectCustomAsk()" style="padding:8px 16px;font-size:0.88em">Ask</button>
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="projectUseDeepModel" style="accent-color:#4a6cf7">
+        <label for="projectUseDeepModel" style="font-size:0.82em;color:#8b8fa4">Use qwen3:8b (deep) for complex questions</label>
       </div>
     </div>
   </div>
@@ -7362,12 +8237,55 @@ async function loadDfReportContent(dateStr, filename, btn) {
       .replace(/\n/g, '<br>');
     rendered = rendered.replace(/(<tr>[\s\S]*?<\/tr>(?:\s*<tr>[\s\S]*?<\/tr>)*)/g,
       '<table style="border-collapse:collapse;width:100%;margin:8px 0;font-size:0.92em">$1</table>');
+    if (filename.indexOf('learning-guide') === 0) {
+      rendered = rendered.replace(
+        /(\d+)\.\s+<strong[^>]*>([^<]+)<\/strong>([\s\S]*?)(?=(?:\d+\.\s+<strong)|(?:<h[234])|(?:<hr)|$)/g,
+        function(match, num, itemTitle, rest) {
+          var srcMatch = rest.match(/Source:\s*(?:<a[^>]+href=["']([^"']+)["'][^>]*>[^<]*<\/a>|(\S[^\n<]*))/);
+          var fileMatch = rest.match(/File:\s*<code>([^<]+)<\/code>/);
+          var srcUrl = srcMatch ? (srcMatch[1] || srcMatch[2] || '') : '';
+          var rawFile = fileMatch ? fileMatch[1] : '';
+          var btnTitle = escHtml(itemTitle).replace(/'/g, "\\'");
+          var btnUrl = escHtml(srcUrl).replace(/'/g, "\\'");
+          var btnRaw = escHtml(rawFile).replace(/'/g, "\\'");
+          var btnHtml = ' <button onclick="startDeepDive(\'' + btnTitle + '\',\'' + btnUrl + '\',\'' + btnRaw +
+            '\')" style="background:#1a3a2e;border:1px solid #34d399;border-radius:4px;' +
+            'padding:1px 8px;font-size:0.75em;color:#34d399;cursor:pointer;margin-left:6px;' +
+            'vertical-align:middle" title="Start a deep-dive learning session for this topic">' +
+            '&#128218; Deep Dive</button>';
+          return num + '. <strong>' + itemTitle + '</strong>' + btnHtml + rest;
+        }
+      );
+    }
     preview.innerHTML = '<div style="font-size:0.72em;color:#6b7280;margin-bottom:8px;display:flex;justify-content:space-between">' +
       '<span>' + escHtml(filename) + '</span>' +
       '<a href="/api/toolbar/audio-file/' + encodeURIComponent(dateStr) + '/' + encodeURIComponent(filename) + '" download style="color:#60a5fa;text-decoration:none">Download</a>' +
       '</div>' + rendered;
   } catch(e) {
     preview.textContent = 'Error: ' + e.message;
+  }
+}
+async function startDeepDive(title, sourceUrl, rawFile) {
+  try {
+    showToast('Creating deep dive session for: ' + title.substring(0, 50) + '...');
+    var body = {title: title};
+    if (sourceUrl) body.source_url = sourceUrl;
+    if (rawFile) body.raw_file = rawFile;
+    var resp = await fetch('/api/toolbar/deep-dive', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    var data = await resp.json();
+    if (!resp.ok) { showToast('Deep dive error: ' + (data.error || 'unknown')); return; }
+    showToast('Deep dive session created! Loading...');
+    await refreshSessionList();
+    await loadSession(data.session_id);
+    closeDailyFetchModal();
+    queryInput.value = 'Please teach me about this topic.';
+    sendMessage();
+  } catch (e) {
+    showToast('Deep dive error: ' + e.message);
   }
 }
 
@@ -8053,6 +8971,37 @@ async function startTeamActivity() {
     queryInput.value = prompt;
     sendMessage();
   }
+}
+
+function openProjectsModal() {
+  document.getElementById('projectsModal').classList.add('open');
+}
+function closeProjectsModal() {
+  document.getElementById('projectsModal').classList.remove('open');
+}
+async function _projectSendQuery(query, useDeep) {
+  closeProjectsModal();
+  if (useDeep) {
+    const sel = document.getElementById('modelSelect');
+    if (sel) {
+      sel.value = 'qwen3:8b';
+      await switchModel('qwen3:8b');
+    }
+  }
+  await newChat();
+  queryInput.value = query;
+  sendMessage();
+}
+function projectQuickAsk(query) {
+  const useDeep = document.getElementById('projectUseDeepModel').checked;
+  _projectSendQuery(query, useDeep);
+}
+function projectCustomAsk() {
+  const input = document.getElementById('projectCustomQuery');
+  const query = (input.value || '').trim();
+  if (!query) { showToast('Please enter a project question'); return; }
+  const useDeep = document.getElementById('projectUseDeepModel').checked;
+  _projectSendQuery(query, useDeep);
 }
 
 (function() {

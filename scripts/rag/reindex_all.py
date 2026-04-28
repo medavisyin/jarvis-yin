@@ -36,6 +36,7 @@ import index_briefing as ib  # noqa: E402
 import index_codebase as ic  # noqa: E402
 import index_confluence as iconf  # noqa: E402
 import index_confluence_user as icu  # noqa: E402
+import project_graph as pg  # noqa: E402
 from config import MANIFEST_PATH  # noqa: E402
 
 DEFAULT_CONFLUENCE_USER = "Rong Yin"
@@ -356,6 +357,17 @@ def run_confluence_user_default(
         summary["errors"].append(f"confluence user '{display_name}': {e}")
 
 
+def run_project_graph(summary: Dict[str, List[str]]) -> None:
+    """Rebuild the project knowledge graph after codebase indexing."""
+    try:
+        graph = pg.build_graph()
+        pg.save_graph(graph)
+        n = len(graph.get("projects", {}))
+        summary["indexed"].append(f"project graph ({n} projects)")
+    except Exception as e:
+        summary["errors"].append(f"project graph: {e}")
+
+
 def print_summary(summary: Dict[str, List[str]]) -> None:
     print("\n" + "=" * 60)
     print("Re-index summary")
@@ -426,6 +438,12 @@ def main() -> int:
         run_codebase(client, model, manifest, force_codebase, summary)
     except Exception as e:
         summary["errors"].append(f"codebase (fatal wrap): {e}")
+
+    print("\n--- Project Knowledge Graph ---")
+    try:
+        run_project_graph(summary)
+    except Exception as e:
+        summary["errors"].append(f"project graph (fatal wrap): {e}")
 
     print("\n--- Confluence (team) ---")
     try:

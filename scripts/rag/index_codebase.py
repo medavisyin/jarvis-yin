@@ -27,6 +27,7 @@ import os
 import re
 import sys
 import uuid
+import xml.etree.ElementTree as ET
 from datetime import date
 from typing import Optional
 
@@ -203,21 +204,49 @@ def _content_hash(text: str) -> str:
 # JAVA FILE PROCESSING
 # ===================================================================
 
+_AI_IMPORT_KEYWORDS = {
+    "openai", "langchain", "spring.ai", "azure.ai", "com.theokanning",
+    "anthropic", "cohere", "huggingface", "deeplearning4j",
+    "tensorflow", "pytorch", "onnx", "opennlp", "weka",
+    "ollama", "ai.djl", "smile.nlp",
+}
+
+_NOTABLE_IMPORT_PREFIXES = (
+    "org.springframework.web", "org.springframework.security",
+    "org.springframework.data", "org.springframework.kafka",
+    "org.springframework.amqp", "org.springframework.cloud",
+    "javax.ws.rs", "jakarta.ws.rs",
+    "org.apache.http", "org.apache.kafka",
+    "com.fasterxml.jackson", "io.swagger",
+    "org.quartz", "org.camunda",
+)
+
+_REST_ANNOTATIONS = {
+    "@RequestMapping", "@GetMapping", "@PostMapping", "@PutMapping",
+    "@DeleteMapping", "@PatchMapping",
+    "@GET", "@POST", "@PUT", "@DELETE", "@Path",
+}
+
+
 def _extract_java_summary(content: str, filepath: str) -> list[dict]:
-    """Extract meaningful chunks from a Java source file."""
+    """Extract meaningful chunks from a Java source file with enriched metadata."""
     chunks = []
     lines = content.split("\n")
 
     package = ""
+    imports: list[str] = []
     for line in lines:
-        m = re.match(r'package\s+([\w.]+)\s*;', line)
+        stripped = line.strip()
+        m = re.match(r'package\s+([\w.]+)\s*;', stripped)
         if m:
             package = m.group(1)
-            break
+        m2 = re.match(r'import\s+(?:static\s+)?([\w.*]+)\s*;', stripped)
+        if m2:
+            imports.append(m2.group(1))
 
     class_match = re.search(
         r'(/\*\*[\s\S]*?\*/\s*)?'
-        r'(?:@\w+(?:\([^)]*\))?\s*)*'
+        r'((?:@\w+(?:\([^)]*\))?\s*)*)'
         r'(public\s+)?(?:abstract\s+)?(?:final\s+)?'
         r'(class|interface|enum|record)\s+'
         r'(\w+)(?:\s*<[^>]+>)?'
@@ -230,13 +259,25 @@ def _extract_java_summary(content: str, filepath: str) -> list[dict]:
         return chunks
 
     javadoc = class_match.group(1) or ""
-    kind = class_match.group(3)
-    class_name = class_match.group(4)
-    extends = class_match.group(5) or ""
-    implements = class_match.group(6) or ""
+    class_annotations_raw = class_match.group(2) or ""
+    kind = class_match.group(4)
+    class_name = class_match.group(5)
+    extends = class_match.group(6) or ""
+    implements = class_match.group(7) or ""
+
+    class_annotations = [a.strip() for a in re.findall(r'@\w+(?:\([^)]*\))?', class_annotations_raw)]
 
     javadoc_clean = re.sub(r'/\*\*|\*/|\*\s?', '', javadoc).strip()
     javadoc_clean = re.sub(r'@\w+.*', '', javadoc_clean).strip()
+
+    notable_imports = []
+    ai_imports = []
+    for imp in imports:
+        imp_lower = imp.lower()
+        if any(kw in imp_lower for kw in _AI_IMPORT_KEYWORDS):
+            ai_imports.append(imp)
+        elif any(imp.startswith(prefix) for prefix in _NOTABLE_IMPORT_PREFIXES):
+            notable_imports.append(imp)
 
     method_pattern = re.compile(
         r'(?:public|protected|private)\s+(?:static\s+)?(?:final\s+)?'
@@ -248,22 +289,33 @@ def _extract_java_summary(content: str, filepath: str) -> list[dict]:
     summary_parts = [f"{kind} {class_name}"]
     if package:
         summary_parts.insert(0, f"package {package}")
+    if class_annotations:
+        summary_parts.append(f"annotations: {', '.join(class_annotations)}")
     if extends:
         summary_parts.append(f"extends {extends}")
     if implements:
         summary_parts.append(f"implements {implements.strip()}")
     if javadoc_clean:
         summary_parts.append(f"\n{javadoc_clean}")
+    if ai_imports:
+        summary_parts.append(f"\nAI/ML imports: {', '.join(ai_imports)}")
+    if notable_imports:
+        summary_parts.append(f"\nKey imports: {', '.join(notable_imports[:10])}")
     if methods:
         summary_parts.append(f"\nMethods: {', '.join(methods[:20])}")
 
     summary = "\n".join(summary_parts)
     rel_path = os.path.basename(filepath)
 
+    item_type = "code_doc"
+    if ai_imports:
+        item_type = "ai_integration"
+
     chunks.append({
         "text": summary[:MAX_CHUNK_CHARS],
         "title": f"{class_name} ({kind})",
         "filename": rel_path,
+        "item_type": item_type,
     })
 
     api_pattern = re.compile(
@@ -282,7 +334,11 @@ def _extract_java_summary(content: str, filepath: str) -> list[dict]:
         if method_name in ("toString", "hashCode", "equals", class_name):
             continue
 
-        has_rest = any(a in annotations for a in ("@GET", "@POST", "@PUT", "@DELETE", "@Path", "@RequestMapping"))
+        annotation_list = re.findall(r'@\w+(?:\([^)]*\))?', annotations)
+        has_rest = any(
+            any(ra in a for ra in _REST_ANNOTATIONS)
+            for a in annotation_list
+        )
         has_doc = bool(method_doc.strip())
         if not has_rest and not has_doc:
             continue
@@ -296,10 +352,20 @@ def _extract_java_summary(content: str, filepath: str) -> list[dict]:
         if doc_clean:
             method_text += f"\n{doc_clean}"
 
+        ep_item_type = "rest_endpoint" if has_rest else "code_doc"
+
+        rest_path = ""
+        if has_rest:
+            path_match = re.search(r'(?:@\w+Mapping|@Path|@RequestMapping)\s*\(\s*["\']([^"\']+)', annotations)
+            if path_match:
+                rest_path = path_match.group(1)
+            method_text = f"[REST {rest_path}] " + method_text if rest_path else method_text
+
         chunks.append({
             "text": method_text[:MAX_CHUNK_CHARS],
-            "title": f"{class_name}.{method_name}()",
+            "title": f"{class_name}.{method_name}()" + (f" [{rest_path}]" if rest_path else ""),
             "filename": rel_path,
+            "item_type": ep_item_type,
         })
 
     return chunks
@@ -310,30 +376,285 @@ def _extract_java_summary(content: str, filepath: str) -> list[dict]:
 # ===================================================================
 
 def _process_markdown(content: str, filepath: str) -> list[dict]:
-    """Chunk a Markdown file into sections."""
+    """Chunk a Markdown file into sections with feature-aware splitting."""
     filename = os.path.basename(filepath)
+    fname_lower = filename.lower()
     title = filename
     m = re.match(r'^#\s+(.+)', content)
     if m:
         title = m.group(1).strip()
 
-    text_chunks = _chunk_text(content)
-    return [
-        {"text": chunk, "title": f"{title} (part {i+1})", "filename": filename}
-        for i, chunk in enumerate(text_chunks)
-    ]
+    is_readme = fname_lower in ("readme.md", "readme.txt", "readme.adoc")
+    is_changelog = fname_lower in ("changelog.md", "changes.md", "release-notes.md")
+
+    item_type = "code_doc"
+    if is_readme:
+        item_type = "project_readme"
+    elif is_changelog:
+        item_type = "project_changelog"
+
+    sections = re.split(r'\n(?=#{1,3}\s)', content)
+    chunks = []
+    for section in sections:
+        section = section.strip()
+        if not section or len(section) < 30:
+            continue
+        section_title = title
+        heading = re.match(r'^#{1,3}\s+(.+)', section)
+        if heading:
+            section_title = f"{title} > {heading.group(1).strip()}"
+
+        for text_chunk in _chunk_text(section):
+            chunks.append({
+                "text": text_chunk,
+                "title": section_title,
+                "filename": filename,
+                "item_type": item_type,
+            })
+
+    if not chunks:
+        text_chunks = _chunk_text(content)
+        chunks = [
+            {"text": chunk, "title": f"{title} (part {i+1})", "filename": filename,
+             "item_type": item_type}
+            for i, chunk in enumerate(text_chunks)
+        ]
+
+    return chunks
+
+
+_CONFIG_FEATURE_PATTERNS = {
+    "database": (r"spring\.datasource|jdbc|hibernate|jpa\.properties|database\.url", "Database"),
+    "ai_api": (r"openai|azure\.ai|anthropic|langchain|ollama|huggingface", "AI/ML API"),
+    "messaging": (r"kafka|rabbitmq|amqp|jms|activemq", "Messaging"),
+    "cache": (r"redis|ehcache|caffeine|hazelcast|cache\.type", "Caching"),
+    "security": (r"security|oauth|jwt|keycloak|ldap|authentication", "Security"),
+    "cloud": (r"aws|azure|gcp|s3|sqs|cloud\.config", "Cloud"),
+    "monitoring": (r"actuator|prometheus|grafana|metrics|micrometer", "Monitoring"),
+    "mail": (r"spring\.mail|smtp|email\.host", "Email"),
+}
 
 
 def _process_config(content: str, filepath: str) -> list[dict]:
-    """Index a config file as a single chunk (or split if large)."""
+    """Index a config file with feature detection from key-value patterns."""
     filename = os.path.basename(filepath)
-    if len(content) > MAX_CHUNK_CHARS * 2:
-        content = content[:MAX_CHUNK_CHARS * 2]
-    text_chunks = _chunk_text(content)
+    fname_lower = filename.lower()
+
+    is_app_config = fname_lower in (
+        "application.yml", "application.yaml", "application.properties",
+        "application-dev.yml", "application-prod.yml", "bootstrap.yml",
+    )
+
+    detected_features = []
+    if is_app_config:
+        content_lower = content.lower()
+        for _feat_key, (pattern, label) in _CONFIG_FEATURE_PATTERNS.items():
+            if re.search(pattern, content_lower):
+                detected_features.append(label)
+
+    item_type = "config_analysis" if detected_features else "code_doc"
+
+    config_text = content
+    if detected_features:
+        feature_header = f"Detected features: {', '.join(detected_features)}\n\n"
+        config_text = feature_header + content
+
+    if len(config_text) > MAX_CHUNK_CHARS * 2:
+        config_text = config_text[:MAX_CHUNK_CHARS * 2]
+
+    text_chunks = _chunk_text(config_text)
+    title_base = filename
+    if detected_features:
+        title_base = f"{filename} [{', '.join(detected_features)}]"
+
     return [
-        {"text": chunk, "title": f"{filename} (part {i+1})", "filename": filename}
+        {"text": chunk, "title": f"{title_base} (part {i+1})", "filename": filename,
+         "item_type": item_type}
         for i, chunk in enumerate(text_chunks)
     ]
+
+
+def _parse_pom_xml(content: str, filepath: str, project_name: str) -> list[dict]:
+    """Extract structured data from pom.xml: coordinates, dependencies, modules."""
+    filename = os.path.basename(filepath)
+    chunks = []
+    try:
+        root = ET.fromstring(content)
+        ns = ""
+        if root.tag.startswith("{"):
+            ns = root.tag.split("}")[0] + "}"
+
+        group_id = (root.findtext(f"{ns}groupId") or
+                    root.findtext(f"{ns}parent/{ns}groupId") or "unknown")
+        artifact_id = root.findtext(f"{ns}artifactId") or "unknown"
+        version = (root.findtext(f"{ns}version") or
+                   root.findtext(f"{ns}parent/{ns}version") or "")
+        packaging = root.findtext(f"{ns}packaging") or "jar"
+        description = root.findtext(f"{ns}description") or ""
+
+        identity_parts = [
+            f"Project: {project_name}",
+            f"Maven coordinates: {group_id}:{artifact_id}:{version}",
+            f"Packaging: {packaging}",
+        ]
+        if description:
+            identity_parts.append(f"Description: {description}")
+
+        modules_el = root.find(f"{ns}modules")
+        if modules_el is not None:
+            mods = [m.text for m in modules_el.findall(f"{ns}module") if m.text]
+            if mods:
+                identity_parts.append(f"Modules: {', '.join(mods)}")
+
+        chunks.append({
+            "text": "\n".join(identity_parts),
+            "title": f"{project_name} (Maven identity)",
+            "filename": filename,
+            "item_type": "project_identity",
+        })
+
+        _DEP_FEATURE_MAP = {
+            "AI/ML": {"openai", "langchain", "spring-ai", "azure-ai", "anthropic", "ollama", "huggingface", "deeplearning4j", "tensorflow", "onnx"},
+            "REST API": {"spring-boot-starter-web", "spring-webmvc", "jersey", "resteasy", "jaxrs"},
+            "Database": {"spring-data-jpa", "hibernate", "mybatis", "spring-jdbc", "h2", "mysql-connector", "postgresql", "flyway", "liquibase"},
+            "Messaging": {"spring-kafka", "spring-amqp", "spring-jms", "activemq", "rabbitmq"},
+            "Security": {"spring-security", "keycloak", "oauth2", "jwt", "spring-boot-starter-security"},
+            "Cloud": {"aws-sdk", "azure-sdk", "spring-cloud", "spring-boot-starter-cloud"},
+            "Monitoring": {"spring-boot-starter-actuator", "micrometer", "prometheus", "slf4j"},
+            "Testing": {"junit", "mockito", "spring-boot-starter-test", "testcontainers", "assertj"},
+            "Caching": {"spring-boot-starter-cache", "ehcache", "caffeine", "redis", "hazelcast"},
+        }
+
+        deps_el = root.find(f"{ns}dependencies")
+        if deps_el is not None:
+            dep_lines = []
+            detected_dep_features: dict[str, list[str]] = {}
+            for dep in deps_el.findall(f"{ns}dependency"):
+                g = dep.findtext(f"{ns}groupId") or ""
+                a = dep.findtext(f"{ns}artifactId") or ""
+                v = dep.findtext(f"{ns}version") or ""
+                scope = dep.findtext(f"{ns}scope") or "compile"
+                dep_lines.append(f"  {g}:{a}:{v} (scope: {scope})")
+                dep_key = f"{g}:{a}".lower()
+                for feature, keywords in _DEP_FEATURE_MAP.items():
+                    if any(kw in dep_key for kw in keywords):
+                        detected_dep_features.setdefault(feature, []).append(a)
+            if dep_lines:
+                dep_text = f"Project {project_name} dependencies:\n"
+                if detected_dep_features:
+                    feat_summary = "; ".join(
+                        f"{feat}: {', '.join(arts[:3])}"
+                        for feat, arts in sorted(detected_dep_features.items())
+                    )
+                    dep_text += f"Technology features: {feat_summary}\n\n"
+                dep_text += "\n".join(dep_lines[:30])
+                chunks.append({
+                    "text": dep_text[:MAX_CHUNK_CHARS * 2],
+                    "title": f"{project_name} (dependencies)",
+                    "filename": filename,
+                    "item_type": "project_dependency",
+                })
+            if detected_dep_features:
+                tech_text = f"Project {project_name} technology stack:\n"
+                for feat, arts in sorted(detected_dep_features.items()):
+                    tech_text += f"  {feat}: {', '.join(arts)}\n"
+                chunks.append({
+                    "text": tech_text[:MAX_CHUNK_CHARS],
+                    "title": f"{project_name} (technology stack)",
+                    "filename": filename,
+                    "item_type": "project_technology",
+                })
+
+        dep_mgmt = root.find(f"{ns}dependencyManagement/{ns}dependencies")
+        if dep_mgmt is not None:
+            managed = []
+            for dep in dep_mgmt.findall(f"{ns}dependency"):
+                g = dep.findtext(f"{ns}groupId") or ""
+                a = dep.findtext(f"{ns}artifactId") or ""
+                v = dep.findtext(f"{ns}version") or ""
+                managed.append(f"  {g}:{a}:{v}")
+            if managed:
+                mgmt_text = (
+                    f"Project {project_name} managed dependencies (BOM):\n"
+                    + "\n".join(managed[:30])
+                )
+                chunks.append({
+                    "text": mgmt_text[:MAX_CHUNK_CHARS * 2],
+                    "title": f"{project_name} (dependency management)",
+                    "filename": filename,
+                    "item_type": "project_dependency",
+                })
+    except ET.ParseError:
+        return _process_config(content, filepath)
+
+    return chunks if chunks else _process_config(content, filepath)
+
+
+def _generate_project_summary(
+    project_name: str,
+    project_path: str,
+    all_chunks: list[dict],
+) -> dict:
+    """Generate a high-level project summary from indexed chunks."""
+    java_classes = []
+    identity_info = ""
+    rest_endpoints: list[str] = []
+    ai_classes: list[str] = []
+    tech_stack = ""
+
+    for c in all_chunks:
+        title = c.get("title", "")
+        item_type = c.get("item_type", "")
+        if "(class)" in title or "(interface)" in title or "(enum)" in title:
+            java_classes.append(title.split(" (")[0])
+        if item_type == "project_identity" and not identity_info:
+            identity_info = c["text"]
+        if item_type == "rest_endpoint":
+            rest_endpoints.append(title)
+        if item_type == "ai_integration":
+            ai_classes.append(title.split(" (")[0])
+        if item_type == "project_technology" and not tech_stack:
+            tech_stack = c["text"]
+
+    type_counts: dict[str, int] = {}
+    for root, dirs, files in os.walk(project_path):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for f in files:
+            ext = os.path.splitext(f)[1].lower()
+            if ext in JAVA_EXTENSIONS or ext in DOC_EXTENSIONS or f in CONFIG_FILES:
+                type_counts[ext or f] = type_counts.get(ext or f, 0) + 1
+
+    parts = [f"Project: {project_name}"]
+    if identity_info:
+        parts.append(identity_info)
+    parts.append(f"Location: {project_path}")
+
+    if type_counts:
+        type_summary = ", ".join(f"{v} {k}" for k, v in sorted(
+            type_counts.items(), key=lambda x: -x[1]
+        )[:10])
+        parts.append(f"File composition: {type_summary}")
+
+    if java_classes:
+        parts.append(f"Key classes ({len(java_classes)} total): "
+                      + ", ".join(java_classes[:20]))
+
+    if rest_endpoints:
+        parts.append(f"REST endpoints ({len(rest_endpoints)}): "
+                      + ", ".join(rest_endpoints[:10]))
+
+    if ai_classes:
+        parts.append(f"AI/ML integrations: {', '.join(ai_classes)}")
+
+    if tech_stack:
+        parts.append(tech_stack)
+
+    return {
+        "text": "\n".join(parts)[:MAX_CHUNK_CHARS * 3],
+        "title": f"{project_name} (project summary)",
+        "filename": "PROJECT_SUMMARY",
+        "item_type": "project_summary",
+    }
 
 
 # ===================================================================
@@ -425,6 +746,8 @@ def index_project(
                     seen_hashes.add(ch)
                     if ext in DOC_EXTENSIONS:
                         chunks = _process_markdown(content, fpath)
+                    elif fname == "pom.xml":
+                        chunks = _parse_pom_xml(content, fpath, project_name)
                     else:
                         chunks = _process_config(content, fpath)
                     for c in chunks:
@@ -434,6 +757,10 @@ def index_project(
 
             except Exception:
                 continue
+
+    if all_chunks:
+        summary_chunk = _generate_project_summary(project_name, project_path, all_chunks)
+        all_chunks.insert(0, summary_chunk)
 
     if not all_chunks:
         print(f"  No indexable content found in {project_name}")
@@ -459,7 +786,7 @@ def index_project(
                 "date": today,
                 "source": f"project:{project_name}",
                 "title": chunk["title"],
-                "item_type": "code_doc",
+                "item_type": chunk.get("item_type", "code_doc"),
                 "difficulty": "intermediate",
                 "url": "",
                 "filename": chunk.get("rel_path", chunk.get("filename", "")),

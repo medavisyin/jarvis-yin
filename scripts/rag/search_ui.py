@@ -273,10 +273,16 @@ async function doSearch() {
     results.innerHTML = pipeHtml + countHtml + data.results.map((r, i) => {
       const badgeClass = {news_item:'badge-news', raw_content:'badge-raw', learning_guide:'badge-guide',
         book_chapter:'badge-raw', project_doc:'badge-news', personal_note:'badge-guide', task:'badge-news',
-        wiki_page:'badge-raw', code_doc:'badge-raw'}[r.item_type] || '';
+        wiki_page:'badge-raw', code_doc:'badge-raw', ai_integration:'badge-news',
+        rest_endpoint:'badge-guide', project_technology:'badge-news', project_readme:'badge-raw',
+        config_analysis:'badge-guide', project_summary:'badge-news', project_identity:'badge-news',
+        project_dependency:'badge-raw', project_changelog:'badge-raw'}[r.item_type] || '';
       const badgeText = {news_item:'NEWS', raw_content:'RAW', learning_guide:'GUIDE',
         book_chapter:'BOOK', project_doc:'PROJECT', personal_note:'NOTE', task:'TASK',
-        wiki_page:'WIKI', code_doc:'CODE'}[r.item_type] || r.item_type;
+        wiki_page:'WIKI', code_doc:'CODE', ai_integration:'AI',
+        rest_endpoint:'REST', project_technology:'TECH', project_readme:'README',
+        config_analysis:'CONFIG', project_summary:'SUMMARY', project_identity:'MAVEN',
+        project_dependency:'DEPS', project_changelog:'CHANGELOG'}[r.item_type] || r.item_type;
       const link = r.url ? `<a href="${r.url}" target="_blank">Original</a>` : '';
       const file = r.filename ? `<span style="color:#888;font-size:0.85em"> &middot; ${r.filename}</span>` : '';
       const parent = r.parent_title && r.parent_title !== r.title ? `<span style="color:#888;font-size:0.85em"> from <b>${r.parent_title}</b></span>` : '';
@@ -390,10 +396,16 @@ async function loadLibrary() {
     container.innerHTML = data.documents.map((doc, i) => {
       const badgeClass = {news_item:'badge-news', raw_content:'badge-raw', learning_guide:'badge-guide',
         book_chapter:'badge-raw', project_doc:'badge-news', personal_note:'badge-guide', task:'badge-news',
-        wiki_page:'badge-raw', code_doc:'badge-raw'}[doc.item_type] || '';
+        wiki_page:'badge-raw', code_doc:'badge-raw', ai_integration:'badge-news',
+        rest_endpoint:'badge-guide', project_technology:'badge-news', project_readme:'badge-raw',
+        config_analysis:'badge-guide', project_summary:'badge-news', project_identity:'badge-news',
+        project_dependency:'badge-raw', project_changelog:'badge-raw'}[doc.item_type] || '';
       const badgeText = {news_item:'NEWS', raw_content:'RAW', learning_guide:'GUIDE',
         book_chapter:'BOOK', project_doc:'PROJECT', personal_note:'NOTE', task:'TASK',
-        wiki_page:'WIKI', code_doc:'CODE'}[doc.item_type] || doc.item_type;
+        wiki_page:'WIKI', code_doc:'CODE', ai_integration:'AI',
+        rest_endpoint:'REST', project_technology:'TECH', project_readme:'README',
+        config_analysis:'CONFIG', project_summary:'SUMMARY', project_identity:'MAVEN',
+        project_dependency:'DEPS', project_changelog:'CHANGELOG'}[doc.item_type] || doc.item_type;
       const docId = `lib-doc-${i}`;
       return `<div class="result">
         <h3>${doc.title} <span class="score">${doc.chunks} chunks</span></h3>
@@ -1373,6 +1385,14 @@ def _run_reindex_projects(job_id: str) -> None:
         _save_snap_code(client)
         global _client
         _client = None
+
+        try:
+            from project_graph import build_graph, save_graph
+            graph = build_graph()
+            save_graph(graph)
+        except Exception as eg:
+            new_items.append({"name": "Project Graph", "path": "-",
+                              "chunks": 0, "error": f"graph build: {eg}"})
 
         status = "done"
         msg = (f"Indexed {total_projects} projects ({total_chunks} chunks). "

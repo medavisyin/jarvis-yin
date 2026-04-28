@@ -79,7 +79,7 @@ python index_confluence_user.py "Display Name" --date-from 2026-04-17
 python index_confluence_user.py "Display Name" --date-from 2026-04-17 --report-json
 ```
 
-The `--report-json` flag outputs a `REPORT_JSON:{...}` line to stdout containing page details (title, URL, space, summary, headings, modified date) for each page. This is used by the Daily Fetch wiki fetch step to generate rich reports with clickable links and content summaries.
+The `--report-json` flag outputs a `REPORT_JSON:{...}` line to stdout containing page details (title, URL, space, summary, headings, modified date, `version_number`, `change_summary`) for each page. This is used by the Daily Fetch wiki fetch step to generate rich reports with clickable links and summaries. For **existing pages** (version > 1), the script fetches the previous version body via the Confluence REST API (`?status=historical&version=N-1`) and computes a text diff (`_compute_change_summary` using `difflib.unified_diff`), describing what lines were added/removed. For **new pages** (version = 1), only the current content excerpt is included. The Daily Fetch step in `agent.py` uses `change_summary` to generate diff-based AI summaries ("what was changed") vs content-based summaries ("what this page covers").
 
 ## Security Notes
 

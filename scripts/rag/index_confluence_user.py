@@ -149,6 +149,59 @@ def _get_headings(html: str, max_count: int = 8) -> List[str]:
     return headings
 
 
+def _fetch_previous_version_text(page_id: str, current_version: int) -> str:
+    """Fetch the plain text of the previous version of a page.
+    Returns empty string if version <= 1 or fetch fails."""
+    if current_version <= 1:
+        return ""
+    prev_version = current_version - 1
+    try:
+        import requests
+        url = (f"https://{SITE}/wiki/rest/api/content/{page_id}"
+               f"?expand=body.storage&status=historical&version={prev_version}")
+        r = requests.get(url, headers=_HEADERS, timeout=15)
+        if r.status_code != 200:
+            return ""
+        body_data = r.json()
+        storage_html = body_data.get("body", {}).get("storage", {}).get("value", "")
+        return _strip_html(storage_html)
+    except Exception:
+        return ""
+
+
+def _compute_change_summary(current_text: str, previous_text: str) -> str:
+    """Compute a concise text diff summary between previous and current page versions."""
+    import difflib
+
+    prev_lines = previous_text.splitlines()
+    curr_lines = current_text.splitlines()
+    diff = list(difflib.unified_diff(prev_lines, curr_lines, n=0))
+
+    added_lines = [line[1:].strip() for line in diff
+                   if line.startswith("+") and not line.startswith("+++")]
+    removed_lines = [line[1:].strip() for line in diff
+                     if line.startswith("-") and not line.startswith("---")]
+    added_lines = [l for l in added_lines if l]
+    removed_lines = [l for l in removed_lines if l]
+
+    if not added_lines and not removed_lines:
+        return ""
+
+    parts = []
+    if added_lines:
+        added_preview = " | ".join(added_lines[:5])
+        if len(added_preview) > 500:
+            added_preview = added_preview[:500] + "..."
+        parts.append(f"Added ({len(added_lines)} lines): {added_preview}")
+    if removed_lines:
+        removed_preview = " | ".join(removed_lines[:3])
+        if len(removed_preview) > 300:
+            removed_preview = removed_preview[:300] + "..."
+        parts.append(f"Removed ({len(removed_lines)} lines): {removed_preview}")
+
+    return "\n".join(parts)
+
+
 def _safe_print(text: str):
     """Print text safely, replacing non-ASCII chars for Windows console."""
     print(text.encode("ascii", "replace").decode())
@@ -226,6 +279,7 @@ def fetch_user_pages_cql(display_name: str, limit: int = 200,
                 "space_key": space.get("key", ""),
                 "url": f"https://{SITE}/wiki{page.get('_links', {}).get('webui', '')}",
                 "modified_at": modified.split("T")[0] if modified else "",
+                "version_number": version.get("number", 1),
             })
 
         if len(page_metas) >= limit:
@@ -261,6 +315,13 @@ def fetch_user_pages_cql(display_name: str, limit: int = 200,
         body_text = _strip_html(storage_html)
         headings = _get_headings(storage_html)
 
+        version_num = meta.get("version_number", 1)
+        change_summary = ""
+        if version_num > 1 and body_text:
+            prev_text = _fetch_previous_version_text(page_id, version_num)
+            if prev_text:
+                change_summary = _compute_change_summary(body_text, prev_text)
+
         full_text = f"{meta['title']}\n\n"
         if meta["space_name"]:
             full_text += f"Space: {meta['space_name']}\n"
@@ -282,6 +343,8 @@ def fetch_user_pages_cql(display_name: str, limit: int = 200,
             "text": full_text,
             "headings": headings,
             "summary": (body_text[:500] + "...") if len(body_text) > 500 else body_text,
+            "version_number": version_num,
+            "change_summary": change_summary,
         })
 
         if (i + 1) % 10 == 0:
@@ -533,6 +596,8 @@ def main():
                 "summary": p.get("summary", "")[:300],
                 "headings": p.get("headings", [])[:8],
                 "modified_at": p.get("updated_when", "") or p.get("modified_at", ""),
+                "version_number": p.get("version_number", 1),
+                "change_summary": p.get("change_summary", "")[:600],
             })
         print(f"REPORT_JSON:{_json.dumps(page_details, ensure_ascii=False)}")
 
