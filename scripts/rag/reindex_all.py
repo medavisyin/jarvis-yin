@@ -263,7 +263,9 @@ def run_codebase(
     force: bool,
     summary: Dict[str, List[str]],
 ) -> None:
-    for proj in ic.PROJECT_DIRS:
+    projects = ic.load_project_dirs()
+    seen_hashes: set[str] = set()
+    for proj in projects:
         name = proj["name"]
         path = proj["path"]
         key = norm_codebase_key(path)
@@ -275,7 +277,7 @@ def run_codebase(
             summary["skipped"].append(f"codebase {name} (path not found: {path})")
             continue
         try:
-            chunk_count = ic.index_project(name, path, model, client)
+            chunk_count, _deduped = ic.index_project(name, path, model, client, seen_hashes)
             manifest.setdefault("codebase", {})[key] = {
                 "indexed_at": _utc_now_iso(),
                 "content_hash": chash,

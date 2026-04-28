@@ -8,12 +8,20 @@ Walks configured project directories, extracts meaningful chunks from:
 
 Stores in the same Qdrant collection as other RAG content, searchable together.
 
+Project directories come from two sources in .rag-projects.json:
+  - base_dirs: root folders auto-discovered (each immediate subdirectory = project)
+  - explicit_projects: manually listed {name, path} entries
+
+Content-hash deduplication: files with identical content across different projects
+are indexed only once (first occurrence wins).
+
 Usage:
   python index_codebase.py                   Index all configured projects
   python index_codebase.py <project-path>    Index a specific project directory
 
 Dependencies: pip install qdrant-client sentence-transformers
 """
+import hashlib
 import json
 import os
 import re
@@ -23,19 +31,10 @@ from datetime import date
 from typing import Optional
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from config import SNAPSHOT_PATH
+from config import SNAPSHOT_PATH, PROJECT_DIRS_PATH
 
 COLLECTION = "ai_briefings"
 VECTOR_SIZE = 384
-
-PROJECT_DIRS = [
-    {"name": "P4M Next", "path": "d:/projects/p4m"},
-    {"name": "Admin App", "path": "d:/projects/admin-app"},
-    {"name": "Core Framework", "path": "d:/projects/core-framework"},
-    {"name": "Vaadin UI", "path": "d:/projects/vaadin-ui"},
-    {"name": "AWS Infrastructure", "path": "d:/p4m_cloud_project/aws-infra-p4m-eks"},
-    {"name": "RIS Dashboard", "path": "D:/cto/ris-dashboard"},
-]
 
 SKIP_DIRS = {
     "node_modules", ".git", "target", "build", ".idea", ".vscode",
@@ -51,6 +50,67 @@ CONFIG_FILES = {
 }
 
 MAX_CHUNK_CHARS = 600
+
+def load_project_dirs() -> list[dict]:
+    """Load project directories from .rag-projects.json.
+
+    Config format:
+      {
+        "base_dirs": ["D:/projects", ...],
+        "explicit_projects": [{"name": "Foo", "path": "D:/other/foo"}, ...]
+      }
+
+    base_dirs: each immediate subdirectory becomes a project (name = folder name).
+    explicit_projects: manually specified projects with custom names.
+    Returns empty list if config file is missing or invalid.
+    """
+    if not os.path.isfile(PROJECT_DIRS_PATH):
+        print(f"  Config not found: {PROJECT_DIRS_PATH}")
+        print(f"  Create it with base_dirs and/or explicit_projects to index projects.")
+        return []
+
+    try:
+        with open(PROJECT_DIRS_PATH, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+    except Exception as e:
+        print(f"  Error reading {PROJECT_DIRS_PATH}: {e}")
+        return []
+
+    projects: list[dict] = []
+    seen_paths: set[str] = set()
+
+    for base_dir in cfg.get("base_dirs", []):
+        base_dir = os.path.normpath(base_dir)
+        if not os.path.isdir(base_dir):
+            print(f"  Base dir not found, skipping: {base_dir}")
+            continue
+        for entry in sorted(os.listdir(base_dir)):
+            entry_path = os.path.join(base_dir, entry)
+            if not os.path.isdir(entry_path):
+                continue
+            if entry.startswith("."):
+                continue
+            norm = os.path.normcase(os.path.normpath(entry_path))
+            if norm in seen_paths:
+                continue
+            seen_paths.add(norm)
+            projects.append({"name": entry, "path": entry_path})
+
+    for proj in cfg.get("explicit_projects", []):
+        name = proj.get("name", "")
+        path = proj.get("path", "")
+        if not name or not path:
+            continue
+        norm = os.path.normcase(os.path.normpath(path))
+        if norm in seen_paths:
+            continue
+        seen_paths.add(norm)
+        projects.append({"name": name, "path": os.path.normpath(path)})
+
+    if not projects:
+        print("  No projects resolved from config (check base_dirs and explicit_projects)")
+
+    return projects
 
 
 def _get_model():
@@ -135,6 +195,10 @@ def _chunk_text(text: str, max_chars: int = MAX_CHUNK_CHARS, overlap: int = 100)
     return chunks if chunks else [text[:max_chars]]
 
 
+def _content_hash(text: str) -> str:
+    return hashlib.md5(text.encode("utf-8", errors="replace")).hexdigest()
+
+
 # ===================================================================
 # JAVA FILE PROCESSING
 # ===================================================================
@@ -144,7 +208,6 @@ def _extract_java_summary(content: str, filepath: str) -> list[dict]:
     chunks = []
     lines = content.split("\n")
 
-    # Extract package
     package = ""
     for line in lines:
         m = re.match(r'package\s+([\w.]+)\s*;', line)
@@ -152,7 +215,6 @@ def _extract_java_summary(content: str, filepath: str) -> list[dict]:
             package = m.group(1)
             break
 
-    # Extract class/interface declaration with Javadoc
     class_match = re.search(
         r'(/\*\*[\s\S]*?\*/\s*)?'
         r'(?:@\w+(?:\([^)]*\))?\s*)*'
@@ -173,20 +235,16 @@ def _extract_java_summary(content: str, filepath: str) -> list[dict]:
     extends = class_match.group(5) or ""
     implements = class_match.group(6) or ""
 
-    # Clean javadoc
     javadoc_clean = re.sub(r'/\*\*|\*/|\*\s?', '', javadoc).strip()
     javadoc_clean = re.sub(r'@\w+.*', '', javadoc_clean).strip()
 
-    # Extract method signatures
     method_pattern = re.compile(
         r'(?:public|protected|private)\s+(?:static\s+)?(?:final\s+)?'
         r'(?:[\w<>\[\],\s]+)\s+(\w+)\s*\([^)]*\)',
     )
     methods = method_pattern.findall(content)
-    # Filter out constructors and common noise
     methods = [m for m in methods if m != class_name and m not in ("toString", "hashCode", "equals")]
 
-    # Build class summary chunk
     summary_parts = [f"{kind} {class_name}"]
     if package:
         summary_parts.insert(0, f"package {package}")
@@ -208,7 +266,6 @@ def _extract_java_summary(content: str, filepath: str) -> list[dict]:
         "filename": rel_path,
     })
 
-    # Extract annotated methods with Javadoc (important public APIs)
     api_pattern = re.compile(
         r'(/\*\*[\s\S]*?\*/\s*)?'
         r'((?:@\w+(?:\([^)]*\))?\s*)+)?'
@@ -225,7 +282,6 @@ def _extract_java_summary(content: str, filepath: str) -> list[dict]:
         if method_name in ("toString", "hashCode", "equals", class_name):
             continue
 
-        # Only index methods with Javadoc or REST annotations
         has_rest = any(a in annotations for a in ("@GET", "@POST", "@PUT", "@DELETE", "@Path", "@RequestMapping"))
         has_doc = bool(method_doc.strip())
         if not has_rest and not has_doc:
@@ -257,7 +313,6 @@ def _process_markdown(content: str, filepath: str) -> list[dict]:
     """Chunk a Markdown file into sections."""
     filename = os.path.basename(filepath)
     title = filename
-    # Try to extract title from first heading
     m = re.match(r'^#\s+(.+)', content)
     if m:
         title = m.group(1).strip()
@@ -285,29 +340,52 @@ def _process_config(content: str, filepath: str) -> list[dict]:
 # MAIN INDEXING LOGIC
 # ===================================================================
 
-def index_project(project_name: str, project_path: str, model, client) -> int:
-    """Walk a project directory and index relevant files. Returns chunk count."""
+def index_project(
+    project_name: str,
+    project_path: str,
+    model,
+    client,
+    seen_hashes: set[str] | None = None,
+) -> tuple[int, int]:
+    """Walk a project directory and index relevant files.
+
+    Returns (chunk_count, files_deduped).
+    seen_hashes: shared set of content hashes for cross-project deduplication.
+    If a file's content hash is already in the set, it is skipped.
+    """
     from qdrant_client.models import PointStruct, Filter, FieldCondition, MatchValue
 
-    # Remove old chunks for this project
+    if seen_hashes is None:
+        seen_hashes = set()
+
     try:
-        old_points = client.scroll(
-            collection_name=COLLECTION,
-            scroll_filter=Filter(must=[
-                FieldCondition(key="source", match=MatchValue(value=f"project:{project_name}")),
-            ]),
-            limit=10000,
-            with_payload=False,
-        )
-        old_ids = [p.id for p in old_points[0]]
+        delete_filter = Filter(must=[
+            FieldCondition(key="source", match=MatchValue(value=f"project:{project_name}")),
+        ])
+        old_ids = []
+        offset = None
+        while True:
+            result = client.scroll(
+                collection_name=COLLECTION,
+                scroll_filter=delete_filter,
+                limit=500,
+                offset=offset,
+                with_payload=False,
+            )
+            points, next_offset = result
+            old_ids.extend(p.id for p in points)
+            if next_offset is None:
+                break
+            offset = next_offset
         if old_ids:
             client.delete(collection_name=COLLECTION, points_selector=old_ids)
             print(f"  Removed {len(old_ids)} old chunks for {project_name}")
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  Warning: failed to remove old chunks for {project_name}: {e}")
 
     all_chunks = []
     files_processed = 0
+    files_deduped = 0
 
     for root, dirs, files in os.walk(project_path):
         dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
@@ -324,6 +402,11 @@ def index_project(project_name: str, project_path: str, model, client) -> int:
                         content = f.read()
                     if len(content) < 50:
                         continue
+                    ch = _content_hash(content)
+                    if ch in seen_hashes:
+                        files_deduped += 1
+                        continue
+                    seen_hashes.add(ch)
                     chunks = _extract_java_summary(content, fpath)
                     for c in chunks:
                         c["rel_path"] = f"{rel_root}/{fname}"
@@ -335,6 +418,11 @@ def index_project(project_name: str, project_path: str, model, client) -> int:
                         content = f.read()
                     if len(content) < 20:
                         continue
+                    ch = _content_hash(content)
+                    if ch in seen_hashes:
+                        files_deduped += 1
+                        continue
+                    seen_hashes.add(ch)
                     if ext in DOC_EXTENSIONS:
                         chunks = _process_markdown(content, fpath)
                     else:
@@ -349,9 +437,12 @@ def index_project(project_name: str, project_path: str, model, client) -> int:
 
     if not all_chunks:
         print(f"  No indexable content found in {project_name}")
-        return 0
+        if files_deduped:
+            print(f"  ({files_deduped} files skipped as duplicates)")
+        return 0, files_deduped
 
-    print(f"  Processed {files_processed} files -> {len(all_chunks)} chunks")
+    print(f"  Processed {files_processed} files -> {len(all_chunks)} chunks" +
+          (f" ({files_deduped} deduped)" if files_deduped else ""))
     print(f"  Generating embeddings...", end=" ", flush=True)
 
     texts = [c["text"] for c in all_chunks]
@@ -382,11 +473,11 @@ def index_project(project_name: str, project_path: str, model, client) -> int:
         client.upsert(collection_name=COLLECTION, points=points[i:i + 100])
 
     print(f"  Indexed {len(points)} chunks for {project_name}")
-    return len(points)
+    return len(points), files_deduped
 
 
 def main():
-    projects = list(PROJECT_DIRS)
+    projects = load_project_dirs()
 
     if len(sys.argv) > 1:
         custom_path = sys.argv[1]
@@ -404,6 +495,7 @@ def main():
     model = _get_model()
     client = _get_client()
     total = 0
+    seen_hashes: set[str] = set()
 
     for proj in projects:
         name = proj["name"]
@@ -412,7 +504,7 @@ def main():
             print(f"  SKIP {name}: {path} not found")
             continue
         print(f"Indexing {name} ({path})...")
-        count = index_project(name, path, model, client)
+        count, _deduped = index_project(name, path, model, client, seen_hashes)
         total += count
         print()
 
@@ -421,6 +513,7 @@ def main():
         _save_snapshot(client)
 
     print(f"\nDone! Indexed {total} chunks across {len(projects)} projects.")
+    print(f"Deduplication: {len(seen_hashes)} unique file hashes tracked.")
 
 
 if __name__ == "__main__":

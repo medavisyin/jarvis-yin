@@ -21,7 +21,7 @@ import uuid
 from flask import Flask, request, jsonify, render_template_string
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-from config import REPORTS_ROOT, SNAPSHOT_PATH, KNOWLEDGE_ROOT
+from config import REPORTS_ROOT, SNAPSHOT_PATH, KNOWLEDGE_ROOT, PROJECT_DIRS_PATH
 
 COLLECTION = "ai_briefings"
 VECTOR_SIZE = 384
@@ -133,6 +133,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <option value="personal_note">Notes</option>
           <option value="task">Tasks</option>
           <option value="wiki_page">Wiki Pages</option>
+          <option value="code_doc">Code Docs</option>
         </select>
       </div>
       <div><label>Max Results</label><br>
@@ -160,6 +161,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <option value="personal_note">Notes</option>
         <option value="task">Tasks</option>
         <option value="wiki_page">Wiki Pages</option>
+        <option value="code_doc">Code Docs</option>
       </select>
       <span id="lib-stats" style="color:#666;font-size:0.9em"></span>
     </div>
@@ -174,6 +176,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <button id="btn-refresh-knowledge" onclick="refreshKnowledge()" style="padding:10px 22px;background:#1565c0;color:white;border:none;border-radius:8px;font-size:0.95em;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background 0.2s">
         <span style="font-size:1.2em">&#128218;</span> Refresh Knowledge Docs
       </button>
+      <button id="btn-reindex-projects" onclick="reindexProjects()" style="padding:10px 22px;background:#7b1fa2;color:white;border:none;border-radius:8px;font-size:0.95em;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background 0.2s">
+        <span style="font-size:1.2em">&#128187;</span> Reindex Projects
+      </button>
       <span id="index-status" style="color:#666;font-size:0.9em"></span>
     </div>
     <div id="index-results" style="display:none;margin-bottom:20px;padding:16px;background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #2e7d32">
@@ -183,6 +188,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div id="knowledge-results" style="display:none;margin-bottom:20px;padding:16px;background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #1565c0">
       <h3 style="font-size:1em;color:#1565c0;margin-bottom:10px" id="knowledge-results-title">Knowledge Docs</h3>
       <div id="knowledge-results-list"></div>
+    </div>
+    <div id="project-results" style="display:none;margin-bottom:20px;padding:16px;background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-left:4px solid #7b1fa2">
+      <h3 style="font-size:1em;color:#7b1fa2;margin-bottom:10px" id="project-results-title">Projects</h3>
+      <div id="project-results-list"></div>
     </div>
     <div style="margin-bottom:16px">
       <p id="analysis-total" style="font-size:1.1em;font-weight:600;color:#1a1a2e;margin-bottom:16px">Loading...</p>
@@ -264,10 +273,10 @@ async function doSearch() {
     results.innerHTML = pipeHtml + countHtml + data.results.map((r, i) => {
       const badgeClass = {news_item:'badge-news', raw_content:'badge-raw', learning_guide:'badge-guide',
         book_chapter:'badge-raw', project_doc:'badge-news', personal_note:'badge-guide', task:'badge-news',
-        wiki_page:'badge-raw'}[r.item_type] || '';
+        wiki_page:'badge-raw', code_doc:'badge-raw'}[r.item_type] || '';
       const badgeText = {news_item:'NEWS', raw_content:'RAW', learning_guide:'GUIDE',
         book_chapter:'BOOK', project_doc:'PROJECT', personal_note:'NOTE', task:'TASK',
-        wiki_page:'WIKI'}[r.item_type] || r.item_type;
+        wiki_page:'WIKI', code_doc:'CODE'}[r.item_type] || r.item_type;
       const link = r.url ? `<a href="${r.url}" target="_blank">Original</a>` : '';
       const file = r.filename ? `<span style="color:#888;font-size:0.85em"> &middot; ${r.filename}</span>` : '';
       const parent = r.parent_title && r.parent_title !== r.title ? `<span style="color:#888;font-size:0.85em"> from <b>${r.parent_title}</b></span>` : '';
@@ -381,10 +390,10 @@ async function loadLibrary() {
     container.innerHTML = data.documents.map((doc, i) => {
       const badgeClass = {news_item:'badge-news', raw_content:'badge-raw', learning_guide:'badge-guide',
         book_chapter:'badge-raw', project_doc:'badge-news', personal_note:'badge-guide', task:'badge-news',
-        wiki_page:'badge-raw'}[doc.item_type] || '';
+        wiki_page:'badge-raw', code_doc:'badge-raw'}[doc.item_type] || '';
       const badgeText = {news_item:'NEWS', raw_content:'RAW', learning_guide:'GUIDE',
         book_chapter:'BOOK', project_doc:'PROJECT', personal_note:'NOTE', task:'TASK',
-        wiki_page:'WIKI'}[doc.item_type] || doc.item_type;
+        wiki_page:'WIKI', code_doc:'CODE'}[doc.item_type] || doc.item_type;
       const docId = `lib-doc-${i}`;
       return `<div class="result">
         <h3>${doc.title} <span class="score">${doc.chunks} chunks</span></h3>
@@ -579,6 +588,77 @@ async function refreshKnowledge() {
         statusEl.innerHTML = '<span style="color:#e53935">Poll error: ' + pollErr.message + '</span>';
       }
     }, 2000);
+  } catch (err) {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    statusEl.innerHTML = '<span style="color:#e53935">Error: ' + err.message + '</span>';
+  }
+}
+
+async function reindexProjects() {
+  const btn = document.getElementById('btn-reindex-projects');
+  const statusEl = document.getElementById('index-status');
+  const resultsBox = document.getElementById('project-results');
+  const resultsList = document.getElementById('project-results-list');
+  const resultsTitle = document.getElementById('project-results-title');
+  if (btn.disabled) return;
+
+  btn.disabled = true;
+  btn.style.opacity = '0.6';
+  statusEl.textContent = 'Scanning project directories...';
+  resultsBox.style.display = 'none';
+
+  try {
+    const r = await fetch('/api/reindex-projects', { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Failed to start');
+
+    const jobId = d.job_id;
+    statusEl.innerHTML = 'Reindexing projects... <span style="display:inline-block;width:14px;height:14px;border:2px solid #7b1fa2;border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;vertical-align:middle"></span>';
+
+    const poll = setInterval(async function() {
+      try {
+        const sr = await fetch('/api/reindex-projects/' + encodeURIComponent(jobId));
+        const sd = await sr.json();
+        if (sd.status === 'done' || sd.status === 'error') {
+          clearInterval(poll);
+          btn.disabled = false;
+          btn.style.opacity = '1';
+
+          if (sd.status === 'done') {
+            statusEl.innerHTML = '<span style="color:#7b1fa2;font-weight:600">&#10003; ' + (sd.result || 'Done').substring(0, 300) + '</span>';
+            if (sd.new_items && sd.new_items.length > 0) {
+              resultsTitle.textContent = 'Projects (' + sd.new_items.length + ' project' + (sd.new_items.length > 1 ? 's' : '') + ')';
+              resultsList.innerHTML = sd.new_items.map(function(item) {
+                var icon = item.error ? '<span style="color:#e53935">&#10007;</span>'
+                  : item.skipped ? '<span style="color:#999">&#8212;</span>'
+                  : '<span style="color:#7b1fa2">&#10003;</span>';
+                var detail = item.error
+                  ? '<span style="color:#e53935">' + item.error + '</span>'
+                  : item.skipped
+                  ? '<span style="color:#999">' + item.skipped + '</span>'
+                  : '<span style="color:#666">' + item.chunks + ' chunks' + (item.deduped ? ', ' + item.deduped + ' deduped' : '') + '</span>';
+                return '<div style="padding:8px 12px;border-bottom:1px solid #f0f0f0;display:flex;align-items:center;gap:8px">'
+                  + icon
+                  + ' <span style="font-weight:600;min-width:150px">' + item.name + '</span> '
+                  + '<span style="color:#aaa;font-size:0.85em;min-width:200px">' + (item.path || '') + '</span> '
+                  + detail
+                  + '</div>';
+              }).join('');
+              resultsBox.style.display = 'block';
+            }
+            loadAnalysis();
+          } else {
+            statusEl.innerHTML = '<span style="color:#e53935">Error: ' + (sd.result || 'Unknown error').substring(0, 300) + '</span>';
+          }
+        }
+      } catch (pollErr) {
+        clearInterval(poll);
+        btn.disabled = false;
+        btn.style.opacity = '1';
+        statusEl.innerHTML = '<span style="color:#e53935">Poll error: ' + pollErr.message + '</span>';
+      }
+    }, 3000);
   } catch (err) {
     btn.disabled = false;
     btn.style.opacity = '1';
@@ -1251,6 +1331,102 @@ def api_refresh_knowledge_status(job_id: str):
         "result": j["result"],
         "new_items": j.get("new_items", []),
     })
+
+
+def _run_reindex_projects(job_id: str) -> None:
+    """Re-index all configured project directories. Runs in a background thread."""
+    status = "error"
+    msg = ""
+    new_items = []
+    try:
+        rag_dir = SCRIPT_DIR
+        sys.path.insert(0, rag_dir)
+        from index_codebase import (
+            load_project_dirs, index_project, _save_snapshot as _save_snap_code,
+        )
+
+        client = _get_client()
+        model = _get_model()
+
+        projects = load_project_dirs()
+        total_chunks = 0
+        total_projects = 0
+        seen_hashes: set[str] = set()
+
+        for proj in projects:
+            name = proj["name"]
+            path = proj["path"]
+            if not os.path.isdir(path):
+                new_items.append({"name": name, "path": path, "chunks": 0,
+                                  "skipped": "path not found"})
+                continue
+            try:
+                count, deduped_count = index_project(name, path, model, client, seen_hashes)
+                total_chunks += count
+                total_projects += 1
+                new_items.append({"name": name, "path": path, "chunks": count,
+                                  "deduped": deduped_count})
+            except Exception as e:
+                new_items.append({"name": name, "path": path, "chunks": 0,
+                                  "error": str(e)})
+
+        _save_snap_code(client)
+        global _client
+        _client = None
+
+        status = "done"
+        msg = (f"Indexed {total_projects} projects ({total_chunks} chunks). "
+               f"{len(seen_hashes)} unique files tracked for deduplication.")
+    except Exception as e:
+        msg = f"Error: {e}\n{traceback.format_exc()}"
+    with _jobs_lock:
+        j = _jobs.get(job_id)
+        if j:
+            j["status"] = status
+            j["result"] = msg
+            j["new_items"] = new_items
+
+
+@app.route("/api/reindex-projects", methods=["POST"])
+def api_reindex_projects():
+    """Start re-indexing project directories in a background thread."""
+    job_id = str(uuid.uuid4())
+    with _jobs_lock:
+        _jobs[job_id] = {
+            "status": "running",
+            "started": time.time(),
+            "result": "",
+            "new_items": [],
+        }
+    threading.Thread(target=_run_reindex_projects, args=(job_id,), daemon=True).start()
+    return jsonify({"job_id": job_id, "status": "started"})
+
+
+@app.route("/api/reindex-projects/<job_id>")
+def api_reindex_projects_status(job_id: str):
+    """Poll the status of a reindex-projects job."""
+    with _jobs_lock:
+        j = _jobs.get(job_id)
+    if not j:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify({
+        "status": j["status"],
+        "result": j["result"],
+        "new_items": j.get("new_items", []),
+    })
+
+
+@app.route("/api/project-config")
+def api_project_config():
+    """Return current project configuration."""
+    if not os.path.isfile(PROJECT_DIRS_PATH):
+        return jsonify({"error": "Config not found", "path": PROJECT_DIRS_PATH})
+    try:
+        with open(PROJECT_DIRS_PATH, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        return jsonify({"config": cfg, "path": PROJECT_DIRS_PATH})
+    except Exception as e:
+        return jsonify({"error": str(e), "path": PROJECT_DIRS_PATH})
 
 
 if __name__ == "__main__":
