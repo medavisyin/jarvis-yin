@@ -13,6 +13,8 @@ last-updated: 2026-04-21
 > Structured learning paths covering every major technology area in the Jarvis project.
 > Each folder contains numbered chapters, reference guides, and links to implementation docs.
 
+> **Disambiguation**: This folder (`docs/learning/`) contains **tutorial & curriculum** content — concept explanations, beginner guides, reading orders. For documentation of the Jarvis "learning mode" **feature implementation** (English practice, AWS cert, deep-dive sessions), see [`docs/implementation/learning/`](../implementation/learning/).
+
 ---
 
 ## Learning Tracks

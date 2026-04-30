@@ -16,9 +16,9 @@ Comprehensive documentation for the Jarvis Chinese A-share stock analysis and pr
 **Code location:** `c:\jarvis\scripts\stock\` (20 Python modules)
 **HTTP API:** `scripts/rag/agent.py` (stock routes)
 **On-disk layout:** `C:/reports/stock/`
-**Related plans:**
-- `docs/plans/2026-04-12-stock-prediction.md`
-- `docs/plans/2026-04-22-china-market-adaptation.md` ← A股适配计划
+**Related plans (archived — completed):**
+- `docs/plans/archive/2026-04-12-stock-prediction.md`
+- `docs/plans/archive/2026-04-22-china-market-adaptation.md` ← A股适配计划
 
 ## Document Index
 

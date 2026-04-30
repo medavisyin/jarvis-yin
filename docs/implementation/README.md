@@ -5,7 +5,7 @@ tags:
   - navigation
 category: hub
 status: current
-last-updated: 2026-04-28
+last-updated: 2026-04-30
 ---
 
 # Jarvis Implementation Documentation
@@ -105,9 +105,9 @@ docs/implementation/
 
 | # | Document | Description |
 |---|----------|-------------|
-| 6 | [rag-agent-impl.md](./usage-tool/rag-agent-impl.md) | RAG agent — core streaming chat with tool dispatch, hybrid BM25+vector retrieval, SSE streaming, conversation memory. |
-| 7 | [search-ui-impl.md](./usage-tool/search-ui-impl.md) | Search UI — library search Flask app with chunk feedback, document views, index/refresh background jobs. |
-| 8 | [reindex-all-impl.md](./usage-tool/reindex-all-impl.md) | Reindex orchestration — manifest-driven incremental reindex for briefings, codebase, Confluence, project graph. |
+| 6 | [rag-agent-impl.md](./usage-tool/rag-agent-impl.md) | RAG agent — **stub** → see [rag/agent-impl.md](./rag/agent-impl.md) for full guide |
+| 7 | [search-ui-impl.md](./usage-tool/search-ui-impl.md) | Search UI — **stub** → see [rag/search-ui-impl.md](./rag/search-ui-impl.md) for full guide |
+| 8 | [reindex-all-impl.md](./usage-tool/reindex-all-impl.md) | Reindex orchestration — **stub** → see [rag/reindex-all-impl.md](./rag/reindex-all-impl.md) for full guide |
 | 9 | [custom-indexing-impl.md](./usage-tool/custom-indexing-impl.md) | Custom file indexing — CLI to add/scan/list/remove PDF/Markdown files with YAML front matter support. |
 | 10 | [telegram-bot-impl.md](./usage-tool/telegram-bot-impl.md) | Telegram bot — owner-only proxy to RAG search, stock APIs, daily pipeline commands. |
 
@@ -155,7 +155,7 @@ docs/implementation/
 | [index-custom-impl.md](./rag/index-custom-impl.md) | Implementation of `index_custom.py` for custom source indexing. |
 | [reindex-all-impl.md](./rag/reindex-all-impl.md) | How `reindex_all.py` orchestrates full or partial reindexing. |
 | [search-ui-impl.md](./rag/search-ui-impl.md) | Implementation of `search_ui.py` (embedding, Qdrant search, Flask UI). |
-| [agent-impl.md](./rag/agent-impl.md) | Implementation of `agent.py` (RAG retrieval, Ollama, SSE streaming, commit summary, audio from knowledge, explain-this, donor analysis, daily fetch pipeline). |
+| [agent-impl.md](./rag/agent-impl.md) | Implementation of `agent.py` — thin Flask orchestrator (~1,405 lines) with routes extracted to Blueprints (`routes/`), query pipeline (`pipeline.py`), conversation memory (`memory/`), intent classification, tool dispatch. |
 | [learning-features-impl.md](./rag/learning-features-impl.md) | Learning modes: AI Learning, Tech English, Casual English, AWS AIF-C01 Cert, Notes system. |
 | [global-settings-impl.md](./rag/global-settings-impl.md) | Global settings popup: audio language selection for AI Briefing, World News, Chinese News, Knowledge audio. |
 

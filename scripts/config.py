@@ -27,6 +27,7 @@ JIRA_SKILL_DIR = os.path.normpath(
 )
 
 SNAPSHOT_PATH = os.path.join(REPORTS_ROOT, ".rag-store.json")
+MEMORY_SNAPSHOT_PATH = os.path.join(REPORTS_ROOT, ".conversation-memory.json")
 FEEDBACK_PATH = os.path.join(REPORTS_ROOT, ".rag-feedback.json")
 KNOWLEDGE_ROOT = os.path.join(REPORTS_ROOT, "knowledge")
 TOPIC_INDEX_PATH = os.path.join(REPORTS_ROOT, "topic-index.json")

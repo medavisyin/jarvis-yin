@@ -123,4 +123,39 @@ config.py ───────────────────────�
 
 - [`docs/implementation/stock/`](../implementation/stock/) — 按功能分组的实现文档（英文）
 - [`docs/learning/stock/`](../learning/stock/) — 股票知识学习指南（中文）
-- [`docs/plans/2026-04-12-stock-prediction.md`](../plans/2026-04-12-stock-prediction.md) — 原始实现计划
+- [`docs/plans/archive/2026-04-12-stock-prediction.md`](../plans/archive/2026-04-12-stock-prediction.md) — 原始实现计划（已完成）
+
+---
+
+## 三套文档导航地图 (Cross-Reference Doc Map)
+
+三套 stock 文档服务不同用途，以下表格帮助定位：
+
+| Python 模块 | 本目录 (CN 详解) | `implementation/stock/` (EN 架构) | `learning/stock/` (教程) |
+|-------------|------------------|-----------------------------------|--------------------------|
+| `config.py` | [config.md](./config.md) | [config-impl.md](../implementation/stock/config-impl.md) | — |
+| `fetch_market_data.py` | [fetch_market_data.md](./fetch_market_data.md) | [data-layer-impl.md](../implementation/stock/data-layer-impl.md) | — |
+| `china_market_data.py` | [china_market_data.md](./china_market_data.md) | [china-market-impl.md](../implementation/stock/china-market-impl.md) | [ch10](../learning/stock/ch10-astock-deep-dive.md) |
+| `watchlist.py` | [watchlist.md](./watchlist.md) | [data-layer-impl.md](../implementation/stock/data-layer-impl.md) | [ch8](../learning/stock/ch8-jarvis-workflow.md) |
+| `hot_sectors.py` | [hot_sectors.md](./hot_sectors.md) | [scanner-impl.md](../implementation/stock/scanner-impl.md) | — |
+| `technical_analysis.py` | [technical_analysis.md](./technical_analysis.md) | [analysis-engines-impl.md](../implementation/stock/analysis-engines-impl.md) | [ch4](../learning/stock/ch4-technical-analysis.md) |
+| `fundamental_analysis.py` | [fundamental_analysis.md](./fundamental_analysis.md) | [analysis-engines-impl.md](../implementation/stock/analysis-engines-impl.md) | [ch2](../learning/stock/ch2-financial-statements.md), [ch3](../learning/stock/ch3-valuation-methods.md) |
+| `sentiment.py` | [sentiment.md](./sentiment.md) | [analysis-engines-impl.md](../implementation/stock/analysis-engines-impl.md) | — |
+| `market_sentiment.py` | [market_sentiment.md](./market_sentiment.md) | [market-signals-impl.md](../implementation/stock/market-signals-impl.md) | — |
+| `black_swan_detector.py` | [black_swan_detector.md](./black_swan_detector.md) | [market-signals-impl.md](../implementation/stock/market-signals-impl.md) | — |
+| `features.py` | [features.md](./features.md) | [ml-pipeline-impl.md](../implementation/stock/ml-pipeline-impl.md) | [ch7](../learning/stock/ch7-quantitative-methods.md) |
+| `model_xgboost.py` | [model_xgboost.md](./model_xgboost.md) | [ml-pipeline-impl.md](../implementation/stock/ml-pipeline-impl.md) | [ch7](../learning/stock/ch7-quantitative-methods.md) |
+| `model_price_predictor.py` | [model_price_predictor.md](./model_price_predictor.md) | [ml-pipeline-impl.md](../implementation/stock/ml-pipeline-impl.md) | — |
+| `model_timing.py` | [model_timing.md](./model_timing.md) | [china-market-impl.md](../implementation/stock/china-market-impl.md) | — |
+| `prediction_tracker.py` | [prediction_tracker.md](./prediction_tracker.md) | [ml-pipeline-impl.md](../implementation/stock/ml-pipeline-impl.md) | — |
+| `backtest_engine.py` | [backtest_engine.md](./backtest_engine.md) | [china-market-impl.md](../implementation/stock/china-market-impl.md) | — |
+| `scanner.py` | [scanner.md](./scanner.md) | [scanner-impl.md](../implementation/stock/scanner-impl.md) | [ch8](../learning/stock/ch8-jarvis-workflow.md) |
+| `long_term_scanner.py` | [long_term_scanner.md](./long_term_scanner.md) | [scanner-impl.md](../implementation/stock/scanner-impl.md) | — |
+| `llm_reasoning.py` | [llm_reasoning.md](./llm_reasoning.md) | [llm-synthesis-impl.md](../implementation/stock/llm-synthesis-impl.md) | — |
+| `report_technical.py` | [report_technical.md](./report_technical.md) | [analysis-engines-impl.md](../implementation/stock/analysis-engines-impl.md) | — |
+| `stock_pdf.py` | [stock_pdf.md](./stock_pdf.md) | [scanner-impl.md](../implementation/stock/scanner-impl.md) | — |
+
+**用途区分**:
+- **本目录** (`stock-modules/`): 每模块深度解析 — 金融理论 + 技术实现 + 参数调优（中文）
+- **`implementation/stock/`**: 按功能分组的架构文档 — 数据流、设计决策、API 接口（英文）
+- **`learning/stock/`**: 教程 — 从零学投资知识，结合 Jarvis 实践（中文）
