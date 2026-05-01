@@ -2528,10 +2528,18 @@ function addSources(sources, parentEl) {
     if (!seen.has(key)) { seen.add(key); unique.push(s); }
   }
   if (unique.length === 0) return;
+  const confColors = {high:'#2e7d32', medium:'#e65100', low:'#c62828'};
+  const confBg = {high:'#e8f5e9', medium:'#fff3e0', low:'#fce4ec'};
+  const topConf = unique[0] && unique[0].confidence || 'medium';
+  const confLabel = {high:'High confidence', medium:'Medium confidence', low:'Low confidence'}[topConf];
   const details = document.createElement('div');
   details.className = 'sources';
-  details.innerHTML = '<details><summary>Sources (' + unique.length + ')</summary>' +
-    unique.map(s => '<div class="src-item">[' + escHtml(s.source) + '] ' + escHtml(s.title) + '</div>').join('') +
+  details.innerHTML = '<details><summary>Sources (' + unique.length + ') &mdash; <span style="color:' + confColors[topConf] + ';background:' + confBg[topConf] + ';padding:1px 6px;border-radius:8px;font-size:0.85em">' + confLabel + '</span></summary>' +
+    unique.map(s => {
+      const c = s.confidence || 'medium';
+      const dot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + confColors[c] + ';margin-right:4px"></span>';
+      return '<div class="src-item">' + dot + '[' + escHtml(s.source) + '] ' + escHtml(s.title) + '</div>';
+    }).join('') +
     '</details>';
   parentEl.insertAdjacentElement('afterend', details);
   chatEl.scrollTop = chatEl.scrollHeight;
@@ -2664,12 +2672,26 @@ async function sendMessage() {
             assistantDiv.appendChild(actions);
           }
           addSources(event.sources, assistantDiv);
+          if (event.suggestions && event.suggestions.length > 0) {
+            const sugEl = document.createElement('div');
+            sugEl.style.cssText = 'margin-top:8px;padding:8px 12px;background:#f0f7ff;border-radius:6px;border:1px solid #bbdefb;font-size:0.85em';
+            sugEl.innerHTML = '<span style="color:#1565c0;font-weight:600">Related topics: </span>' +
+              event.suggestions.map(s => '<a href="#" style="display:inline-block;margin:2px 4px;padding:2px 8px;background:white;border:1px solid #90caf9;border-radius:12px;color:#1565c0;text-decoration:none;font-size:0.9em" onclick="document.getElementById(\'queryInput\').value=this.textContent;document.getElementById(\'sendBtn\').click();return false">' + escHtml(s) + '</a>').join('');
+            assistantDiv.parentElement.insertBefore(sugEl, assistantDiv.nextSibling.nextSibling || null);
+          }
           conversationHistory.push({role: 'assistant', content: fullContent || ''});
           await persistExchange(lastOutgoingUserText, fullContent || '');
         } else if (event.type === 'answer') {
           thinkingEls.forEach(el => el.remove());
           assistantDiv = addMessage('assistant', event.content || '(no response)');
           addSources(event.sources, assistantDiv);
+          if (event.suggestions && event.suggestions.length > 0) {
+            const sugEl = document.createElement('div');
+            sugEl.style.cssText = 'margin-top:8px;padding:8px 12px;background:#f0f7ff;border-radius:6px;border:1px solid #bbdefb;font-size:0.85em';
+            sugEl.innerHTML = '<span style="color:#1565c0;font-weight:600">Related topics: </span>' +
+              event.suggestions.map(s => '<a href="#" style="display:inline-block;margin:2px 4px;padding:2px 8px;background:white;border:1px solid #90caf9;border-radius:12px;color:#1565c0;text-decoration:none;font-size:0.9em" onclick="document.getElementById(\'queryInput\').value=this.textContent;document.getElementById(\'sendBtn\').click();return false">' + escHtml(s) + '</a>').join('');
+            assistantDiv.parentElement.insertBefore(sugEl, assistantDiv.nextSibling.nextSibling || null);
+          }
           conversationHistory.push({role: 'assistant', content: event.content || ''});
           await persistExchange(lastOutgoingUserText, event.content || '');
         } else if (event.type === 'error') {

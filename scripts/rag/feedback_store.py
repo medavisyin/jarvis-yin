@@ -142,10 +142,33 @@ def aggregate_scores() -> dict[str, float]:
         return chunk_scores
 
 
+def record_eval_candidate(query: str, chunk_id: str, relevant: bool) -> None:
+    """Store a user-confirmed relevance judgment for use as future eval data."""
+    with _lock:
+        data = _load_locked()
+        if "eval_candidates" not in data:
+            data["eval_candidates"] = []
+        data["eval_candidates"].append({
+            "query": query,
+            "chunk_id": str(chunk_id),
+            "relevant": relevant,
+            "timestamp": time.time(),
+        })
+        _save_atomic(data)
+
+
+def get_eval_candidates() -> list[dict]:
+    """Return all confirmed eval candidates."""
+    with _lock:
+        data = _load_locked()
+        return data.get("eval_candidates", [])
+
+
 def get_stats() -> dict:
     with _lock:
         data = _load_locked()
         return {
             "total_events": len(data.get("events", [])),
             "scored_chunks": len(data.get("chunk_scores", {})),
+            "eval_candidates": len(data.get("eval_candidates", [])),
         }

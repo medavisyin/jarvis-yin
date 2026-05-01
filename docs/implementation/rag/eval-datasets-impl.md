@@ -1,30 +1,59 @@
 # RAG Evaluation & Dataset Management
 
-> Implementation documentation for the HF `datasets` integration — evaluation harness + data management tools.
+> Implementation documentation for the HF `datasets` integration — evaluation harness + data management tools + user-facing features.
 
 ## What Changes for Users?
 
-**Current state: Nothing changes in the user-facing search workflow.**
+**User-facing features built on the datasets foundation:**
 
-When a user types a question in the Search UI or Agent, the flow remains:
-`query → embed → vector search + BM25 → rerank → display results`
+| Feature | Where | Description |
+|---------|-------|-------------|
+| Confidence Indicator | Search UI + Agent | Colored badge (High/Medium/Low) showing result reliability |
+| Similar Questions | Search UI + Agent | "Try also:" suggestions when confidence is not high |
+| Data Explorer | Search UI (Explorer tab) | Visual overview of all indexed knowledge |
+| Feedback Loop | Search UI | "Was this helpful?" collects eval data from users |
 
-The `datasets` integration is a **developer/maintenance tool**, not a user-facing feature. It answers the question: *"Is our search actually good? Is it getting better or worse over time?"*
+When a user types a question, the enriched flow is:
+`query → embed → vector search + BM25 → rerank → confidence score → display results + confidence badge + suggestions`
 
-### Who benefits and how?
+### Developer tools (backend evaluation harness)
+
+The `datasets` library itself powers a **developer/maintenance tool** that answers: *"Is our search actually good? Is it getting better or worse over time?"*
 
 | Persona | Benefit |
 |---------|---------|
 | **Developer (you)** | Can objectively measure if a code change improves or hurts search quality |
 | **Future automation** | Eval metrics can trigger alerts if quality drops after reindex |
+| **End user (direct)** | Sees confidence badges, gets related suggestions, can provide feedback |
 | **End user (indirect)** | Better search quality over time because improvements are measurable |
 
-### When would users notice a difference?
+## Why Datasets Are Important to RAG Search
 
-Users benefit **indirectly** when you use the eval tool to:
-1. Compare embedding models → switch to one with higher recall → better search results
-2. Tune chunking strategy → measure precision improvement → more relevant chunks shown
-3. Adjust reranking → verify MRR improves → first result is more often correct
+RAG (Retrieval-Augmented Generation) quality depends entirely on **finding the right chunks**. Without measurement, you're flying blind:
+
+### The Problem Without Evaluation
+- You change chunking strategy → did search get better or worse? No way to know.
+- You swap embedding models → is `bge-small` actually better than `MiniLM`? Can't tell.
+- You add 10,000 new chunks → did you dilute the relevance of existing results? Unknown.
+- A user reports "search doesn't find X" → is it one edge case or a systemic issue? Guessing.
+
+### How Datasets Solve This
+The `datasets` library provides the **structured data layer** that makes RAG measurable:
+
+1. **Ground truth creation**: Store known-good query → relevant chunk pairs as a dataset
+2. **Automated evaluation**: Run queries through the pipeline and compute precision/recall/MRR
+3. **A/B comparison**: Run the same eval before and after any change → objective delta
+4. **Feedback capture**: User clicks "helpful" → automatically generates new ground truth
+5. **Data introspection**: See what's indexed, find gaps, identify over-representation
+
+### The Virtuous Cycle
+```
+User searches → Confidence shown → User gives feedback → Eval dataset grows
+    ↑                                                              ↓
+    └──── Developer improves pipeline ←── Eval metrics reveal issues ←──┘
+```
+
+Each user interaction makes the next evaluation more reliable, which leads to better search, which leads to more positive interactions.
 
 ## Overview
 
@@ -111,6 +140,28 @@ python eval_cli.py eval --k 5 --output eval-report.json
 Added to `scripts/rag/requirements-rag.txt`:
 - `datasets>=2.18.0` (HuggingFace Datasets library)
 - Transitive: `pyarrow`, `dill`, `multiprocess`, `xxhash`, `fsspec`
+
+## User-Facing Feature Implementation
+
+### A) Confidence Indicator
+- **Backend**: `search_ui.py` adds `confidence` field per result and `query_confidence` to API response
+- **Agent**: `rag_engine.py` adds `confidence` to each source; `index.html` shows colored dots
+- **Thresholds**: score >= 0.55 = High, >= 0.35 = Medium, < 0.35 = Low
+- **Query-level**: High requires top_score >= 0.55 AND avg_score >= 0.35
+
+### B) Similar Questions
+- **Backend**: `GET /api/suggest?query=...` does low-threshold vector search, returns top-5 unique titles
+- **Frontend**: Appears as clickable chips when query confidence is not "high"
+- **Agent**: `agent_loop.py` includes suggestions in `answer_done` SSE event
+
+### C) Data Explorer
+- **Backend**: `GET /api/explorer-stats` returns source/type/date breakdown + top 20 titles
+- **Frontend**: 4th tab "Explorer" in Search UI with CSS bar charts and timeline
+
+### D) Feedback Loop
+- **Backend**: `POST /api/feedback/helpful` stores eval candidates via `feedback_store.py`
+- **Frontend**: "Did you find what you needed?" prompt after every search result set
+- **Data flow**: User feedback → eval_candidates → can be promoted to eval dataset
 
 ## Connection to ML Integration Plan
 

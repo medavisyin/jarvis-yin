@@ -77,6 +77,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .badge-news { background: #e3f2fd; color: #1565c0; }
   .badge-raw { background: #f3e5f5; color: #7b1fa2; }
   .badge-guide { background: #e8f5e9; color: #2e7d32; }
+  .confidence-badge { display: inline-block; padding: 2px 8px; border-radius: 10px;
+                      font-weight: 600; font-size: 0.75em; margin-left: 8px; vertical-align: middle; }
+  .conf-high { background: #e8f5e9; color: #2e7d32; }
+  .conf-medium { background: #fff3e0; color: #e65100; }
+  .conf-low { background: #fce4ec; color: #c62828; }
+  .query-confidence { padding: 6px 14px; border-radius: 6px; font-size: 0.85em;
+                      margin-bottom: 10px; display: inline-block; }
+  .qconf-high { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+  .qconf-medium { background: #fff3e0; color: #e65100; border: 1px solid #ffcc80; }
+  .qconf-low { background: #fce4ec; color: #c62828; border: 1px solid #ef9a9a; }
   .result .preview { font-size: 0.92em; color: #444; white-space: pre-wrap; }
   .result a { color: #4a90d9; text-decoration: none; }
   .result a:hover { text-decoration: underline; }
@@ -96,7 +106,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <div style="margin-bottom:16px;display:flex;gap:8px">
     <button onclick="showTab('search')" id="tab-search" style="padding:8px 20px;border:2px solid #4a90d9;background:#4a90d9;color:white;border-radius:6px;cursor:pointer;font-size:0.95em">Search</button>
     <button onclick="showTab('library')" id="tab-library" style="padding:8px 20px;border:2px solid #4a90d9;background:white;color:#4a90d9;border-radius:6px;cursor:pointer;font-size:0.95em">Library</button>
-    <button onclick="showTab('analysis')" id="tab-analysis" style="padding:8px 20px;border:2px solid #4a90d9;background:white;color:#4a90d9;border-radius:6px;cursor:pointer;font-size:0.95em">Chunk Analysis</button>
+    <button onclick="showTab('analysis')" id="tab-analysis" style="padding:8px 20px;border:2px solid #4a90d9;background:white;color:#4a90d9;border-radius:6px;cursor:pointer;font-size:0.95em">Knowledge Explorer</button>
   </div>
 
   <div id="search-tab">
@@ -194,23 +204,27 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <div id="project-results-list"></div>
     </div>
     <div style="margin-bottom:16px">
-      <p id="analysis-total" style="font-size:1.1em;font-weight:600;color:#1a1a2e;margin-bottom:16px">Loading...</p>
-      <div style="display:flex;gap:24px;flex-wrap:wrap">
-        <div style="flex:1;min-width:300px">
-          <h3 style="font-size:0.95em;color:#555;margin-bottom:8px">By Source</h3>
-          <table id="analysis-source-table" style="width:100%;border-collapse:collapse;font-size:0.9em">
-            <thead><tr style="border-bottom:2px solid #e0e0e0"><th style="text-align:left;padding:8px 12px">Source</th><th style="text-align:right;padding:8px 12px">Count</th><th style="text-align:right;padding:8px 12px">%</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-        <div style="flex:1;min-width:300px">
-          <h3 style="font-size:0.95em;color:#555;margin-bottom:8px">By Type</h3>
-          <table id="analysis-type-table" style="width:100%;border-collapse:collapse;font-size:0.9em">
-            <thead><tr style="border-bottom:2px solid #e0e0e0"><th style="text-align:left;padding:8px 12px">Type</th><th style="text-align:right;padding:8px 12px">Count</th><th style="text-align:right;padding:8px 12px">%</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
+      <p id="explorer-total" style="font-size:1.1em;font-weight:600;color:#1a1a2e;margin-bottom:4px">Loading...</p>
+      <p style="color:#666;font-size:0.85em;margin-bottom:16px">Visual overview of all indexed knowledge in Jarvis</p>
+    </div>
+    <div style="display:flex;gap:24px;flex-wrap:wrap;margin-bottom:24px">
+      <div style="flex:1;min-width:300px;background:white;padding:16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08)">
+        <h3 style="font-size:0.95em;color:#555;margin-bottom:12px">Knowledge Sources</h3>
+        <div id="explorer-sources"></div>
       </div>
+      <div style="flex:1;min-width:300px;background:white;padding:16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08)">
+        <h3 style="font-size:0.95em;color:#555;margin-bottom:12px">Content Types</h3>
+        <div id="explorer-types"></div>
+      </div>
+    </div>
+    <div style="background:white;padding:16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:24px">
+      <h3 style="font-size:0.95em;color:#555;margin-bottom:12px">Activity Timeline (last 30 dates)</h3>
+      <div id="explorer-timeline" style="display:flex;align-items:flex-end;gap:2px;height:100px;overflow-x:auto"></div>
+      <div id="explorer-timeline-labels" style="display:flex;gap:2px;font-size:0.7em;color:#999;overflow-x:auto;margin-top:4px"></div>
+    </div>
+    <div style="background:white;padding:16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08)">
+      <h3 style="font-size:0.95em;color:#555;margin-bottom:12px">Top Documents (by chunk count)</h3>
+      <div id="explorer-top-titles"></div>
     </div>
   </div>
 </div>
@@ -218,6 +232,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <script>
 function toggleFilters() {
   document.getElementById('filters').classList.toggle('open');
+}
+
+function escHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
 }
 
 document.getElementById('query').addEventListener('keydown', function(e) {
@@ -260,7 +280,7 @@ async function doSearch() {
       const stages = (p.stages || []).map(s => `${s.name}: ${s.count} hits (${s.ms}ms)`).join(' &#8594; ');
       let rewriteHtml = '';
       if (p.rewritten_query) {
-        rewriteHtml = `<div style="margin-bottom:4px"><b>Query Rewrite:</b> <span style="color:#888;text-decoration:line-through">${p.original_query}</span> &#8594; <span style="color:#1a73e8;font-weight:500">${p.rewritten_query}</span></div>`;
+        rewriteHtml = `<div style="margin-bottom:4px"><b>Query Rewrite:</b> <span style="color:#888;text-decoration:line-through">${escHtml(p.original_query)}</span> &#8594; <span style="color:#1a73e8;font-weight:500">${escHtml(p.rewritten_query)}</span></div>`;
       }
       pipeHtml = `<div style="margin-bottom:10px;padding:8px 12px;background:#eef6ff;border:1px solid #c8ddf0;border-radius:6px;font-size:0.82em;color:#456">
         ${rewriteHtml}
@@ -269,8 +289,11 @@ async function doSearch() {
         ${p.feedback_applied ? ' | <span style="color:#2a7">&#10003; Feedback</span>' : ''}
       </div>`;
     }
-    const countHtml = `<div style="margin-bottom:8px;color:#666;font-size:0.9em">${data.total} result${data.total!==1?'s':''} for "<b>${data.query}</b>"</div>`;
-    results.innerHTML = pipeHtml + countHtml + data.results.map((r, i) => {
+    const confLabel = {high:'High confidence', medium:'Medium confidence', low:'Low confidence'}[data.query_confidence] || '';
+    const confClass = {high:'qconf-high', medium:'qconf-medium', low:'qconf-low'}[data.query_confidence] || '';
+    const confHtml = data.query_confidence ? `<div class="query-confidence ${confClass}">${confLabel} &mdash; ${data.query_confidence === 'high' ? 'Results are highly relevant' : data.query_confidence === 'medium' ? 'Results may be partially relevant' : 'Results may not match well, try different keywords'}</div>` : '';
+    const countHtml = `<div style="margin-bottom:8px;color:#666;font-size:0.9em">${data.total} result${data.total!==1?'s':''} for "<b>${escHtml(data.query)}</b>"</div>`;
+    results.innerHTML = pipeHtml + confHtml + countHtml + data.results.map((r, i) => {
       const badgeClass = {news_item:'badge-news', raw_content:'badge-raw', learning_guide:'badge-guide',
         book_chapter:'badge-raw', project_doc:'badge-news', personal_note:'badge-guide', task:'badge-news',
         wiki_page:'badge-raw', code_doc:'badge-raw', ai_integration:'badge-news',
@@ -283,9 +306,10 @@ async function doSearch() {
         rest_endpoint:'REST', project_technology:'TECH', project_readme:'README',
         config_analysis:'CONFIG', project_summary:'SUMMARY', project_identity:'MAVEN',
         project_dependency:'DEPS', project_changelog:'CHANGELOG'}[r.item_type] || r.item_type;
-      const link = r.url ? `<a href="${r.url}" target="_blank">Original</a>` : '';
-      const file = r.filename ? `<span style="color:#888;font-size:0.85em"> &middot; ${r.filename}</span>` : '';
-      const parent = r.parent_title && r.parent_title !== r.title ? `<span style="color:#888;font-size:0.85em"> from <b>${r.parent_title}</b></span>` : '';
+      const safeUrl = r.url && /^https?:\/\//i.test(r.url) ? r.url : '';
+      const link = safeUrl ? `<a href="${escHtml(safeUrl)}" target="_blank">Original</a>` : '';
+      const file = r.filename ? `<span style="color:#888;font-size:0.85em"> &middot; ${escHtml(r.filename)}</span>` : '';
+      const parent = r.parent_title && r.parent_title !== r.title ? `<span style="color:#888;font-size:0.85em"> from <b>${escHtml(r.parent_title)}</b></span>` : '';
       const preview = r.text.length > 200 ? r.text.substring(0, 200) + '...' : r.text;
       const fullId = `full-${i}`;
       const scoreInfo = [];
@@ -293,14 +317,15 @@ async function doSearch() {
       if (r.rerank_score !== undefined) scoreInfo.push(`rerank:${r.rerank_score.toFixed(3)}`);
       if (r.feedback_score !== undefined && r.feedback_score !== 0.5) scoreInfo.push(`fb:${r.feedback_score.toFixed(2)}`);
       const scoreDetail = scoreInfo.length ? `<span style="color:#999;font-size:0.8em;margin-left:6px">(${scoreInfo.join(', ')})</span>` : '';
+      const confBadge = r.confidence ? `<span class="confidence-badge conf-${r.confidence}">${r.confidence.toUpperCase()}</span>` : '';
       const chunkId = r.id || '';
       return `<div class="result">
-        <h3>${i+1}. ${r.title} <span class="score">${r.score.toFixed(3)}</span>${scoreDetail}</h3>
+        <h3>${i+1}. ${escHtml(r.title)} <span class="score">${r.score.toFixed(3)}</span>${confBadge}${scoreDetail}</h3>
         <div class="meta">
           <span class="badge ${badgeClass}">${badgeText}</span>
-          ${r.date} &middot; ${r.source} &middot; ${r.difficulty} ${link} ${file} ${parent}
+          ${escHtml(r.date)} &middot; ${escHtml(r.source)} &middot; ${escHtml(r.difficulty)} ${link} ${file} ${parent}
         </div>
-        <div class="preview">${preview}</div>
+        <div class="preview">${escHtml(preview)}</div>
         <div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <a href="#" onclick="toggleChunk('${fullId}');return false" style="color:#4a90d9;font-size:0.9em" id="toggle-${fullId}">Show chunk</a>
           ${r.filename ? `<a href="#" onclick="loadDocument('${r.filename.replace(/'/g,"\\'")}','${(r.parent_title||'').replace(/'/g,"\\'")}','doc-${fullId}');return false" style="color:#4a90d9;font-size:0.9em;margin-left:8px">View full document</a>` : ''}
@@ -313,6 +338,39 @@ async function doSearch() {
         <div id="doc-${fullId}" style="display:none;margin-top:8px"></div>
       </div>`;
     }).join('');
+
+    // Fetch suggestions when confidence is not high
+    if (data.query_confidence && data.query_confidence !== 'high') {
+      fetch('/api/suggest?query=' + encodeURIComponent(data.query))
+        .then(r => r.json())
+        .then(sg => {
+          if (sg.suggestions && sg.suggestions.length > 0) {
+            const sugDiv = document.createElement('div');
+            sugDiv.style.cssText = 'margin-top:12px;padding:12px 16px;background:#f0f7ff;border-radius:8px;border:1px solid #bbdefb';
+            sugDiv.innerHTML = '<div style="font-size:0.85em;color:#1565c0;font-weight:600;margin-bottom:6px">Try also:</div>';
+            sg.suggestions.forEach(function(s) {
+              var a = document.createElement('a');
+              a.href = '#';
+              a.style.cssText = 'display:inline-block;margin:2px 6px 2px 0;padding:3px 10px;background:white;border:1px solid #90caf9;border-radius:14px;font-size:0.85em;color:#1565c0;text-decoration:none';
+              a.textContent = s.text;
+              a.onclick = function(e) { e.preventDefault(); document.getElementById('query').value = this.textContent; doSearch(); };
+              sugDiv.appendChild(a);
+            });
+            results.appendChild(sugDiv);
+          }
+        }).catch(() => {});
+    }
+
+    // "Was this helpful?" feedback bar
+    if (data.results && data.results.length > 0) {
+      window._lastSearchChunkIds = data.results.map(r => r.id).filter(Boolean);
+      const fbDiv = document.createElement('div');
+      fbDiv.style.cssText = 'margin-top:16px;padding:12px 16px;background:white;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);display:flex;align-items:center;gap:12px;border:1px solid #e0e0e0';
+      fbDiv.innerHTML = '<span style="font-size:0.9em;color:#555">Did you find what you needed?</span>' +
+        '<button onclick="submitHelpful(true,this.parentElement)" style="padding:4px 14px;background:#e8f5e9;border:1px solid #a5d6a7;border-radius:6px;color:#2e7d32;cursor:pointer;font-size:0.85em">Yes, helpful</button>' +
+        '<button onclick="submitHelpful(false,this.parentElement)" style="padding:4px 14px;background:#fce4ec;border:1px solid #ef9a9a;border-radius:6px;color:#c62828;cursor:pointer;font-size:0.85em">Not quite</button>';
+      results.appendChild(fbDiv);
+    }
   } catch (err) {
     loading.style.display = 'none';
     results.innerHTML = '<div class="no-results">Error: ' + err.message + '</div>';
@@ -337,6 +395,16 @@ function sendFeedback(chunkId, position, action, btn) {
   }).then(function(){ btn.style.opacity='0.5'; btn.disabled=true; });
 }
 
+function submitHelpful(helpful, container) {
+  const ids = window._lastSearchChunkIds || [];
+  fetch('/api/feedback/helpful', {method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({query:window._lastQuery||'', helpful:helpful, chunk_ids:ids.slice(0,5)})
+  });
+  container.innerHTML = helpful
+    ? '<span style="color:#2e7d32;font-size:0.9em">Thanks! Your feedback improves future results.</span>'
+    : '<span style="color:#e65100;font-size:0.9em">Thanks! Try rephrasing or check the suggestions above.</span>';
+}
+
 function showTab(tab) {
   document.getElementById('search-tab').style.display = tab === 'search' ? 'block' : 'none';
   document.getElementById('library-tab').style.display = tab === 'library' ? 'block' : 'none';
@@ -347,38 +415,10 @@ function showTab(tab) {
     btn.style.color = t === tab ? 'white' : '#4a90d9';
   });
   if (tab === 'library') loadLibrary();
-  if (tab === 'analysis') loadAnalysis();
+  if (tab === 'analysis') { loadAnalysis(); loadExplorer(); }
 }
 
-async function loadAnalysis() {
-  var totalEl = document.getElementById('analysis-total');
-  totalEl.textContent = 'Loading...';
-  document.querySelector('#analysis-source-table tbody').innerHTML = '';
-  document.querySelector('#analysis-type-table tbody').innerHTML = '';
-  try {
-    var resp = await fetch('/api/chunk-analysis');
-    var data = await resp.json();
-    totalEl.textContent = 'Total chunks: ' + data.total.toLocaleString();
-    fillAnalysisTable('analysis-source-table', data.by_source, data.total);
-    fillAnalysisTable('analysis-type-table', data.by_type, data.total);
-  } catch (err) {
-    totalEl.textContent = 'Error: ' + err.message;
-  }
-}
-
-function fillAnalysisTable(tableId, obj, total) {
-  var tb = document.querySelector('#' + tableId + ' tbody');
-  if (!tb) return;
-  var entries = Object.entries(obj || {}).sort(function(a,b) { return b[1] - a[1]; });
-  entries.forEach(function(e) {
-    var pct = total ? (100 * e[1] / total).toFixed(1) : '0';
-    var bar = '<div style="background:#e3f2fd;border-radius:3px;height:6px;margin-top:2px"><div style="background:#4a90d9;border-radius:3px;height:6px;width:' + pct + '%"></div></div>';
-    var tr = document.createElement('tr');
-    tr.style.borderBottom = '1px solid #f0f0f0';
-    tr.innerHTML = '<td style="padding:8px 12px">' + e[0] + bar + '</td><td style="text-align:right;padding:8px 12px;font-weight:600">' + e[1].toLocaleString() + '</td><td style="text-align:right;padding:8px 12px;color:#666">' + pct + '%</td>';
-    tb.appendChild(tr);
-  });
-}
+function loadAnalysis() {}
 
 async function loadLibrary() {
   const typeFilter = document.getElementById('lib-type').value;
@@ -702,6 +742,57 @@ async function loadDocument(filename, parentTitle, targetId) {
     el.innerHTML = '<div style="color:red;padding:8px">Error: ' + err.message + '</div>';
   }
 }
+
+async function loadExplorer() {
+  const totalEl = document.getElementById('explorer-total');
+  totalEl.textContent = 'Loading...';
+  try {
+    const resp = await fetch('/api/explorer-stats');
+    const data = await resp.json();
+    totalEl.textContent = data.total + ' chunks indexed';
+
+    const barColors = ['#4a90d9','#2e7d32','#7b1fa2','#e65100','#c62828','#1565c0','#00838f','#4527a0'];
+
+    // Sources
+    const srcEl = document.getElementById('explorer-sources');
+    const srcEntries = Object.entries(data.by_source).sort((a,b) => b[1] - a[1]);
+    const maxSrc = srcEntries[0] ? srcEntries[0][1] : 1;
+    srcEl.innerHTML = srcEntries.map((e, i) => {
+      const pct = Math.round(e[1] / data.total * 100);
+      const w = Math.max(Math.round(e[1] / maxSrc * 100), 2);
+      return '<div style="margin-bottom:6px"><div style="display:flex;justify-content:space-between;font-size:0.85em;margin-bottom:2px"><span>' + escHtml(e[0]) + '</span><span style="color:#666">' + e[1] + ' (' + pct + '%)</span></div><div style="height:8px;background:#eee;border-radius:4px;overflow:hidden"><div style="height:100%;width:' + w + '%;background:' + barColors[i % barColors.length] + ';border-radius:4px"></div></div></div>';
+    }).join('');
+
+    // Types
+    const typeEl = document.getElementById('explorer-types');
+    const typeEntries = Object.entries(data.by_type).sort((a,b) => b[1] - a[1]);
+    const maxType = typeEntries[0] ? typeEntries[0][1] : 1;
+    typeEl.innerHTML = typeEntries.map((e, i) => {
+      const pct = Math.round(e[1] / data.total * 100);
+      const w = Math.max(Math.round(e[1] / maxType * 100), 2);
+      return '<div style="margin-bottom:6px"><div style="display:flex;justify-content:space-between;font-size:0.85em;margin-bottom:2px"><span>' + escHtml(e[0]) + '</span><span style="color:#666">' + e[1] + ' (' + pct + '%)</span></div><div style="height:8px;background:#eee;border-radius:4px;overflow:hidden"><div style="height:100%;width:' + w + '%;background:' + barColors[(i+3) % barColors.length] + ';border-radius:4px"></div></div></div>';
+    }).join('');
+
+    // Timeline
+    const timeEl = document.getElementById('explorer-timeline');
+    const labelEl = document.getElementById('explorer-timeline-labels');
+    const dateEntries = Object.entries(data.by_date).sort((a,b) => a[0].localeCompare(b[0]));
+    const maxDate = Math.max(...dateEntries.map(e => e[1]), 1);
+    timeEl.innerHTML = dateEntries.map(e => {
+      const h = Math.max(Math.round(e[1] / maxDate * 90), 3);
+      return '<div title="' + e[0] + ': ' + e[1] + ' chunks" style="flex:1;min-width:12px;height:' + h + 'px;background:#4a90d9;border-radius:2px 2px 0 0;cursor:pointer"></div>';
+    }).join('');
+    labelEl.innerHTML = dateEntries.map(e => '<div style="flex:1;min-width:12px;text-align:center;white-space:nowrap;overflow:hidden">' + e[0].slice(5) + '</div>').join('');
+
+    // Top titles
+    const titlesEl = document.getElementById('explorer-top-titles');
+    titlesEl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:0.88em"><thead><tr style="border-bottom:2px solid #e0e0e0"><th style="text-align:left;padding:6px 10px">Title</th><th style="text-align:right;padding:6px 10px">Chunks</th></tr></thead><tbody>' +
+      data.top_titles.map(t => '<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:6px 10px;max-width:400px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml(t.title) + '</td><td style="text-align:right;padding:6px 10px;color:#4a90d9;font-weight:600">' + t.count + '</td></tr>').join('') +
+      '</tbody></table>';
+  } catch (err) {
+    totalEl.textContent = 'Error loading explorer: ' + err.message;
+  }
+}
 </script>
 </body>
 </html>"""
@@ -958,8 +1049,30 @@ def api_search():
 
     pipeline_info["total_ms"] = int((_time.time() - t0) * 1000)
     results = vector_results[:top_k]
+
+    # --- Confidence scoring ---
+    for r in results:
+        s = r.get("score", 0)
+        if s >= 0.55:
+            r["confidence"] = "high"
+        elif s >= 0.35:
+            r["confidence"] = "medium"
+        else:
+            r["confidence"] = "low"
+
+    scores = [r.get("score", 0) for r in results]
+    top_score = scores[0] if scores else 0
+    avg_score = sum(scores) / len(scores) if scores else 0
+    if top_score >= 0.55 and avg_score >= 0.35:
+        query_confidence = "high"
+    elif top_score >= 0.35:
+        query_confidence = "medium"
+    else:
+        query_confidence = "low"
+
     return jsonify({"results": results, "query": query, "total": len(results),
-                    "pipeline": pipeline_info})
+                    "pipeline": pipeline_info,
+                    "query_confidence": query_confidence})
 
 
 @app.route("/api/feedback", methods=["POST"])
@@ -977,6 +1090,30 @@ def api_feedback():
         return jsonify({"recorded": True})
     except ImportError:
         return jsonify({"recorded": False, "error": "feedback_store not available"})
+
+
+@app.route("/api/feedback/helpful", methods=["POST"])
+def api_feedback_helpful():
+    """Record explicit 'was this helpful?' feedback for a search query."""
+    try:
+        from feedback_store import record_eval_candidate, record_event
+        data = request.get_json() or {}
+        query = data.get("query", "")
+        helpful = data.get("helpful", True)
+        chunk_ids = data.get("chunk_ids", [])
+        if not isinstance(chunk_ids, list):
+            return jsonify({"recorded": False, "error": "chunk_ids must be a list"}), 400
+
+        for cid in chunk_ids[:5]:
+            record_eval_candidate(query, str(cid), helpful)
+            action = "view_doc" if helpful else "reformulate"
+            record_event(query, str(cid), action, position=0)
+
+        return jsonify({"recorded": True, "count": len(chunk_ids[:5])})
+    except ImportError:
+        return jsonify({"recorded": False, "error": "feedback_store not available"})
+    except Exception as e:
+        return jsonify({"recorded": False, "error": str(e)}), 500
 
 
 @app.route("/api/document")
@@ -1048,6 +1185,95 @@ def api_chunk_analysis():
             break
         offset = next_offset
     return jsonify({"total": total, "by_source": by_source, "by_type": by_type})
+
+
+@app.route("/api/suggest")
+def api_suggest():
+    """Suggest similar/related queries based on nearby chunk titles."""
+    query = request.args.get("query", "").strip()
+    if not query:
+        return jsonify({"suggestions": []})
+
+    try:
+        model = _get_model()
+        embedding = model.encode(query).tolist()
+        client = _get_client()
+
+        response = client.query_points(
+            collection_name=COLLECTION,
+            query=embedding,
+            limit=20,
+            score_threshold=0.15,
+        )
+        points = response.points if hasattr(response, "points") else response
+
+        seen = set()
+        suggestions = []
+        query_lower = query.lower()
+        for p in points:
+            pl = p.payload or {}
+            title = str(pl.get("title") or "")
+            if not title or title.lower() == query_lower:
+                continue
+            key = title.lower()[:60]
+            if key in seen:
+                continue
+            seen.add(key)
+            suggestions.append({
+                "text": title,
+                "source": str(pl.get("source") or ""),
+                "item_type": str(pl.get("item_type") or ""),
+            })
+            if len(suggestions) >= 5:
+                break
+
+        return jsonify({"suggestions": suggestions})
+    except Exception:
+        return jsonify({"suggestions": []})
+
+
+@app.route("/api/explorer-stats")
+def api_explorer_stats():
+    """Rich stats for Data Explorer: counts, date distribution, top titles."""
+    client = _get_client()
+    by_source = {}
+    by_type = {}
+    by_date = {}
+    top_titles = {}
+    total = 0
+    offset = None
+    while True:
+        result = client.scroll(
+            collection_name=COLLECTION,
+            limit=500,
+            offset=offset,
+            with_payload=True,
+        )
+        points, next_offset = result
+        for p in points:
+            total += 1
+            pl = p.payload or {}
+            src = str(pl.get("source") or "(unknown)")
+            it = str(pl.get("item_type") or "(unknown)")
+            dt = str(pl.get("date") or "unknown")[:10]
+            title = str(pl.get("title") or "(untitled)")
+            by_source[src] = by_source.get(src, 0) + 1
+            by_type[it] = by_type.get(it, 0) + 1
+            by_date[dt] = by_date.get(dt, 0) + 1
+            top_titles[title] = top_titles.get(title, 0) + 1
+        if next_offset is None:
+            break
+        offset = next_offset
+
+    sorted_dates = sorted(by_date.items(), key=lambda x: x[0], reverse=True)[:30]
+    sorted_titles = sorted(top_titles.items(), key=lambda x: -x[1])[:20]
+    return jsonify({
+        "total": total,
+        "by_source": by_source,
+        "by_type": by_type,
+        "by_date": dict(sorted_dates),
+        "top_titles": [{"title": t, "count": c} for t, c in sorted_titles],
+    })
 
 
 @app.route("/api/library")

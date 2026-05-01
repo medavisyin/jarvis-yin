@@ -322,7 +322,14 @@ def run_agent(user_query: str, image_b64: str | None = None,
                 tool_calls.extend(c.tool_calls)
 
         if not tool_calls:
-            yield {"type": "answer_done", "sources": collected_sources}
+            suggestions = []
+            if collected_sources:
+                confs = [s.get("confidence", "medium") for s in collected_sources]
+                if confs and confs[0] != "high":
+                    suggestions = [s["title"] for s in collected_sources
+                                   if s.get("title") and s["title"] != user_query][:4]
+            yield {"type": "answer_done", "sources": collected_sources,
+                   "suggestions": suggestions}
             return
 
         messages.append({"role": "assistant", "content": full_content,

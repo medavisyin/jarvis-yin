@@ -36,6 +36,8 @@ Then come back for Ch 3 (model selection) when you want to compare or swap model
 | Chunk embeddings | `SentenceTransformer.encode()` at index time | `all-MiniLM-L6-v2` |
 | Query embeddings | Same model at search time | `all-MiniLM-L6-v2` |
 | Cross-encoder reranking | `CrossEncoder` for precision reranking | `ms-marco-MiniLM-L-6-v2` |
+| Confidence scoring | Score-based per-result classification | Thresholds on cosine similarity |
+| Similar Questions | Low-threshold vector search for related titles | `all-MiniLM-L6-v2` via `/api/suggest` |
 | RAG evaluation & data management | `datasets` library for metrics + browsing | `eval_cli.py` |
 
 All models run **locally** with `HF_HUB_OFFLINE=1` — no API calls to HF servers at runtime.

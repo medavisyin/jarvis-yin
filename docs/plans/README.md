@@ -13,6 +13,7 @@ Status overview for all planning documents in this folder.
 | [project-intelligence](2026-04-28-project-intelligence.md) | Active | Maven deps, project graph, knowledge graph tool | `implementation/rag/agent-impl.md` |
 | [plan-ml-integration](plan-ml-integration.md) | Partial | ML feedback loop — tasks 1-2 done, 3-5 pending | `implementation/rag/search-ui-impl.md` |
 | [hf-datasets-integration](2026-05-01-hf-datasets-integration.md) | Done | HF datasets lib for RAG evaluation + data mgmt | `implementation/rag/eval-datasets-impl.md` |
+| [datasets-user-features](2026-05-01-datasets-user-features.md) | Done | Confidence, suggestions, explorer, feedback loop | `implementation/rag/eval-datasets-impl.md` |
 
 ## Archived (Completed)
 

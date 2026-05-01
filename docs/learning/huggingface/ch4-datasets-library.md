@@ -1,15 +1,19 @@
 # Chapter 5: HuggingFace Datasets Library
 
-> How Jarvis uses the `datasets` library for RAG evaluation and data management.
+> How Jarvis uses the `datasets` library for RAG evaluation, data management, and user-facing features.
 
 ## Does This Change the User Experience?
 
-**No — this is a developer tool, not a user-facing feature.**
+**Yes — both directly and indirectly!**
 
-When you search in the Jarvis UI, the query still flows through:
-`embed → vector search → BM25 hybrid → rerank → display`
+### Direct user-facing changes:
+- **Confidence badge**: Each search result shows High/Medium/Low confidence
+- **"Try also:" suggestions**: When confidence is low, related topics are suggested
+- **Data Explorer**: New "Explorer" tab shows what knowledge is indexed
+- **"Was this helpful?"**: Collects feedback that improves search over time
 
-The `datasets` integration helps **you as the developer** answer:
+### Developer tools (indirect benefit):
+The `datasets` integration also helps **you as the developer** answer:
 - "Is my search actually returning good results?"
 - "Did my latest change make search better or worse?"
 - "Which types of queries work well? Which don't?"
@@ -25,15 +29,31 @@ The HuggingFace `datasets` library provides:
 - **Pandas integration** — `ds.to_pandas()` for analysis
 - **Streaming** — handle datasets larger than memory
 
+## Why Datasets Are Critical for RAG Search Quality
+
+A RAG system is only as good as its retrieval. Without measurement:
+- You can't tell if a model swap improved results or made them worse
+- You can't detect when new content dilutes search relevance
+- You can't objectively compare chunking strategies
+- User-reported "bad search" stays anecdotal rather than quantifiable
+
+The `datasets` library provides the **scientific method** for RAG:
+```
+Hypothesis: "Changing chunk size from 200→400 tokens improves precision"
+Test: Run eval dataset before/after → measure P@5, Recall@5, MRR
+Result: P@5 went from 0.72 to 0.81 ✓ (or 0.65 ✗ → revert)
+```
+
 ## Why Jarvis Uses It
 
 Jarvis stores all RAG chunks in `.rag-store.json` — a flat JSON file with vectors and payloads.
 The `datasets` library gives us structured access to this data:
 
-1. **Evaluation** — measure retrieval quality over time
+1. **Evaluation** — measure retrieval quality over time (precision, recall, MRR)
 2. **Inspection** — browse, filter, search chunks without loading vectors
 3. **Export** — convert to CSV, pandas, or Arrow for analysis
 4. **Versioning** — save snapshots of the eval dataset at different points
+5. **Feedback integration** — user "was this helpful?" responses become eval ground truth
 
 ## Key Concepts
 

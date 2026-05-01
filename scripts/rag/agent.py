@@ -846,6 +846,31 @@ def api_feedback():
         return jsonify({"recorded": False, "error": "feedback_store not available"})
 
 
+@app.route("/api/feedback/helpful", methods=["POST"])
+def api_feedback_helpful():
+    """Record explicit relevance feedback for eval dataset generation."""
+    try:
+        rag_dir = os.path.dirname(os.path.abspath(__file__))
+        if rag_dir not in sys.path:
+            sys.path.insert(0, rag_dir)
+        from feedback_store import record_eval_candidate, record_event
+        data = request.get_json() or {}
+        query = data.get("query", "")
+        helpful = data.get("helpful", True)
+        chunk_ids = data.get("chunk_ids", [])
+        if not isinstance(chunk_ids, list):
+            return jsonify({"recorded": False, "error": "chunk_ids must be a list"}), 400
+        for cid in chunk_ids[:5]:
+            record_eval_candidate(query, str(cid), helpful)
+            action = "view_doc" if helpful else "reformulate"
+            record_event(query, str(cid), action, position=0)
+        return jsonify({"recorded": True, "count": len(chunk_ids[:5])})
+    except ImportError:
+        return jsonify({"recorded": False, "error": "feedback_store not available"})
+    except Exception as e:
+        return jsonify({"recorded": False, "error": str(e)}), 500
+
+
 # ---------------------------------------------------------------------------
 # Memory API routes
 # ---------------------------------------------------------------------------

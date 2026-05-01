@@ -333,8 +333,10 @@ def auto_rag_search(user_query: str, q_lower: str) -> tuple[str, list[dict]]:
     lines = []
     for r in all_results[:max_results]:
         lines.append(f"- [{r['source']}] {r['title']} ({r['date']}): {r['text'][:150]}")
+        s = r.get("score", 0)
+        conf = "high" if s >= 0.55 else ("medium" if s >= 0.35 else "low")
         sources.append({"source": r["source"], "title": r["title"],
-                         "item_type": r.get("item_type", "")})
+                         "item_type": r.get("item_type", ""), "confidence": conf})
     context = (
         "\n\n--- Relevant context from knowledge base ---\n"
         + "\n".join(lines)
