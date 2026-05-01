@@ -62,6 +62,7 @@ docs/implementation/
 │   ├── reindex-all-impl.md          # reindex_all.py orchestration
 │   ├── search-ui-impl.md            # search_ui.py
 │   ├── agent-impl.md                # agent.py
+│   ├── eval-datasets-impl.md        # RAG evaluation & HF datasets integration
 │   ├── learning-features-impl.md    # Learning modes (AI, English, AWS Cert, Notes)
 │   └── global-settings-impl.md     # Global settings UI + audio language
 ├── briefing-pipeline/               # (Subsystem view) Briefing pipeline
@@ -156,6 +157,7 @@ docs/implementation/
 | [reindex-all-impl.md](./rag/reindex-all-impl.md) | How `reindex_all.py` orchestrates full or partial reindexing. |
 | [search-ui-impl.md](./rag/search-ui-impl.md) | Implementation of `search_ui.py` (embedding, Qdrant search, Flask UI). |
 | [agent-impl.md](./rag/agent-impl.md) | Implementation of `agent.py` — thin Flask orchestrator (~1,405 lines) with routes extracted to Blueprints (`routes/`), query pipeline (`pipeline.py`), conversation memory (`memory/`), intent classification, tool dispatch. |
+| [eval-datasets-impl.md](./rag/eval-datasets-impl.md) | RAG evaluation & data management — HF `datasets` integration, precision/recall/MRR metrics, CLI tools. |
 | [learning-features-impl.md](./rag/learning-features-impl.md) | Learning modes: AI Learning, Tech English, Casual English, AWS AIF-C01 Cert, Notes system. |
 | [global-settings-impl.md](./rag/global-settings-impl.md) | Global settings popup: audio language selection for AI Briefing, World News, Chinese News, Knowledge audio. |
 

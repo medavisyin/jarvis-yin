@@ -16,6 +16,7 @@ Follow the chapters in order. Each builds on the previous one.
 | 2 | [Tokenization Deep Dive](ch2-tokenization.md) | Why tokenization matters, BPE / WordPiece / SentencePiece, special tokens, padding, truncation, attention mask |
 | 3 | [Model Selection & HF Hub](ch3-model-selection.md) | Task types, model cards, MTEB leaderboard, size vs quality, bi-encoder vs cross-encoder, licenses |
 | 4 | [Sentence Transformers](sentence-transformers.md) | Embedding models, `encode`, cosine similarity, batch encoding, offline mode — *Jarvis's core HF usage* |
+| 5 | [Datasets Library](ch4-datasets-library.md) | HF `datasets` for RAG evaluation, data management, metrics (precision, recall, MRR), CLI tools |
 | — | [Concepts Reference](#beginner-guide-what-are-transformers) | Quick reference below: Transformers architecture, `pipeline` / `AutoTokenizer` / `AutoModel` layers |
 
 ## Beginner Path (Start Here)
@@ -30,11 +31,12 @@ Then come back for Ch 3 (model selection) when you want to compare or swap model
 
 ## How Jarvis Uses Hugging Face
 
-| Component | HF Usage | Model |
-|-----------|----------|-------|
+| Component | HF Usage | Model / Library |
+|-----------|----------|-----------------|
 | Chunk embeddings | `SentenceTransformer.encode()` at index time | `all-MiniLM-L6-v2` |
 | Query embeddings | Same model at search time | `all-MiniLM-L6-v2` |
 | Cross-encoder reranking | `CrossEncoder` for precision reranking | `ms-marco-MiniLM-L-6-v2` |
+| RAG evaluation & data management | `datasets` library for metrics + browsing | `eval_cli.py` |
 
 All models run **locally** with `HF_HUB_OFFLINE=1` — no API calls to HF servers at runtime.
 

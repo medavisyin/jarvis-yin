@@ -1,0 +1,66 @@
+[
+  {
+    "query": "What is RAG and how does it work?",
+    "relevant_ids": [],
+    "answer": "Retrieval-Augmented Generation combines a retrieval system with an LLM to ground responses in factual documents.",
+    "category": "concept",
+    "difficulty": "easy",
+    "notes": "Populate relevant_ids after indexing by running seed script"
+  },
+  {
+    "query": "How does hybrid search combine vector and BM25?",
+    "relevant_ids": [],
+    "answer": "Uses Reciprocal Rank Fusion to merge rankings from dense vector similarity and sparse BM25 keyword matching.",
+    "category": "technical",
+    "difficulty": "medium",
+    "notes": "Populate relevant_ids after indexing"
+  },
+  {
+    "query": "What embedding model does Jarvis use?",
+    "relevant_ids": [],
+    "answer": "all-MiniLM-L6-v2 from sentence-transformers, producing 384-dimensional vectors.",
+    "category": "system",
+    "difficulty": "easy",
+    "notes": "Populate relevant_ids after indexing"
+  },
+  {
+    "query": "How is the cross-encoder reranker used?",
+    "relevant_ids": [],
+    "answer": "cross-encoder/ms-marco-MiniLM-L-6-v2 scores query-document pairs after initial retrieval to reorder results by relevance.",
+    "category": "technical",
+    "difficulty": "medium",
+    "notes": "Populate relevant_ids after indexing"
+  },
+  {
+    "query": "What data sources are indexed in Jarvis?",
+    "relevant_ids": [],
+    "answer": "Daily AI briefings, codebase projects, Confluence pages, and custom knowledge files.",
+    "category": "system",
+    "difficulty": "easy",
+    "notes": "Populate relevant_ids after indexing"
+  },
+  {
+    "query": "How does the feedback system improve search results?",
+    "relevant_ids": [],
+    "answer": "User interactions (expand, copy, view) generate implicit feedback signals that are aggregated into chunk quality scores, blended with retrieval scores.",
+    "category": "technical",
+    "difficulty": "medium",
+    "notes": "Populate relevant_ids after indexing"
+  },
+  {
+    "query": "What is the chunking strategy for PDF documents?",
+    "relevant_ids": [],
+    "answer": "PDFs are split by section headings, with each section truncated to ~1500 chars. Markdown files use paragraph-merge chunking with 100-char overlap.",
+    "category": "technical",
+    "difficulty": "hard",
+    "notes": "Populate relevant_ids after indexing"
+  },
+  {
+    "query": "How does Jarvis handle offline model loading?",
+    "relevant_ids": [],
+    "answer": "Sets HF_HUB_OFFLINE=1 and TRANSFORMERS_OFFLINE=1 before loading models, requiring pre-cached Hub artifacts.",
+    "category": "system",
+    "difficulty": "medium",
+    "notes": "Populate relevant_ids after indexing"
+  }
+]
