@@ -2,7 +2,7 @@
 
 ## Overview
 
-The scanner performs a multi-layer full-market A-share scan: fetch all stocks, filter by quantitative criteria, analyze technicals/fundamentals/sentiment/fund-flow, then use LLM (DeepSeek or local) to judge buyability. Produces TOP 5 AI recommendations with buy-price ranges, strategies, and comprehensive multi-dimensional reports.
+The scanner performs a multi-layer full-market A-share scan: fetch all stocks, filter by quantitative criteria, **rank Layer 1 candidates** (primary: cross-sectional XGBoost; fallback: per-stock technicals/fundamentals/sentiment/fund-flow rules), then use LLM (DeepSeek or local) to judge buyability. Produces TOP 5 AI recommendations with buy-price ranges, strategies, and comprehensive multi-dimensional reports.
 
 ---
 
@@ -14,8 +14,11 @@ start_scan(use_deepseek=False)  →  _run_scan()  [background thread]
        ├── hot_sectors.get_hot_stock_set()
        ├── _layer1_quick_filter(hot_stocks)    → (candidates[], market_total)
        ├── _execute_layer2_and_3(progress, candidates)
-       │     ├── Layer 2: _layer2_analyze_batch(batch)  × N batches
-       │     ├── Layer 3: _layer3_llm_rank(all_l2)
+       │     ├── Layer 2 (primary): _layer2_xgb_cross_sectional(candidates)
+       │     │     └── model_cross_sectional.cross_sectional_rank()
+       │     │          └─ on failure / empty → _layer2_rule_scoring_all()
+       │     │               └── batches: _layer2_rule_scoring(batch) × N
+       │     ├── Layer 3: _layer3_llm_rank(all_l2)   [sorts by score_l2]
        │     │     ├── if DeepSeek: TOP 10 → _layer3_deepseek_judge()
        │     │     └── remaining → _layer3_local_judge()
        │     ├── Phase 4: _run_comprehensive_for_picks()
@@ -23,6 +26,8 @@ start_scan(use_deepseek=False)  →  _run_scan()  [background thread]
        │     └── _save_results + _save_history_entry
        └── _save_progress at each stage
 ```
+
+**Layer 2 path:** Cross-sectional XGBoost ranking runs **once per scan** on the full Layer 1 candidate set. If import fails, training fails, or the model returns no rows, the scanner sets `progress["layer2_mode"]` to `rule_fallback` and replays the original **per-batch rule scoring** (`_layer2_rule_scoring_all` → `_layer2_rule_scoring` in chunks of `LAYER2_BATCH`).
 
 ---
 
@@ -86,7 +91,36 @@ Sorted descending, capped at `LAYER2_CANDIDATE_CAP` (100).
 
 ---
 
-## Layer 2: Batch Analysis (`_layer2_analyze_batch`)
+## Layer 2: Cross-Sectional Ranking + Rule Fallback
+
+Layer 2 selects and enriches candidates passed to Layer 3. The **primary** path ranks the entire Layer 1 set with a one-shot XGBoost `rank:pairwise` model (`model_cross_sectional.py`). The **fallback** path preserves the earlier rule-based pipeline (technicals, fundamentals, sentiment, fund flow) in batches.
+
+### `_layer2_xgb_cross_sectional(candidates, progress)`
+
+- Imports `cross_sectional_rank` from `model_cross_sectional` and runs it on the Layer 1 list (with `_stop_event` for cooperative cancellation).
+- On success, sets `progress["layer2_mode"] = "xgb_cross_sectional"` and returns the ranked subset produced after **industry neutralization** (see ML pipeline doc). Each item includes ranking fields (below).
+- **Fallback triggers:** `ImportError` for the module; any exception from `cross_sectional_rank`; or an **empty** result (e.g. insufficient valid histories, training failure inside the model). In those cases, logs and sets `progress["layer2_mode"] = "rule_fallback"`, then delegates to `_layer2_rule_scoring_all`.
+
+### `_layer2_rule_scoring_all` / `_layer2_rule_scoring(batch, progress)`
+
+- **`_layer2_rule_scoring_all`:** Iterates candidates in slices of `LAYER2_BATCH` (20), calling `_layer2_rule_scoring` each time until all are scored or the scan is stopped.
+- **`_layer2_rule_scoring`:** Original per-symbol Layer 2: OHLCV, technical signals, fundamentals, weighted news sentiment, and smart-money fund-flow scoring; combines with Layer 1 score and valuation bonus into **`score_l2`** (rule-based composite, not XGBoost).
+
+### Layer 2 output fields (XGBoost path)
+
+When the cross-sectional path succeeds, each candidate row includes:
+
+| Field | Meaning |
+|-------|---------|
+| `score_l2` | XGBoost ranker score (`xgb_score`, rounded) — Layer 3 sorts by this |
+| `xgb_rank` | 1-based rank after industry neutralization (among returned rows) |
+| `industry` | Industry label (e.g. Shenwan board name; fallback `"其他"`) |
+| `xgb_alpha` | Same-day alpha used in labeling: stock `ret_1d` − industry mean `ret_1d` |
+| `model_ndcg` | Validation **NDCG@10** from the training run for this scan |
+
+The rule fallback path does **not** set `xgb_rank`, `xgb_alpha`, or `model_ndcg`; it still sets **`score_l2`** as the weighted rule total and populates `tech_score`, `fund_score`, `ff_score`, `signals`, etc., for LLM prompts.
+
+### Rule-based scoring detail (fallback path)
 
 Processes candidates in batches of `LAYER2_BATCH` (20).
 
@@ -254,6 +288,7 @@ This avoids redundant DeepSeek calls.
 |-------|-------------|
 | `status` | `layer1` / `layer2_in_progress` / `layer3` / `comprehensive` / `deepseek` / `done` / `error` / `stopped` |
 | `layer3_mode` | `deepseek+local` (when DeepSeek enabled) |
+| `layer2_mode` | `xgb_cross_sectional` (primary) or `rule_fallback` (after XGB/import/empty failure) |
 | `market_total` | Raw full-market stock count |
 | `total_stocks` | Layer 1 candidates count |
 | `layer1_count` | Same as total_stocks |

@@ -210,11 +210,60 @@ def _layer1_quick_filter(hot_stocks: set[str]) -> tuple[list[dict], int]:
 
 
 # ---------------------------------------------------------------------------
-# Layer 2 — detailed batch analysis
+# Layer 2 — XGBoost cross-sectional ranking (primary) + rule fallback
 # ---------------------------------------------------------------------------
 
-def _layer2_analyze_batch(batch: list[dict], progress: dict) -> list[dict]:
+def _layer2_xgb_cross_sectional(candidates: list[dict], progress: dict) -> list[dict]:
+    """Primary Layer 2: use cross-sectional XGBoost ranking model.
+
+    Falls back to rule-based scoring if model training fails.
     """
+    try:
+        from model_cross_sectional import cross_sectional_rank
+    except ImportError as e:
+        log.warning("截面模型导入失败: %s, 回退到规则评分", e)
+        return _layer2_rule_scoring_all(candidates, progress)
+
+    log.info("Layer 2: 启动截面 XGBoost 排序 (%d 只候选)...", len(candidates))
+    progress["layer2_mode"] = "xgb_cross_sectional"
+    _save_progress(progress)
+
+    try:
+        ranked = cross_sectional_rank(
+            candidates,
+            stop_event=_stop_event,
+        )
+    except Exception as e:
+        log.warning("截面排序失败: %s, 回退到规则评分", e)
+        progress["layer2_mode"] = "rule_fallback"
+        _save_progress(progress)
+        return _layer2_rule_scoring_all(candidates, progress)
+
+    if not ranked:
+        log.warning("截面排序返回空结果, 回退到规则评分")
+        progress["layer2_mode"] = "rule_fallback"
+        _save_progress(progress)
+        return _layer2_rule_scoring_all(candidates, progress)
+
+    log.info("Layer 2 截面排序完成: %d 只入选", len(ranked))
+    return ranked
+
+
+def _layer2_rule_scoring_all(candidates: list[dict], progress: dict) -> list[dict]:
+    """Rule-based fallback: run original scoring in batches."""
+    all_scored = []
+    for i in range(0, len(candidates), LAYER2_BATCH):
+        if _stop_event.is_set():
+            break
+        batch = candidates[i:i + LAYER2_BATCH]
+        scored = _layer2_rule_scoring(batch, progress)
+        all_scored.extend(scored)
+    return all_scored
+
+
+def _layer2_rule_scoring(batch: list[dict], progress: dict) -> list[dict]:
+    """
+    Fallback Layer 2: rule-based scoring (original implementation).
     For a batch of candidates, fetch daily data, compute technicals,
     run fundamental scoring, and quick sentiment check.
     Returns enriched candidates with scores and a buyability flag.
@@ -555,6 +604,16 @@ def _build_deepseek_scoring_prompt(stock: dict) -> str:
     else:
         ff_text = "  (无资金流向数据)"
 
+    xgb_text = ""
+    if stock.get("xgb_rank") is not None:
+        xgb_text = (
+            f"\n【截面模型排名】\n"
+            f"  XGBoost排名: 第{stock['xgb_rank']}名\n"
+            f"  所属行业: {stock.get('industry', 'N/A')}\n"
+            f"  模型预测Alpha: {stock.get('xgb_alpha', 'N/A')}\n"
+            f"  模型NDCG: {stock.get('model_ndcg', 'N/A')}\n"
+        )
+
     return f"""判断 {stock['name']} ({stock['symbol']}) 现在是否值得买入。
 
 【行情快照】
@@ -572,7 +631,7 @@ def _build_deepseek_scoring_prompt(stock: dict) -> str:
   情绪评分: {stock.get('sentiment_score', 'N/A')}/100
   L1初筛分: {stock.get('score_l1', 'N/A')}
   L2综合分: {stock.get('score_l2', 'N/A')}
-
+{xgb_text}
 【资金流向详情】
 {ff_text}
 
@@ -1095,7 +1154,7 @@ def _generate_report(top_picks: list[dict], scan_meta: dict) -> str:
         for i, pick in enumerate(top_picks, 1):
             judged = pick.get("judged_by", "local")
             judge_tag = "🔬 DeepSeek" if judged == "deepseek" else "🤖 本地LLM"
-            lines.extend([
+            pick_lines = [
                 f"### {i}. {pick['name']} ({pick['symbol']})",
                 "",
                 f"- **买入判定**: ✅ 值得买入 ({judge_tag}判断)",
@@ -1103,17 +1162,31 @@ def _generate_report(top_picks: list[dict], scan_meta: dict) -> str:
                 f"- **最新价**: ¥{pick.get('price', 'N/A')}",
                 f"- **涨跌幅**: {pick.get('change_pct', 'N/A')}%",
                 f"- **市盈率(PE)**: {pick.get('pe', 'N/A')}",
-                f"- **资金流向评分**: {pick.get('ff_score', 'N/A')}/100",
-                f"- **基本面得分**: {pick.get('fund_score', 'N/A')}/100",
-                f"- **技术得分**: {pick.get('tech_score', 'N/A')}/100",
-                f"- **情绪得分**: {pick.get('sentiment_score', 'N/A')}/100",
-                f"- **RSI**: {pick.get('rsi', 'N/A')}",
+            ]
+            if pick.get("xgb_rank") is not None:
+                pick_lines.extend([
+                    f"- **截面排名**: 第{pick['xgb_rank']}名 (行业: {pick.get('industry', 'N/A')})",
+                    f"- **预测Alpha**: {pick.get('xgb_alpha', 'N/A')}",
+                    f"- **模型NDCG**: {pick.get('model_ndcg', 'N/A')}",
+                ])
+            if pick.get("ff_score") is not None:
+                pick_lines.append(f"- **资金流向评分**: {pick.get('ff_score', 'N/A')}/100")
+            if pick.get("fund_score") is not None:
+                pick_lines.append(f"- **基本面得分**: {pick.get('fund_score', 'N/A')}/100")
+            if pick.get("tech_score") is not None:
+                pick_lines.append(f"- **技术得分**: {pick.get('tech_score', 'N/A')}/100")
+            if pick.get("sentiment_score") is not None:
+                pick_lines.append(f"- **情绪得分**: {pick.get('sentiment_score', 'N/A')}/100")
+            if pick.get("rsi") is not None:
+                pick_lines.append(f"- **RSI**: {pick.get('rsi', 'N/A')}")
+            pick_lines.extend([
                 f"- **推荐理由**: {pick.get('reasoning', 'N/A')}",
                 f"- **主要风险**: {pick.get('risk', 'N/A')}",
                 f"- **操作策略**: {pick.get('strategy', 'N/A')}",
                 f"- **建议买入区间**: {_buy_range_str(pick)}",
                 "",
             ])
+            lines.extend(pick_lines)
 
     lines.extend([
         "---",
@@ -1242,6 +1315,7 @@ def _run_scan_inner():
     _stale = [
         "hot_sectors", "technical_analysis", "report_technical",
         "fundamental_analysis", "sentiment", "features", "model_xgboost",
+        "model_cross_sectional",
         "fetch_market_data", "china_market_data", "llm_reasoning",
         "market_sentiment", "black_swan_detector",
     ]
@@ -1319,25 +1393,22 @@ def _resume_scan(progress: dict):
 
 
 def _execute_layer2_and_3(progress: dict, candidates: list[dict], resume: bool = False):
-    """Run Layer 2 batches and then Layer 3."""
+    """Run Layer 2 (XGBoost cross-sectional or rule fallback) and then Layer 3."""
     all_l2 = list(progress.get("layer2_results", [])) if resume else []
 
-    for i in range(0, len(candidates), LAYER2_BATCH):
-        if _stop_event.is_set():
-            progress["status"] = "stopped"
-            _save_progress(progress)
-            return
+    if resume:
+        already_done = {s["symbol"] for s in all_l2}
+        remaining = [c for c in candidates if c["symbol"] not in already_done]
+        if remaining:
+            scored = _layer2_xgb_cross_sectional(remaining, progress)
+            all_l2.extend(scored)
+    else:
+        scored = _layer2_xgb_cross_sectional(candidates, progress)
+        all_l2 = scored
 
-        batch = candidates[i:i + LAYER2_BATCH]
-        log.info("Layer 2 批次 %d: %d 只 (%d/%d)",
-                 i // LAYER2_BATCH + 1, len(batch),
-                 len(all_l2) + len(batch), len(candidates) + len(all_l2))
-
-        scored = _layer2_analyze_batch(batch, progress)
-        all_l2.extend(scored)
-        progress["layer2_results"] = all_l2
-        progress["layer2_count"] = len(all_l2)
-        _save_progress(progress)
+    progress["layer2_results"] = all_l2
+    progress["layer2_count"] = len(all_l2)
+    _save_progress(progress)
 
     if _stop_event.is_set():
         progress["status"] = "stopped"

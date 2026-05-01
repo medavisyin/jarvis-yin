@@ -2,7 +2,7 @@
 
 ## Overview
 
-The ML pipeline consists of feature engineering, two XGBoost model types (classification + regression), and a prediction tracking/verification system.
+The ML pipeline consists of feature engineering, per-symbol XGBoost models (classification + regression), a **cross-sectional ranking** model used by the market scanner at Layer 2, and a prediction tracking/verification system.
 
 ---
 
@@ -229,6 +229,60 @@ The production model removes `early_stopping_rounds` from params (no eval_set) a
 | `data/{symbol}/price_prediction.json` | Predictions + WF stats |
 | `models/{symbol}/price_{close,high,low}_model.json` | Per-target XGBoost model |
 | `data/{symbol}/price-prediction-report.md` | Chinese Markdown report |
+
+---
+
+## `model_cross_sectional.py` — Cross-Sectional Ranking Model
+
+### Purpose
+
+Learns **relative strength within a universe** (Layer 1 scan candidates ~100 names), not a single symbol’s forward return. It replaces the scanner’s primary Layer 2 ranking with **XGBoost `rank:pairwise`** trained **fresh each scan** on pooled history, then applies **industry neutralization** (top N names per industry by model score). If training or data checks fail, `scanner.py` falls back to rule-based Layer 2 (`_layer2_rule_scoring`).
+
+This differs from **`model_xgboost.py`**, **`model_timing.py`**, and **`model_price_predictor.py`**: those train and predict **one symbol at a time** using `features.py` (or extended features) and persist models under `models/{symbol}/`. The cross-sectional ranker is **multi-symbol by design**, builds features **inside this module** (no `features.py` dependency), and does **not** persist a model file between scans.
+
+### Entry Point
+
+`cross_sectional_rank(candidates, lookback_days=60, top_n_per_industry=3, stop_event=None)` → sorted list of dicts (subset of input candidates after neutralization), each augmented with `score_l2`, `xgb_rank`, `industry`, `xgb_alpha`, `model_ndcg`. Returns **[]** on failure so the caller can fall back.
+
+### Pipeline (internal flow)
+
+| Step | Function | Role |
+|------|----------|------|
+| Industry labels | `_fetch_industry_map(symbols)` | Shenwan-style industry per symbol (AKShare + cache under `STOCK_CACHE_DIR`); fallback label `"其他"` |
+| History | `_fetch_batch_history(symbols, lookback_days, stop_event)` | Daily OHLCV per symbol (`daily.csv` if fresh else `ak.stock_zh_a_hist`), minimum `_MIN_HISTORY` (30) rows |
+| Features | `_build_cross_sectional_features(all_hist, industry_map)` | Per-day panels: time-series features via `_compute_single_stock_features`, then cross-section ranks `_add_cross_sectional_features` (`cs_ret_rank`, `cs_vol_rank`, `cs_turnover_rank`), targets via `_add_alpha_target` |
+| Train | `_train_ranker(train_df, feature_cols)` | Time-based split: `_TRAIN_DAYS` + `_VAL_DAYS` recent calendar days in the panel; **NDCG@10** on validation; `xgb.train(..., objective=rank:pairwise, eval_metric=ndcg@10)` |
+| Predict | `_predict_and_neutralize(model, today_df, feature_cols, industry_map, top_n_per_industry)` | Predict scores for **today’s** cross-section; within each industry, keep **top N** by score; sort globally by score |
+
+### Feature engineering (self-contained)
+
+Feature columns are listed in `_FEATURE_COLS`: multi-horizon returns, RSI/MACD/ATR/volatility, MA distances and spreads, volume ratios, candle shapes, turnover, plus **cross-sectional percentile ranks** for return, volume, and turnover on each day. All computation lives in `model_cross_sectional.py` (no shared `build_features()`).
+
+### Alpha target and relevance grading
+
+For each calendar day and each stock in that day’s panel:
+
+- **Alpha** = stock **1-day return** minus **industry mean 1-day return** (industry from `industry_map`).
+- **Relevance** (XGBoost label, grades **0–4**): quantiles of alpha within that day’s cross-section — bottom 10% → 0, 10–25% → 1, 25–50% → 2, 50–75% → 3, top 25% (≥75th pct) → 4.
+
+Training stacks **one row per (symbol, date)** for all historical dates except the last (the last date is held out as **today’s** prediction slice). **Query groups** (`qid`) are **by date** so the model learns ordering within each past cross-section. **Relevance** on each row uses that date’s **alpha** (same-day `ret_1d` minus industry mean), binned into **five grades** (0–4) via within-day quantiles.
+
+### Industry neutralization
+
+After prediction, `_predict_and_neutralize` groups **today’s** rows by `industry`, takes **`top_n_per_industry`** (default 3) by `xgb_score` per group, concatenates, then sorts by score. This limits concentration in a single sector.
+
+### Constants (representative)
+
+| Name | Default | Purpose |
+|------|---------|---------|
+| `_LOOKBACK_DAYS` | 60 | History window for fetch/features |
+| `_TRAIN_DAYS` / `_VAL_DAYS` | 40 / 20 | Rough train/val day counts for time split |
+| `_MIN_HISTORY` | 30 | Minimum rows to include a symbol |
+| `_TOP_PER_INDUSTRY` | 3 | Cap per industry after ranking |
+
+### Persistence
+
+No per-scan model JSON: the booster exists only in memory for that run. Industry map may be cached in `STOCK_CACHE_DIR` (e.g. `.industry_map.json`).
 
 ---
 

@@ -1,21 +1,23 @@
 # AI 股票扫描器 (scanner) — 详细功能文档
 
 **文件路径**: `scripts/stock/scanner.py`  
-**最后更新**: 2026-04-27
+**最后更新**: 2026-05-01
 
 ---
 
 ## 1. 模块概述
 
 - **核心职责**: 对**全市场 A 股**执行「三层漏斗」扫描，输出**可买性（buyability）**导向的短期推荐列表（最多 5 只），而非单纯动量排名。设计哲学（2026-04 改版）：**宁可 0 推荐，也不输出「看起来强但不宜买」的标的**。
-- **系统角色**: Stock 子系统的**短期全市场入口**；结果写入 `STOCK_REPORTS_ROOT/scans/`（JSON + Markdown），可选索引到 RAG；与 `hot_sectors`、`technical_analysis`、`fundamental_analysis`、`fetch_market_data`、`china_market_data`、`model_xgboost`、`model_price_predictor`、`config.call_deepseek` 等协作。
+- **系统角色**: Stock 子系统的**短期全市场入口**；结果写入 `STOCK_REPORTS_ROOT/scans/`（JSON + Markdown），可选索引到 RAG；与 `hot_sectors`、`technical_analysis`、`fundamental_analysis`、`fetch_market_data`、`china_market_data`、`model_cross_sectional`、`model_xgboost`、`model_price_predictor`、`config.call_deepseek` 等协作。
 - **上下游关系（文字描述）**  
   - **上游**: `akshare`/`东方财富备用` 全市场行情；`hot_sectors.get_hot_stock_set`；各分析子模块与 config。  
-  - **本模块**: Layer1 → Layer2 批量 → Layer3 LLM → Phase4 综合分析 → Phase5 DeepSeek 补充报告（条件）→ 落盘与 RAG。  
+  - **本模块**: Layer1 → Layer2 **截面 XGBoost 排序**（失败则规则逐批）→ Layer3 LLM → Phase4 综合分析 → Phase5 DeepSeek 补充报告（条件）→ 落盘与 RAG。  
   - **下游**: 前端轮询 `scan_progress.json`；用户阅读 `YYYY-MM-DD-report.md`；`history.json` 供业绩跟踪；`get_latest_result` 等 API。
 
 ```
-[全市场行情] → Layer1 快筛(~100) → Layer2 逐批 enriched
+[全市场行情] → Layer1 快筛(~100)
+    → Layer2 主路径: 截面 XGBoost rank:pairwise + 行业中性 Top-N
+       (失败/空 → 回退 Layer2 规则逐批 enriched, 同原 analyze_batch 逻辑)
     → Layer3 LLM 买入判断(≤30) → [满足 verdict+分数] → Phase4 综合星标
     → Phase5 DeepSeek 报告(仅本地已判股票) → JSON/MD/RAG/history
 ```
@@ -38,7 +40,9 @@
 
 - **进度/状态** (`_load_progress` / `get_scan_status`): 字典，含 `status`（`layer1` / `layer2_in_progress` / `layer3` / `comprehensive` / `deepseek` / `done` / `error` / `stopped`）、`started_at`、`market_total`、`layer1_candidates`、`layer2_results`、`analyzed_count`、`top_picks`、`use_deepseek`、`error` 等。
 - **Layer1 单只候选** (`picks` 中元素): `symbol`, `name`, `price`, `change_pct`, `turnover_rate`, `pe`, `amount`, `market_cap`, `score_l1`, `is_hot`。
-- **Layer2 在候选上 `update`**: `tech_score`, `fund_score`, `ff_score`, `ff_signals`, `sentiment_score`, `hot_bonus`, `rsi`, `overbought`, `score_l2`, `signals`, 可选 `fund_dimensions`。
+- **Layer2 在候选上 `update`**  
+  - **截面排序主路径**（`model_cross_sectional.cross_sectional_rank` 成功时）: 在 Layer1 字段基础上写入 `score_l2`（XGBoost 截面打分）、`xgb_rank`（全截面合并后的序号）、`industry`（行业标签）、`xgb_alpha`（预测的行业中性 Alpha）、`model_ndcg`（本次训练验证集 NDCG@10，各候选相同方便排查）。`progress` 可含 `layer2_mode`: `xgb_cross_sectional` 或 `rule_fallback`。  
+  - **规则回退路径**（逐批 `_layer2_rule_scoring`）: `tech_score`, `fund_score`, `ff_score`, `ff_signals`, `sentiment_score`, `hot_bonus`, `rsi`, `overbought`, `score_l2`, `signals`, 可选 `fund_dimensions`。
 - **Layer3 输出**: 增加 `final_score`, `reasoning`, `risk`, `buy_low`/`buy_high`, `strategy`, `verdict`（解析后为 `买入` 或 `观望`）, `judged_by`（`deepseek` / `local` / `fallback`）, 以及 DeepSeek 时的 `deepseek` 子字典。
 - **全市场行数据**: `ak.stock_zh_a_spot_em()` 的 DataFrame，列名含 `代码`、`名称`、**分钟级 PE** `市盈率-动态`、**成交额**、**涨跌幅**、**换手率** 等。备用为新浪 `Market_Center.getHQNodeData` 拉平后的同名兼容列。
 
@@ -52,7 +56,9 @@
 | `get_latest_result` / `get_result_by_date` / `list_scan_dates` / `get_history` | 读结果与历史。 |
 | `update_history_performance` | 按历史推荐补充 1/3/7 日收益。 |
 | `_layer1_quick_filter(hot_stocks)` | 全市场快筛，返回 `(picks, market_total)`。 |
-| `_layer2_analyze_batch(batch, progress)` | 对一批股票打分并写回进度。 |
+| `_layer2_xgb_cross_sectional(candidates, progress)` | **Layer2 主路径**：调用 `model_cross_sectional.cross_sectional_rank` 做截面 rank:pairwise 排序；失败或空结果时回退规则评分。 |
+| `_layer2_rule_scoring_all(candidates, progress)` | 规则回退：按 `LAYER2_BATCH` 分批调用 `_layer2_rule_scoring`。 |
+| `_layer2_rule_scoring(batch, progress)` | 对一批股票执行原 Layer2 规则打分（技术/基本面/情绪/资金等）并写回进度。原函数名 `_layer2_analyze_batch` 已重命名为此。 |
 | `_layer3_llm_rank(candidates)` | 排除 RSI 超买，取 score_l2 Top 30，DeepSeek+本地 混合判断。 |
 | `_layer3_deepseek_judge` / `_layer3_local_judge` | 分别调用 `call_deepseek` 与 Ollama `/api/chat`。 |
 | `_run_comprehensive_for_picks` | Phase4 星标：技术+ML+价格预测+资金+扫描结论。 |
@@ -73,20 +79,24 @@
 - **综合** `score_l1 = 0.30*pe + 0.30*chg + 0.20*turn + 0.5*clip(成交额/1e8,0,20)`；热门股 `is_hot` **+3**。  
 - 取 `score_l1` 降序前 `LAYER2_CANDIDATE_CAP` 只。
 
-**Layer2 — 技术**  
-- `load_ohlcv` + `compute_indicators` + `evaluate_signals`；**多头/空头信号数**差 ×10+50 限幅得 `tech_score`；RSI>75 记 `overbought` 且 `tech_score` 再减 20。  
+**Layer2 — 主路径（截面 XGBoost，默认）**  
+- `_execute_layer2_and_3` 始终先走 `_layer2_xgb_cross_sectional`。在候选集合上拉取历史 K 线、构造截面特征，**当日内训练** `rank:pairwise` XGBoost，目标对齐行业中性化超额收益（Alpha）；预测分写入 `score_l2`，并做**按行业分组、组内取 Top N** 的组合约束，得到 `xgb_rank`、`industry`、`xgb_alpha`、`model_ndcg`。  
+- **回退条件**：`model_cross_sectional` 导入异常、`cross_sectional_rank` 抛错或返回空、有效历史样本过少等 → 调用 `_layer2_rule_scoring_all`，并可将 `layer2_mode` 记为 `rule_fallback`。  
+- **耗时**: 每轮扫描需在 Layer2 内完成特征构建与模型拟合，**XGBoost 训练延迟**显著高于纯规则批处理；属于运维与排期上的新考量。
 
-**Layer2 — 基本面** `fetch_fundamentals` + `score_fundamentals` → `fund_score` 与 `fund_dimensions`。
-
-**Layer2 — 情绪** 最近 5 条新闻标题，正负面关键词分级加权，归一化到 [0,100] 得 `sentiment_score`。
-
-**Layer2 — 资金** `china_market_data.stock_fund_flow_signals`: 依 `smart_money_phase`、吸筹、main_net_3d 等映射为 `ff_score`（**布局期**偏高分，**出货期**低分）。  
-
-**Layer2 — 总分**  
+**Layer2 — 总分（仅规则回退路径）**  
 `total_score = 0.30*ff + 0.25*fund + 0.20*tech + 0.10*sentiment + 0.10*score_l1 + 0.05*_valuation_bonus(pe) + hot_bonus(5/0)`。
+
+**Layer2 — 规则回退分项**  
+- **技术** `load_ohlcv` + `compute_indicators` + `evaluate_signals`；**多头/空头信号数**差 ×10+50 限幅得 `tech_score`；RSI>75 记 `overbought` 且 `tech_score` 再减 20。  
+- **基本面** `fetch_fundamentals` + `score_fundamentals` → `fund_score` 与 `fund_dimensions`。  
+- **情绪** 最近 5 条新闻标题，正负面关键词分级加权，归一化到 [0,100] 得 `sentiment_score`。  
+- **资金** 同上 `ff_score`。  
+- 上式汇总为规则路径的 `score_l2`。
 
 **Layer3**  
 - 剔除 `overbought`；按 `score_l2` 取前 `LAYER3_CAP`。  
+- 提示词构建：若候选含 `xgb_rank`，在 Layer3 评分 prompt 中追加 **「截面模型排名」** 块（`xgb_rank`、`industry`、`xgb_alpha`、`model_ndcg`），便于 LLM 结合截面信号与规则/多维得分做可买性判断。  
 - 若 `_use_deepseek` 且 `get_deepseek_key()`：前 `DEEPSEEK_LAYER3_CAP` 只走 DeepSeek，其余走本地 LLM。  
 - DeepSeek：`call_deepseek(system_prompt, _build_deepseek_scoring_prompt(stock), max_tokens=1200, reasoning_effort="medium")`；解析 JSON。  
 - 本地：Ollama `MODEL_USAGE["prediction_reasoning"]`，`temperature=0.3`。  
@@ -98,13 +108,14 @@
 - Phase5: 有 DeepSeek key 且 `use_deepseek` 时，对 **judged_by != deepseek** 的仍调用 `call_deepseek` 写长文报告到 `pick["deepseek"]`。
 
 **报告与持久化**  
-- `SCAN_DIR/YYYY-MM-DD.json` 含 `meta`, `top_picks`, `candidates`（前 50）；同日期 `-report.md`；可选 Qdrant 索引（chunk 400/ overlap 60）。
+- `SCAN_DIR/YYYY-MM-DD.json` 含 `meta`, `top_picks`, `candidates`（前 50）；同日期 `-report.md`（存在截面字段时写入排名、行业、Alpha、NDCG 等摘要）；可选 Qdrant 索引（chunk 400/ overlap 60）。
 
 ---
 
 ## 4. 外部依赖与数据源
 
 - **库**: `akshare`, `pandas`, `requests`, 标准库 `json/threading/time`；RAG 侧 `qdrant_client`、项目内 `index_briefing`。  
+- **项目内模块**: `model_cross_sectional`（Layer2 截面排序：`cross_sectional_rank`，依赖 `numpy`、`xgboost`、`config` 路径与缓存）。  
 - **网络**: 东财/新浪全市场行情；Ollama `OLLAMA_HOST`；`config.get_deepseek_key` / `call_deepseek`；`STOCK_PROXY` 代理。  
 - **缓存**: `STOCK_CACHE_DIR`；K 线等由 `fetch_market_data.fetch_daily_ohlcv` 等写入。  
 - **RAG 索引失败**仅打日志，不阻断主流程。
@@ -143,4 +154,5 @@
 - 新闻仅标题关键词，**无 NLP 深度**；情绪分偏噪声。  
 - LLM 输出解析在模型乱输出 JSON 时回落到「观望+数值分」。  
 - 新浪备用分页 `page>80` 时停止，若接口结构变化需回归测试。  
-- 改进: 行业中性得分、多周期 PE、Layer2 批大小动态、更稳健的 JSON schema 约束（函数调用 / tool 模式）。
+- Layer2 截面路径每次扫描需 **当日训练 XGBoost**，耗时与 CPU 负载高于纯规则；行业映射依赖东财板块接口，缓存失效或接口变更时可能影响行业中性筛选。  
+- 改进: 多周期 PE、Layer2 批大小动态（主要用于规则回退路径）、更稳健的 JSON schema 约束（函数调用 / tool 模式）、截面模型预训练/增量训练以压低在线延迟（设计向）。
