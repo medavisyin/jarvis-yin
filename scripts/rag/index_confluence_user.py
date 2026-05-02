@@ -599,7 +599,7 @@ def main():
                 "version_number": p.get("version_number", 1),
                 "change_summary": p.get("change_summary", "")[:600],
             })
-        print(f"REPORT_JSON:{_json.dumps(page_details, ensure_ascii=False)}")
+        print(f"REPORT_JSON:{_json.dumps(page_details, ensure_ascii=True)}")
 
     print("  Loading model and RAG store...")
     client = _get_client()

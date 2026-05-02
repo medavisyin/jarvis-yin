@@ -256,6 +256,67 @@ def api_toolbar_deep_dive():
     return jsonify({"session_id": sid, "title": session_title})
 
 
+def _build_wiki_report(
+    users: list[str],
+    date_from: str,
+    date_to: str,
+    total_pages: int,
+    total_chunks: int,
+    summary_lines: list[str],
+    all_user_pages: dict[str, list[dict]],
+) -> str:
+    """Build a markdown report from wiki-fetch results."""
+    parts: list[str] = []
+    date_info = ""
+    if date_from or date_to:
+        date_info = f" ({date_from or '...'} to {date_to or '...'})"
+    parts.append(f"# Wiki Fetch Report{date_info}\n")
+    parts.append(f"**{len(users)} team member(s), {total_pages} pages, {total_chunks} chunks indexed**\n")
+
+    for line in summary_lines:
+        parts.append(f"- {line}")
+    parts.append("")
+
+    if all_user_pages:
+        parts.append("---\n\n## Page Details\n")
+        for user, details in all_user_pages.items():
+            parts.append(f"### {user}\n")
+            for pg in details:
+                title = pg.get("title", "Untitled")
+                url = pg.get("url", "")
+                space = pg.get("space", "")
+                modified = pg.get("modified_at", "")
+                headings = pg.get("headings", [])
+                version_number = pg.get("version_number", 1)
+                change_summary = pg.get("change_summary", "")
+                summary = pg.get("summary", "")
+                is_new = version_number <= 1
+
+                if url:
+                    entry = f"- **[{title}]({url})**"
+                else:
+                    entry = f"- **{title}**"
+                if space:
+                    entry += f" — *{space}*"
+                if modified:
+                    entry += f" (modified: {modified})"
+                if is_new:
+                    entry += " \U0001f195"
+                parts.append(entry)
+
+                if change_summary:
+                    brief = change_summary[:300] + ("..." if len(change_summary) > 300 else "")
+                    parts.append(f"  > **Changes:** {brief}")
+                elif summary:
+                    brief = summary[:200] + ("..." if len(summary) > 200 else "")
+                    parts.append(f"  > {brief}")
+                if headings:
+                    parts.append(f"  > Sections: {', '.join(headings[:5])}")
+                parts.append("")
+
+    return "\n".join(parts)
+
+
 @toolbar_bp.route("/api/toolbar/wiki-fetch", methods=["POST"])
 def api_toolbar_wiki_fetch():
     ag = _agent()
@@ -282,30 +343,81 @@ def api_toolbar_wiki_fetch():
         }
 
     def _run_multi_user(jid, user_list, d_from, d_to):
-        results = []
-        for idx, user in enumerate(user_list):
+        try:
+            summary_lines = []
+            all_user_pages: dict[str, list[dict]] = {}
+            total_pages = 0
+            total_chunks = 0
+            for idx, user in enumerate(user_list):
+                with _toolbar_jobs_lock:
+                    _toolbar_jobs[jid]["progress"] = f"{idx}/{len(user_list)} users ({user}...)"
+                try:
+                    script = os.path.join(_RAG_PKG_DIR, "index_confluence_user.py")
+                    cmd = [sys.executable, script, user, "--report-json"]
+                    if d_from:
+                        cmd.extend(["--date-from", d_from])
+                    if d_to:
+                        cmd.extend(["--date-to", d_to])
+                    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+                    proc = subprocess.run(
+                        cmd, capture_output=True, text=True, timeout=600,
+                        cwd=_RAG_PKG_DIR, encoding="utf-8", errors="replace",
+                        env=env,
+                    )
+                    out = proc.stdout.strip()
+                    if proc.returncode != 0:
+                        err = (proc.stderr or "").strip()
+                        detail = err[-300:] if err else (out[-300:] if out else f"exit code {proc.returncode}")
+                        summary_lines.append(f"[{user}] error (rc={proc.returncode}): {detail}")
+                        continue
+
+                    user_pages = 0
+                    user_chunks = 0
+                    m_done = re.search(r"Indexed (\d+) chunks from (\d+) wiki pages", out)
+                    if m_done:
+                        user_chunks = int(m_done.group(1))
+                        user_pages = int(m_done.group(2))
+                    else:
+                        m_found = re.search(r"Found (\d+) pages", out)
+                        if m_found:
+                            user_pages = int(m_found.group(1))
+
+                    page_details: list[dict] = []
+                    m_json = re.search(r"REPORT_JSON:(.+)", out)
+                    if m_json:
+                        try:
+                            page_details = json.loads(m_json.group(1))
+                        except Exception:
+                            pass
+
+                    total_pages += user_pages
+                    total_chunks += user_chunks
+                    summary_lines.append(f"[{user}] {user_pages} pages, {user_chunks} chunks")
+                    if page_details:
+                        all_user_pages[user] = page_details
+                except subprocess.TimeoutExpired:
+                    summary_lines.append(f"[{user}] error: timed out after 600s")
+                except Exception as e:
+                    summary_lines.append(f"[{user}] error: {e}")
+
+            report = _build_wiki_report(
+                user_list, d_from, d_to,
+                total_pages, total_chunks,
+                summary_lines, all_user_pages,
+            )
+            final_status = "done"
+            if all("error" in l for l in summary_lines):
+                final_status = "error"
             with _toolbar_jobs_lock:
-                _toolbar_jobs[jid]["progress"] = f"{idx}/{len(user_list)} users ({user}...)"
-            try:
-                script = os.path.join(_RAG_PKG_DIR, "index_confluence_user.py")
-                cmd = [sys.executable, script, user]
-                if d_from:
-                    cmd.extend(["--date-from", d_from])
-                if d_to:
-                    cmd.extend(["--date-to", d_to])
-                proc = subprocess.run(
-                    cmd, capture_output=True, text=True, timeout=600,
-                    cwd=_RAG_PKG_DIR,
-                )
-                out = proc.stdout.strip()
-                results.append(f"[{user}] {out[-200:]}" if out else f"[{user}] done (no output)")
-            except Exception as e:
-                results.append(f"[{user}] error: {e}")
-        summary = "\n".join(results)
-        with _toolbar_jobs_lock:
-            _toolbar_jobs[jid]["status"] = "done"
-            _toolbar_jobs[jid]["result"] = summary[-3000:]
-            _toolbar_jobs[jid]["progress"] = f"{len(user_list)}/{len(user_list)} users"
+                _toolbar_jobs[jid]["status"] = final_status
+                _toolbar_jobs[jid]["result"] = report[:6000]
+                _toolbar_jobs[jid]["progress"] = f"{len(user_list)}/{len(user_list)} users"
+        except Exception as exc:
+            with _toolbar_jobs_lock:
+                j = _toolbar_jobs.get(jid)
+                if j:
+                    j["status"] = "error"
+                    j["result"] = f"Thread crashed: {exc}"
 
     threading.Thread(
         target=_run_multi_user, args=(job_id, users, date_from, date_to), daemon=True
