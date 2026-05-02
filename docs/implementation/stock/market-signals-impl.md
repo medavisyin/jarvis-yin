@@ -6,6 +6,44 @@ Two modules provide market-wide risk signals that augment per-stock analysis: th
 
 ---
 
+## Architecture & Design
+
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│  MARKET SENTIMENT (scripts/stock/market_sentiment.py)            │
+│  fetch_fear_greed (alt.me → CNN)  → _save_cache("fear_greed")    │
+│  fetch_vix (Yahoo query2 → query1) → _save_cache("vix")          │
+│  fetch_all_sentiment → merge + _classify_mood → combined.json    │
+└─────────────────────────────┬────────────────────────────────────┘
+                              │ disk: STOCK_REPORTS_ROOT/market_sentiment/
+                              ▼
+        ┌─────────────────────────────────────────────────────────┐
+        │  CONSUMERS                                              │
+        │  · GET /api/stock/sentiment (refresh? → fetch vs cache)│
+        │  · Train thread: fetch_all_sentiment → progress JSON   │
+        │  · model_price_predictor: load_cached_sentiment →     │
+        │    _add_sentiment_features (last row only)             │
+        └─────────────────────────────────────────────────────────┘
+
+┌──────────────────────────────────────────────────────────────────┐
+│  BLACK SWAN (scripts/stock/black_swan_detector.py)               │
+│  _load_world_news → world-news-data.json (today / yesterday)      │
+│  _extract_text (headlines + body) → RISK_PATTERNS regex loop     │
+│  severity tiers → alerts + _build_risk_summary → _save_result    │
+└─────────────────────────────┬────────────────────────────────────┘
+                              │ black_swan_alerts.json (+ cache helpers)
+                              ▼
+        ┌─────────────────────────────────────────────────────────┐
+        │  CONSUMERS                                              │
+        │  · GET /api/stock/blackswan (?refresh,?date → scan/load)│
+        │  · GET /api/stock/risk/<symbol> → check_stock_risk     │
+        │  · Train thread: scan_world_news → progress JSON        │
+        │  · Stock UI cards (training report)                     │
+        └─────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## `market_sentiment.py` — Fear & Greed + VIX
 
 ### Purpose

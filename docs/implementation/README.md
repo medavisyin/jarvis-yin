@@ -5,7 +5,7 @@ tags:
   - navigation
 category: hub
 status: current
-last-updated: 2026-04-30
+last-updated: 2026-05-02
 ---
 
 # Jarvis Implementation Documentation
@@ -17,6 +17,7 @@ Documentation is organized in two complementary views: **by category** (function
 ```
 docs/implementation/
 ├── README.md                        # This file
+├── workflow-overview.md             # Master workflow — routes to all features
 ├── tech-stack-overview.md           # All technologies explained
 │
 ├── medavis/                         # MEDAVIS — Work / Enterprise functions
@@ -106,9 +107,9 @@ docs/implementation/
 
 | # | Document | Description |
 |---|----------|-------------|
-| 6 | [rag-agent-impl.md](./usage-tool/rag-agent-impl.md) | RAG agent — **stub** → see [rag/agent-impl.md](./rag/agent-impl.md) for full guide |
-| 7 | [search-ui-impl.md](./usage-tool/search-ui-impl.md) | Search UI — **stub** → see [rag/search-ui-impl.md](./rag/search-ui-impl.md) for full guide |
-| 8 | [reindex-all-impl.md](./usage-tool/reindex-all-impl.md) | Reindex orchestration — **stub** → see [rag/reindex-all-impl.md](./rag/reindex-all-impl.md) for full guide |
+| 6 | [rag-agent-impl.md](./usage-tool/rag-agent-impl.md) | RAG agent — user-facing chat UX, SSE streaming, intent routing, session persistence. See also [rag/agent-impl.md](./rag/agent-impl.md) for backend internals. |
+| 7 | [search-ui-impl.md](./usage-tool/search-ui-impl.md) | Search UI — user-facing search experience, result display, feedback loop, library management. See also [rag/search-ui-impl.md](./rag/search-ui-impl.md) for backend internals. |
+| 8 | [reindex-all-impl.md](./usage-tool/reindex-all-impl.md) | Reindex orchestration — user-facing CLI and toolbar triggers, manifest-based orchestration. See also [rag/reindex-all-impl.md](./rag/reindex-all-impl.md) for backend internals. |
 | 9 | [custom-indexing-impl.md](./usage-tool/custom-indexing-impl.md) | Custom file indexing — CLI to add/scan/list/remove PDF/Markdown files with YAML front matter support. |
 | 10 | [telegram-bot-impl.md](./usage-tool/telegram-bot-impl.md) | Telegram bot — owner-only proxy to RAG search, stock APIs, daily pipeline commands. |
 
@@ -199,10 +200,11 @@ The stock module keeps **data and model computation on the machine**; the **opti
 
 ## Reading order
 
-1. **[tech-stack-overview.md](./tech-stack-overview.md)** — Start here for architecture, data flow, and which scripts touch which systems.
-2. **Category docs** — Pick the category matching your interest (MEDAVIS, USAGE TOOL, DATA ANALYSIS, PERSONAL, LEARNING) and read the relevant function docs.
-3. **Briefing pipeline** — Follow [fetcher-pattern-impl.md](./briefing-pipeline/fetcher-pattern-impl.md), then [pipeline-orchestration-impl.md](./briefing-pipeline/pipeline-orchestration-impl.md), then [topic-dedup-impl.md](./briefing-pipeline/topic-dedup-impl.md) and [output-generation-impl.md](./briefing-pipeline/output-generation-impl.md) if you work on sources, merge, or PDF/audio/video output.
-4. **RAG** — Read [reindex-all-impl.md](./rag/reindex-all-impl.md) for orchestration, then the specific indexer doc (`index-*-impl.md`) you are changing; finish with [search-ui-impl.md](./rag/search-ui-impl.md) and [agent-impl.md](./rag/agent-impl.md) for query paths.
+1. **[workflow-overview.md](./workflow-overview.md)** — Start here for the master workflow diagram connecting all 25+ features with links to each detailed doc.
+2. **[tech-stack-overview.md](./tech-stack-overview.md)** — Architecture, data flow, and which scripts touch which systems.
+3. **Category docs** — Pick the category matching your interest (MEDAVIS, USAGE TOOL, DATA ANALYSIS, PERSONAL, LEARNING) and read the relevant function docs.
+4. **Briefing pipeline** — Follow [fetcher-pattern-impl.md](./briefing-pipeline/fetcher-pattern-impl.md), then [pipeline-orchestration-impl.md](./briefing-pipeline/pipeline-orchestration-impl.md), then [topic-dedup-impl.md](./briefing-pipeline/topic-dedup-impl.md) and [output-generation-impl.md](./briefing-pipeline/output-generation-impl.md) if you work on sources, merge, or PDF/audio/video output.
+5. **RAG** — Read [reindex-all-impl.md](./rag/reindex-all-impl.md) for orchestration, then the specific indexer doc (`index-*-impl.md`) you are changing; finish with [search-ui-impl.md](./rag/search-ui-impl.md) and [agent-impl.md](./rag/agent-impl.md) for query paths.
 
 ## Prerequisites
 

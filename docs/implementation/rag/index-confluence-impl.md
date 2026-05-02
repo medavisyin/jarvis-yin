@@ -20,6 +20,32 @@ Both reuse the same Qdrant collection, embedding model, and `C:/reports/ai/.rag-
 | **base64** | `index_confluence_user.py` | Builds Basic auth header from credentials. |
 | **Standard library** | Both | `json`, `os`, `re`, `sys`, `uuid`, dates as needed. |
 
+## Architecture & Design
+
+```text
+  Shared outputs: embeddings (all-MiniLM-L6-v2), Qdrant collection `ai_briefings`,
+                  JSON snapshot SNAPSHOT_PATH (same store as sibling indexers).
+
+┌────────────────────────────────────────────────────────────────────────┐
+│  TEAM WIKI — scripts/rag/index_confluence.py                           │
+│  run_confluence_report: PowerShell via config JIRA_REPORT_SCRIPT       │
+│        → Markdown report under report dir (*.md)                        │
+│  parse "## Team Confluence Updates" sections → ### [title](url) blocks │
+│       → metadata (space, author, dates, topics) → page body text       │
+│  index: _chunk_text → encode → upsert → _save_snapshot                 │
+└───────────────────────────────┬──────────────────────────────────────────┘
+                              │ COLLECTION ai_briefings + SNAPSHOT_PATH
+                              ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│  PER-USER WIKI — scripts/rag/index_confluence_user.py                  │
+│  SITE env + Basic (email/token) → accountId (KNOWN_ACCOUNTS or API)    │
+│  CQL /wiki/rest/api/content/search → page ids                           │
+│  per page: GET storage → _strip_html + _get_headings                   │
+│            optional historical vN-1 → _compute_change_summary (diff)    │
+│  index_pages: _chunk_text → encode → upsert → _save_snapshot           │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
 ## Architecture: index_confluence.py
 
 1. **Report generation** — Executes `atlassian-report.ps1` from the Atlassian Jira skill directory (`JIRA_SKILL_DIR` + `REPORT_SCRIPT`), producing a Markdown report file.

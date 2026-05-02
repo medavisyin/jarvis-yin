@@ -10,6 +10,44 @@ The topic system prevents briefing fatigue by tracking stories across days, clas
 | `scripts/pipeline/filter_topics.py` | Applies `TopicIndex` to merged briefing items and tags survivors |
 | `scripts/raw_saver.py` | Saves full drill-down markdown when `SAVE_RAW=1` |
 
+## Architecture & Design
+
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│  INPUT: briefing-data.json (merged per_source_data[].items[])     │
+└─────────────────────────────┬────────────────────────────────────┘
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                    filter_topics.filter_briefing()                │
+│  TopicIndex.load → for each item: classify(title, summary, date) │
+└─────────────────────────────┬────────────────────────────────────┘
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│               TopicIndex (scripts/pipeline/topic_index.py)        │
+│  match_topic: normalize → SequenceMatcher + keyword overlap       │
+│     vs canonical_title / aliases vs SIMILARITY_THRESHOLD          │
+│  classify:                                                          │
+│    · no match → "new" + _topic_hash                                 │
+│    · gap > 3 days → "updated" [RETURNING]                         │
+│    · _has_new_info(title+summary keywords) → "updated"            │
+│    · else → "stale"                                                │
+└─────────────────────────────┬────────────────────────────────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              ▼                               ▼
+┌─────────────────────────┐       ┌─────────────────────────────┐
+│  keep new / updated     │       │  aggressive: skip stale       │
+│  _dedup_tag, _topic_id  │       │  (append skipped_stale list) │
+│  update_topic() in-mem │       └─────────────────────────────┘
+└────────────┬────────────┘
+             │ idx.save()
+             ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  OUTPUT: filtered JSON (+ topic-index.json persisted)           │
+│  → PDF / TTS / video / indexing stages                            │
+└──────────────────────────────────────────────────────────────────┘
+```
+
 ## Technologies
 
 | Module | Role |

@@ -10,6 +10,33 @@ After `briefing-data.json` is produced (and optionally filtered for topic freshn
 | `scripts/output/generate-audio.py` | `ai-briefing.mp3` |
 | `scripts/output/generate-video.py` | `ai-briefing.mp4` |
 
+## Architecture & Design
+
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│  INPUT: briefing-data.json (optional filter_topics stage first)    │
+└─────────────────────────────┬────────────────────────────────────┘
+                              ▼
+         ┌────────────────────┴────────────────────┐
+         ▼                                         ▼
+┌─────────────────────────────┐       ┌─────────────────────────────┐
+│  PDF (briefing-template.py) │       │  Daily Fetch audio (agent.py) │
+│  ReportLab: TOC + sections │       │  split by source / category    │
+│  → ai-briefing.pdf         │       │  → _generate_segmented_…       │
+└─────────────────────────────┘       │     OLLAMA narration per seg. │
+                                      │  → _tts_segments_to_mp3        │
+                                      │     Edge-TTS chunks + ffmpeg   │
+                                      │  → ai-briefing.mp3, world-*.mp3│
+                                      └─────────────────────────────┘
+         ▼
+┌─────────────────────────────┐       ┌─────────────────────────────┐
+│  Legacy audio               │       │  Video (generate-video.py)   │
+│  generate-audio.py          │       │  slides JSON + Pillow frames │
+│  narration JSON → edge-tts  │       │  + ai-briefing.mp3 → moviepy │
+│  → ai-briefing.mp3          │       │  → ai-briefing.mp4           │
+└─────────────────────────────┘       └─────────────────────────────┘
+```
+
 ## Technologies
 
 | Library / module | Script | Role |

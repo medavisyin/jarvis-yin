@@ -43,6 +43,38 @@ The search pipeline now includes several additional modules that enhance retriev
 
 ## Architecture
 
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│  ENTRY                                                                  │
+│  Browser: GET / (HTML_TEMPLATE + stats) │ GET /api/search?query=…       │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  OPTIONAL QUERY REWRITE (vague short query or signal phrases)           │
+│  POST http://localhost:11434/api/chat  model qwen3:1.7b  think: false   │
+│  on failure → keep original query                                       │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  HYBRID RETRIEVAL                                                       │
+│  SentenceTransformer.encode → Qdrant query_points (filters, min_score)   │
+│  bm25_search (bm25_index) → RRF merge with vectors (k=60)               │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  RERANK + FEEDBACK                                                       │
+│  Cross-encoder: pool top 20 when len(results) > top_k (fallback on error) │
+│  feedback_store.get_chunk_score: score = 0.8*retrieval + 0.2*feedback    │
+│  → sort by blended score                                                  │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  OUTPUT                                                                  │
+│  Per-hit confidence (score thresholds) + query_confidence                 │
+│  jsonify({ results, pipeline, query_confidence }) → UI                    │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
 1. **Startup:** Lazy helpers load `SentenceTransformer` and a process-global Qdrant client. The client is backed by an in-memory collection populated from the on-disk snapshot when present (same pattern as other RAG scripts).
 2. **GET /** — Renders `HTML_TEMPLATE` with a short stats string from the snapshot metadata.
 3. **API layer** — All `/api/*` routes return JSON (except the HTML page). Search and library use Qdrant; delete mutates the JSON snapshot file and clears the cached client so the next request reloads.
@@ -71,7 +103,7 @@ Semantic search over the collection. The search performs **hybrid retrieval** (v
 | `difficulty` | Exact match on `difficulty` |
 | `item_type` | Exact match on `item_type` |
 
-**Response:** `{ results, query, total, pipeline_info }` where each result includes `title`, `date`, `source`, `difficulty`, `item_type`, `url`, `text`, `score`, `filename`, `parent_title`. The **`pipeline_info`** object summarizes stages (e.g. vector search, BM25, RRF, re-ranking, feedback blending). When a rewrite ran, **`pipeline_info`** also includes **`original_query`** and **`rewritten_query`**; the client shows a **“Query Rewrite”** line (original struck through, rewritten highlighted).
+**Response:** `{ results, query, total, pipeline, query_confidence }` where each result includes `title`, `date`, `source`, `difficulty`, `item_type`, `url`, `text`, `score`, `filename`, `parent_title`, and confidence-derived fields returned by `api_search`. The **`pipeline`** object summarizes stages (e.g. vector search, BM25, RRF, re-ranking, feedback blending). When a rewrite ran, **`pipeline`** also includes **`original_query`** and **`rewritten_query`**; the client shows a **“Query Rewrite”** line (original struck through, rewritten highlighted).
 
 ### `POST /api/feedback`
 
@@ -147,11 +179,11 @@ Polls job state for a knowledge refresh job.
 ## Search flow
 
 1. Client sends `GET /api/search?query=...` with optional filters.
-2. If the query is vague (short or matches vague-signal phrases), the server may **rewrite** it via Ollama `qwen3:1.7b` (`/api/chat`, `think: false`); otherwise the search string is unchanged. Rewrite details are reflected in `pipeline_info` (`original_query` / `rewritten_query`) and in the UI pipeline box.
+2. If the query is vague (short or matches vague-signal phrases), the server may **rewrite** it via Ollama `qwen3:1.7b` (`/api/chat`, `think: false`); otherwise the search string is unchanged. Rewrite details are reflected in `pipeline` (`original_query` / `rewritten_query`) and in the UI pipeline box.
 3. Server encodes the **effective** query with `SentenceTransformer.encode` and runs Qdrant vector search with optional `Filter`, `limit`, and `score_threshold=min_score`.
 4. BM25 keyword search runs over the in-memory index; vector and BM25 lists are fused with RRF (k=60).
 5. Top candidates are re-ranked with the cross-encoder when the model loads successfully; on failure, ordering from fusion is kept. Feedback scores from `feedback_store` are blended into final ordering (80% retrieval / 20% feedback).
-6. Payload fields are mapped into the JSON result list; `pipeline_info` is attached to the response.
+6. Payload fields are mapped into the JSON result list; `pipeline` and `query_confidence` are attached to the response.
 
 ## UI features
 

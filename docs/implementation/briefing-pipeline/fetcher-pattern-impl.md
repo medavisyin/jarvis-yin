@@ -10,6 +10,36 @@ The Jarvis briefing pipeline uses sixteen fetcher scripts organized into two sub
 
 All fetchers share one universal asynchronous pattern: launch a headless browser (or equivalent extraction path), extract listings, drill down where configured, normalize fields, and persist JSON with timing metadata.
 
+## Architecture & Design
+
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│  ENTRY: python fetch-<source>.py [output-dir]  → asyncio.run(...)│
+└─────────────────────────────┬────────────────────────────────────┘
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     async safe_fetch()                            │
+│  try: await fetch()                                               │
+│  except: write { source, items: [], _timing, _error } still       │
+└─────────────────────────────┬────────────────────────────────────┘
+                              │ on success, fetch() completes write
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     async fetch()                                 │
+│  1. async_playwright → Chromium (optional BRIEFING_PROXY)         │
+│  2. goto listing / RSS path → extract titles, urls, dates, authors│
+│  3. top DRILL_DOWN_COUNT items: navigate → body/abstract/rss      │
+│  4. optional SAVE_RAW=1 → raw_saver.save_raw_content (markdown)  │
+│  5. build items[{ title, url, date, summary, points, authors }]   │
+│  6. _step(...) → _timing.steps + total_seconds                    │
+└─────────────────────────────┬────────────────────────────────────┘
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│  OUTPUT: {output-dir}/{SOURCE_NAME}.json                          │
+│  keys: source, items[], _timing (merge / Daily Fetch ingest)       │
+└──────────────────────────────────────────────────────────────────┘
+```
+
 ## Technologies
 
 | Technology | Role |

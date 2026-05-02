@@ -4,6 +4,39 @@ Jarvis combines a daily briefing pipeline (fetch, merge, deduplicate, render) wi
 
 ---
 
+## Architecture & Design
+
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         USER / AUTOMATION                                 │
+│  Browser UI (18888 Search) │ Browser / API client (18889 Agent + stock) │
+└─────────────────────────────┬──────────────────────────────────────────┘
+                              │
+                              ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│  Flask                                                                     │
+│  search_ui.py :18888  →  embed query → Qdrant vector search → ranked hits │
+│  agent.py :18889      →  RAG search → prompt + Ollama (localhost:11434)    │
+│                         → SSE stream │ blueprints: daily_fetch, stock_bp     │
+└─────────────┬───────────────────────────────┬───────────────────────────────┘
+              │                               │
+              ▼                               ▼
+┌─────────────────────────────┐   ┌─────────────────────────────────────────┐
+│  Qdrant (in-memory)          │   │  Ollama / optional DeepSeek             │
+│  + .rag-store.json snapshot │   │  Chat: qwen via Ollama  │ Stock-only:    │
+│  ← indexers embed MiniLM      │   │                         DeepSeek API     │
+└─────────────────────────────┘   └─────────────────────────────────────────┘
+              ▲                               │
+              │                               │
+┌─────────────┴───────────────────────────────┴────────────────────────────┐
+│  DATA & OUTPUTS                                                             │
+│  Fetch scripts (Playwright) → merge → dedup → briefing PDF/TTS/video      │
+│  Index scripts → chunks + vectors → Qdrant                                  │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## Core Python libraries
 
 ### sentence-transformers (all-MiniLM-L6-v2)

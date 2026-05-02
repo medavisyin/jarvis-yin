@@ -6,18 +6,62 @@
 
 ## Technologies
 
-- **Indexer modules (imports):** `index_briefing`, `index_codebase`, `index_confluence`, `index_confluence_user`
+- **Indexer modules (imports):** `index_briefing`, `index_codebase`, `index_confluence`, `index_confluence_user`, `project_graph`
 - **Standard library:** `argparse`, `hashlib`, `json`, `os`, `re`, `sys`, `datetime` (`date`, `datetime`, `timedelta`, `timezone`), typing helpers
 - **Third-party (via indexers):** `qdrant_client` (client creation and snapshot load in `create_shared_client`)
 
 ## Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│  ENTRY                                                                  │
+│  python reindex_all.py  [--force | --force-briefings | --force-codebase │
+│                           | --force-confluence]                          │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  MANIFEST CHECK + SHARED RUNTIME                                         │
+│  load_manifest() ← MANIFEST_PATH / .index-manifest.json (defaults if new) │
+│  create_shared_model() + create_shared_client() ← load .rag-store.json   │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  run_briefings (main order #1) — staleness: folder mtime vs manifest    │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  run_codebase (#2) — staleness: MD5 fingerprint path/size/mtime vs manif. │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  run_project_graph (#3) — project_graph.build_graph + save (always runs) │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  run_confluence_team (#4) — 24h TTL unless --force-confluence / --force  │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  run_confluence_user_default (#5) — 7-day TTL per user entry            │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  PERSIST                                                                 │
+│  index_briefing._save_snapshot(client) → .rag-store.json                  │
+│  manifest["last_run"] + save_manifest() → .index-manifest.json          │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+                    print_summary()  →  exit 0 vs 2 (any summary["errors"])
+
+  (Orchestrator does not run a separate vector “cleanup” pass; skips are staleness-driven.)
+```
 
 The orchestrator follows a linear pipeline:
 
 1. Parse CLI flags to determine which sources are forced.
 2. `load_manifest()` → read prior state (or defaults).
 3. `create_shared_model()` and `create_shared_client()` → one `SentenceTransformer` and one in-memory Qdrant client restored from the shared snapshot when present.
-4. Run `run_briefings`, `run_codebase`, `run_confluence_team`, and `run_confluence_user_default` in sequence; each function updates the manifest for the slices it touched.
+4. Run `run_briefings`, `run_codebase`, `run_project_graph`, `run_confluence_team`, and `run_confluence_user_default` in sequence; manifest updates are written by each indexer slice as it runs.
 5. `index_briefing._save_snapshot(client)` writes the unified vector store to disk.
 6. `save_manifest()` and `print_summary()` finalize the run.
 

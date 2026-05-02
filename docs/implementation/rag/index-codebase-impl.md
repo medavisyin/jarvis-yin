@@ -15,8 +15,37 @@ The stack matches `index_briefing.py` for embeddings and storage:
 
 ## Architecture
 
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│  ENTRY                                                                  │
+│  python index_codebase.py  |  python index_codebase.py <project-path>   │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  LOAD STORE                                                             │
+│  In-memory Qdrant + COLLECTION ← .rag-store.json (if exists)           │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  PROJECTS FROM .rag-projects.json                                       │
+│  base_dirs → one project per subfolder │ explicit_projects {name, path} │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  index_project (seen_hashes shared across projects)                     │
+│  1. Delete points with payload source == project:{name}                  │
+│  2. os.walk tree (prune SKIP_DIRS)                                       │
+│  3. Route: .java → _extract_java_summary │ docs → _process_markdown      │
+│            CONFIG_FILES basename → _process_config                        │
+│  4. Per file: MD5 content hash skip if duplicate (first project wins)   │
+│  5. model.encode batches → upsert PointStruct (source project:{name})   │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+                        _save_snapshot → .rag-store.json
+```
+
 1. **Snapshot load** — Same pattern as other indexers: create in-memory collection, load `C:/reports/ai/.rag-store.json` if present.
-2. **Project walk** — For each entry in `PROJECT_DIRS`, `os.walk` traverses the tree while pruning skip-listed directory names.
+2. **Project walk** — For each project from `load_project_dirs()` (`PROJECT_DIRS_PATH` / `.rag-projects.json`), `os.walk` traverses the tree while pruning skip-listed directory names.
 3. **File-type routing** — `.java` files go through Java-specific extraction; `.md`, `.adoc`, `.txt`, `.rst` through Markdown-style chunking; known config filenames through config handling.
 4. **Project refresh** — Before adding new chunks for a project, the script deletes existing points whose `source` payload equals `project:{project_name}`.
 5. **Embed and upsert** — Same embedding model and batch upsert pattern as the briefing indexer.

@@ -23,6 +23,41 @@
 
 ---
 
+## Architecture & Design
+
+End-to-end path for learning modes (same module as Jarvis chat: `scripts/rag/agent.py`).
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│  CLIENT                                                                 │
+│  Toolbar / learning buttons → session_id (fixed UUIDs or deep-dive)     │
+│  POST /api/agent  JSON: query, history, session_id, optional image      │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  ROUTING (scripts/rag/router.py loads prompts.py system prompts)         │
+│  route_session(session_id, …) → is_learning │ is_aws_cert │ learning_prompt │
+│  Non-learning first: pipeline.handle_query (prompts/context) → run_agent │
+│  On pipeline exception: falls through to legacy / learning branches      │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  LEARNING CONTEXT BUILD                                                 │
+│  English/Casual: _classify_and_resolve_learning_input → article fetch     │
+│  AI Learning / legacy: _resolve_topic_from_history → _fetch_article_content│
+│  AWS cert: regex modes → _fetch_article_content / progress / web_refs     │
+│  Optional: _web_search_references (DuckDuckGo) appended to prompt + SSE  │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  GENERATION                                                             │
+│  agent_loop.run_agent(effective_query, system_prompt_override,          │
+│                         rag_query_override, …) → Ollama stream          │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+                    text/event-stream (SSE) → UI message stream
+```
+
 ## 1. Session Management
 
 ### What it does

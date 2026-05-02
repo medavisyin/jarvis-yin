@@ -6,105 +6,161 @@ tags:
   - notes
 category: learning
 status: current
-last-updated: 2026-04-28
+last-updated: 2026-05-02
 ---
 
 # Deep Dive Sessions & Notes System
 
-> **Category**: LEARNING | **Source**: `scripts/rag/agent.py`, `scripts/config.py`
+> **Category**: LEARNING | **Sources**: `scripts/rag/routes/toolbar.py`, `scripts/rag/agent.py`, `scripts/rag/prompts.py`, `scripts/rag/router.py`
 
 ## Overview
 
 **Deep dive** lets a user start a **new chat session** from a Learning Guide URL, optional `raw/*.md` path, and title: the toolbar API fetches or reads content, truncates it for the LLM context, seeds the session with an initial user message, and stores metadata (`source_url`, `title`, `raw_file`, `fetch_error`). **My Notes** is a separate JSON-backed CRUD API for short notes with optional `tags`, `session_id`, and `session_type`, persisted next to reports.
 
+### Deep Dive vs Explain This
+
+These are **distinct features** despite sharing a similar goal (learning about a topic):
+
+| Aspect | Deep Dive | Explain This |
+|--------|-----------|-------------|
+| **Trigger** | Click button on Learning Guide article | Manual topic entry via toolbar modal |
+| **Creates new session?** | Yes — dedicated `deep_dive` session with UUID | No — sends message in current session |
+| **Content source** | Fetches original article URL or reads `raw/*.md` | Relies on RAG knowledge base + LLM |
+| **System prompt** | `SYSTEM_PROMPT_DEEP_DIVE` (tutor mode) | Current session's system prompt |
+| **Depth options** | Always deep (comprehensive tutor) | User chooses: "quick overview" or "deep dive" |
+| **Web search** | No — uses fetched article content | Optional checkbox |
+| **Session persistence** | Full session with `deep_dive_meta` on disk | Just a message in the conversation |
+| **UI location** | Green button inside rendered Learning Guide | Toolbar → Usage Tools → "Explain This" |
+
 ## Architecture & Design
+
+### Workflow Diagram
+
+```text
+┌──────────────────────────────────────────────────────────────────┐
+│                     DAILY FETCH PIPELINE                         │
+│  run-all-sources.py → raw/*.md articles → generate_learning_guide│
+│  → learning-guide.md (difficulty-rated reading list)             │
+└─────────────────────────┬────────────────────────────────────────┘
+                          │ rendered in Daily Fetch modal
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                     FRONTEND (index.html)                        │
+│  1. Detects filename = "learning-guide*"                         │
+│  2. Injects "📖 Deep Dive" button per article entry              │
+│  3. Button extracts: title, source URL, raw file path            │
+│  4. onClick → startDeepDive(title, sourceUrl, rawFile)           │
+└─────────────────────────┬────────────────────────────────────────┘
+                          │ POST /api/toolbar/deep-dive
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                BACKEND — api_toolbar_deep_dive                   │
+│  (scripts/rag/routes/toolbar.py:195–256)                         │
+│                                                                  │
+│  1. Validate: source_url or title required                       │
+│  2. If source_url → _fetch_source_url_content (httpx + proxy)    │
+│     └─ HTML detected? → _html_to_text (strip scripts/styles/nav)│
+│  3. If raw_file & no fetched content → _read_raw_file_content    │
+│     └─ Scans last 7 days: REPORTS_ROOT/{date}/{raw_file}         │
+│  4. Truncate content to 8,000 chars                              │
+│  5. Build teaching_context (topic + source URL + content)         │
+│  6. Create session_data:                                         │
+│     - id: random UUID                                            │
+│     - session_type: "deep_dive"                                  │
+│     - deep_dive_meta: {source_url, title, raw_file, fetch_error} │
+│     - messages: [initial user prompt]                             │
+│  7. _save_session_file → return {session_id, title}              │
+└─────────────────────────┬────────────────────────────────────────┘
+                          │ client loads session, auto-sends
+                          │ "Please teach me about this topic."
+                          ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                   CHAT — POST /api/agent                         │
+│                                                                  │
+│  1. route_session(session_id) loads session file                 │
+│     └─ session_type == "deep_dive" detected                      │
+│  2. Returns: is_deep_dive=True, SYSTEM_PROMPT_DEEP_DIVE          │
+│  3. Intent: LEARNING_DEEP_DIVE                                   │
+│  4. LLM receives tutor prompt + article content + user question  │
+│  5. Ongoing Q&A in the dedicated session                         │
+└──────────────────────────────────────────────────────────────────┘
+```
 
 ### System Context
 
-Deep dives are **not** fixed UUID sessions: `api_toolbar_deep_dive` creates a new `session_id` (random UUID) and sets `session_type: deep_dive`. Subsequent `/api/agent` calls load that session; if `session_type == "deep_dive"`, `SYSTEM_PROMPT_DEEP_DIVE` is applied (`2047–2050`).
-
-```text
-POST /api/toolbar/deep-dive { source_url?, title?, raw_file? }
-  → _fetch_source_url_content OR _read_raw_file_content
-  → truncate to 8000 chars
-  → _save_session_file (messages: [initial user prompt], deep_dive_meta)
-Client opens chat with returned session_id
-  → POST /api/agent → run_agent(..., SYSTEM_PROMPT_DEEP_DIVE)
-
-Notes (parallel): GET/POST /api/notes, PUT/DELETE /api/notes/:id
-  → .learning-notes.json
-```
+Deep dives are **not** fixed UUID sessions: `api_toolbar_deep_dive` creates a new `session_id` (random UUID) and sets `session_type: deep_dive`. Subsequent `/api/agent` calls load that session; `route_session()` in `router.py` detects the type and applies `SYSTEM_PROMPT_DEEP_DIVE`.
 
 ### Data Flow
 
-1. **Create session** — `api_toolbar_deep_dive` validates `source_url` or `title` (`2957–2964`).
-2. **Fetch** — If `source_url`, `_fetch_source_url_content` uses `httpx` with `BRIEFING_PROXY`, detects HTML vs plain, strips tags via `_html_to_text` (`1737–1783`).
-3. **Raw fallback** — If `raw_file` and no fetched content, `_read_raw_file_content` scans last 7 days under `REPORTS_ROOT/{date}/{raw_file}` (`1786–1797`).
-4. **Context build** — `teaching_context` includes topic, source URL, truncated body (max 8000 chars) (`2985–2992`).
-5. **Initial message** — User-role prompt asks for a comprehensive explanation (`2994–2997`).
-6. **Persistence** — `session_data` with `deep_dive_meta`; `_save_session_file` (`2999–3016`).
-7. **Agent** — `run_agent` receives history including the seeded message; system prompt is deep-dive tutor (`1449–1463`, `2047–2050`).
-
-**Notes:** `api_notes_list` optional `tag` filter; create generates UUID, timestamps; update requires new content and refreshes title from first line (`2746–2809`).
+1. **Create session** — `api_toolbar_deep_dive` validates `source_url` or `title` (`toolbar.py:201–202`).
+2. **Fetch** — If `source_url`, `_fetch_source_url_content` uses `httpx` with `BRIEFING_PROXY`, detects HTML vs plain, strips tags via `_html_to_text` (`agent.py:173–199`).
+3. **Raw fallback** — If `raw_file` and no fetched content, `_read_raw_file_content` scans last 7 days under `REPORTS_ROOT/{date}/{raw_file}` (`agent.py:222–233`).
+4. **Context build** — `teaching_context` includes topic, source URL, truncated body (max 8000 chars) (`toolbar.py:223–230`).
+5. **Initial message** — User-role prompt asks for a comprehensive explanation (`toolbar.py:232–235`).
+6. **Persistence** — `session_data` with `deep_dive_meta`; `_save_session_file` (`toolbar.py:237–256`).
+7. **Routing** — `route_session` detects `session_type == "deep_dive"` and returns `SYSTEM_PROMPT_DEEP_DIVE` (`router.py:35–83`).
+8. **Intent** — Mapped to `Intent.LEARNING_DEEP_DIVE` via `session_type_to_intent()` (`intent.py:246`).
 
 ### Key Design Decisions
 
-- **httpx + HTML stripping** rather than a headless browser — simpler ops; JS-heavy sites may return incomplete text (`1737–1763`).
-- **8k truncation** — Balances source fidelity with `num_ctx` limits (`2989–2991`).
+- **httpx + HTML stripping** rather than a headless browser — simpler ops; JS-heavy sites may return incomplete text (`agent.py:173–199`).
+- **8k truncation** — Balances source fidelity with `num_ctx` limits (`toolbar.py:227–229`).
 - **Notes file in REPORTS_ROOT** — Keeps user data with other Jarvis artifacts (`NOTES_FILE` in config).
-- **Session linking** — Notes accept `session_id` / `session_type` for client-side association; no server-side FK enforcement (`2767–2768`).
+- **Session linking** — Notes accept `session_id` / `session_type` for client-side association; no server-side FK enforcement.
 
 ## Implementation Details
 
 ### Core Components
 
-| Piece | Role |
-|--------|------|
-| `api_toolbar_deep_dive` | POST handler: fetch, truncate, create session (`2957–3018`). |
-| `_fetch_source_url_content` | httpx GET, `_html_to_text` for HTML (`1737–1763`). |
-| `_read_raw_file_content` | Resolves `raw_file` under recent report dates (`1786–1797`). |
-| `_html_to_text` | Regex strip scripts/styles/nav/footer/header, unescape, tag removal (`1766–1783`). |
-| `SYSTEM_PROMPT_DEEP_DIVE` | Tutor behavior for briefing-derived topics (`1449–1463`). |
-| `api_agent` | Loads session file; applies deep dive prompt when `session_type == deep_dive` (`2047–2050`). |
-| `_load_notes` / `_save_notes` | JSON list persistence (`2724–2743`). |
-| `api_notes_list` / `api_notes_create` / `api_notes_update` / `api_notes_delete` | REST-style notes CRUD (`2746–2809`). |
+| Piece | File | Lines | Role |
+|-------|------|-------|------|
+| `api_toolbar_deep_dive` | `routes/toolbar.py` | 194–256 | POST handler: fetch, truncate, create session. |
+| `_fetch_source_url_content` | `agent.py` | 173–199 | httpx GET with proxy, `_html_to_text` for HTML. |
+| `_html_to_text` | `agent.py` | 202–219 | Regex strip scripts/styles/nav/footer/header, unescape, tag removal. |
+| `_read_raw_file_content` | `agent.py` | 222–233 | Resolves `raw_file` under recent 7 days of report dates. |
+| `SYSTEM_PROMPT_DEEP_DIVE` | `prompts.py` | 275–289 | Tutor behavior prompt for briefing-derived topics. |
+| `route_session` | `router.py` | 35–83 | Detects `deep_dive` session type, returns prompt. |
+| `Intent.LEARNING_DEEP_DIVE` | `intent.py` | 50, 246 | Intent enum and session-type mapping. |
+| `startDeepDive` | `index.html` | 1543–1565 | Frontend JS: calls API, loads session, sends first message. |
+| Learning Guide button injection | `index.html` | 1515–1534 | Injects "Deep Dive" buttons when rendering `learning-guide*` files. |
+| `_load_notes` / `_save_notes` | `agent.py` | 1279–1296 | JSON list persistence. |
+| `api_notes_*` | `agent.py` | 1302–1366 | REST-style notes CRUD. |
+
+### Frontend Flow
+
+1. **Button injection**: When the file preview detects a filename starting with `learning-guide`, it regex-matches each numbered article entry and injects a green "Deep Dive" button (`index.html:1515–1534`).
+2. **Metadata extraction**: The button's `onclick` passes the article **title**, **source URL** (from `Source:` line), and **raw file path** (from `File:` line).
+3. **Session creation**: `startDeepDive()` POSTs to `/api/toolbar/deep-dive`, then calls `refreshSessionList()` and `loadSession(data.session_id)` to switch to the new session (`index.html:1543–1565`).
+4. **Auto-send**: After loading, it sets `queryInput.value = 'Please teach me about this topic.'` and calls `sendMessage()` to trigger the first LLM response.
 
 ### API Surface
 
-- `POST /api/toolbar/deep-dive` — JSON: `source_url`, `title`, `raw_file`; returns `session_id`, `title` (`2957–3018`).
-- `GET /api/notes?tag=` — list, sorted by `created_at` desc (`2746–2753`).
-- `POST /api/notes` — body: `content`, optional `title`, `tags`, `session_id`, `session_type` (`2756–2775`).
-- `PUT /api/notes/<note_id>` — `content` required (`2778–2797`).
-- `DELETE /api/notes/<note_id>` (`2800–2809`).
+- `POST /api/toolbar/deep-dive` — JSON: `source_url`, `title`, `raw_file`; returns `session_id`, `title`.
+- `GET /api/notes?tag=` — list, sorted by `created_at` desc.
+- `POST /api/notes` — body: `content`, optional `title`, `tags`, `session_id`, `session_type`.
+- `PUT /api/notes/<note_id>` — `content` required.
+- `DELETE /api/notes/<note_id>`.
 - `POST /api/agent` — ongoing deep-dive chat with returned `session_id`.
 
 ### Configuration
 
-- `NOTES_FILE` — `os.path.join(REPORTS_ROOT, ".learning-notes.json")` (`scripts/config.py` line 37).
+- `NOTES_FILE` — `os.path.join(REPORTS_ROOT, ".learning-notes.json")` (`scripts/config.py:38`).
 - `REPORTS_ROOT` — env `JARVIS_REPORTS_ROOT` or default `C:/reports/ai`.
-- Proxy: `BRIEFING_PROXY` for URL fetch (`1744`, `1749`).
-- Session directory: `CHAT_SESSIONS_DIR` (`2980`, `3015`).
+- Proxy: `BRIEFING_PROXY` for URL fetch (`agent.py:180`).
+- Session directory: `CHAT_SESSIONS_DIR` (`scripts/config.py:37`).
 
 ### Error Handling & Edge Cases
 
-- Fetch errors stored in `deep_dive_meta.fetch_error` while still allowing title-only sessions (`2967–2977`, `3012`).
-- If no content and no title → 400 (`2977–2978`).
-- Session save failure → 500 (`3015–3016`).
-- Notes: missing note on update/delete → 404 (`2790–2791`, `2805–2806`); empty content → 400 (`2759–2761`, `2781–2783`).
-
-## Code Walkthrough
-
-- **Deep dive route** — `api_toolbar_deep_dive` assembles `session_data` including `messages` and `deep_dive_meta` (`2957–3016`).
-- **URL fetch** — Status check, content-type heuristic, HTML path vs raw text (`1751–1758`).
-- **Agent hook** — `_load_session_file(session_id)` and `session_type` gate (`2047–2050`).
-- **Notes list filter** — Case-insensitive tag membership (`2749–2751`).
-- **Note shape** — `id`, `content`, `title` (default first 80 chars), `tags`, `session_id`, `session_type`, `created_at`; update adds `updated_at` (`2762–2770`, `2792–2794`).
+- Fetch errors stored in `deep_dive_meta.fetch_error` while still allowing title-only sessions (`toolbar.py:205–208`).
+- If no content and no title → 400 (`toolbar.py:215–216`).
+- Session save failure → 500 (`toolbar.py:253–254`).
+- Notes: missing note on update/delete → 404; empty content → 400.
 
 ## Improvement Ideas
 
 ### Short-term
 
-- **Playwright or readabilty** — For SPAs/paywalled content, optional headless fetch behind a flag (current code is httpx-only).
+- **Playwright or readability** — For SPAs/paywalled content, optional headless fetch behind a flag (current code is httpx-only).
 - Increase truncation selectively when `run_agent` selects higher `num_ctx`.
 
 ### Medium-term
@@ -119,5 +175,11 @@ Notes (parallel): GET/POST /api/notes, PUT/DELETE /api/notes/:id
 
 ## References
 
-- `scripts/rag/agent.py` — `SYSTEM_PROMPT_DEEP_DIVE`, `_fetch_source_url_content`, `_read_raw_file_content`, `_html_to_text`, `api_toolbar_deep_dive`, notes helpers and routes, `api_agent` deep-dive detection (`1449–1463`, `1737–1797`, `2724–2809`, `2957–3018`, `2047–2050`).
-- `scripts/config.py` — `NOTES_FILE`, `REPORTS_ROOT`, `CHAT_SESSIONS_DIR`.
+- `scripts/rag/routes/toolbar.py` — `api_toolbar_deep_dive` (194–256).
+- `scripts/rag/agent.py` — `_fetch_source_url_content` (173–199), `_html_to_text` (202–219), `_read_raw_file_content` (222–233), notes CRUD (1279–1366).
+- `scripts/rag/prompts.py` — `SYSTEM_PROMPT_DEEP_DIVE` (275–289).
+- `scripts/rag/router.py` — `route_session` deep_dive detection (35–83).
+- `scripts/rag/intent.py` — `Intent.LEARNING_DEEP_DIVE` (50, 246).
+- `scripts/rag/templates/index.html` — Learning Guide button injection (1515–1534), `startDeepDive` (1543–1565), `startExplainThis` (1229–1259).
+- `scripts/config.py` — `NOTES_FILE` (38), `CHAT_SESSIONS_DIR` (37), `REPORTS_ROOT`.
+- `scripts/tools/generate_learning_guide.py` — Generates the difficulty-rated reading list that triggers deep dives.

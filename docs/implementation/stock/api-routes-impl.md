@@ -2,7 +2,46 @@
 
 ## Overview
 
-All stock API endpoints are defined in `scripts/rag/agent.py` using Flask. The `@_with_stock_imports` decorator ensures `scripts/stock/` is on `sys.path` before each handler.
+All stock API endpoints live on Flask blueprint `stock_bp` (`scripts/rag/routes/stock.py`), registered from `scripts/rag/agent.py`. The `@_with_stock_imports` decorator swaps in `scripts/stock/config.py` as `sys.path`/`sys.modules["config"]` and clears cached stock modules before each handler.
+
+---
+
+## Architecture & Design
+
+```text
+┌──────────────────────────────────────────────────────────────────────────┐
+│  ENTRY: HTTP client → Flask (agent.py) → register_blueprint(stock_bp)  │
+└───────────────────────────────────┬──────────────────────────────────────┘
+                                    │
+                                    ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│  @_with_stock_imports                                                     │
+│  · insert scripts/stock on sys.path                                      │
+│  · sys.modules["config"] ← stock/config.py                               │
+│  · del cached stock modules (watchlist, model_*, scanner, …)             │
+└───────────────────────────────────┬──────────────────────────────────────┘
+                                    │
+         ┌──────────────────────────┼───────────────────────────────┐
+         ▼                          ▼                               ▼
+┌────────────────────┐  ┌────────────────────────────────┐  ┌──────────────────────────┐
+│  SYNC ROUTES       │  │  TRAIN POST /train/daily        │  │  SCAN / long-term scans  │
+│  analyze, WL, …    │  │  _train_lock → daemon Thread │  │  scanner start_scan Thread│
+│  predict, china…   │  │  import stock config in thread │  │  _scan_lock + _stop_evt  │
+│  import stock libs │  │  per-symbol:                     │  │  status / result endpoints│
+│  → computations    │  │    update_stock_data →         │  │  JSON + scan artifacts    │
+│  → jsonify(...)    │  │    backfill_actuals →          │  └─────────────┬─────────────┘
+└─────────┬──────────┘  │    verify → train → record     │                │
+          │             │    aggregate_stats              │                │
+          │             │    fetch_all_sentiment          │                │
+          │             │    scan_world_news →            │                │
+          │             │    train_progress.json          │                │
+          │             └────────────────┬────────────────┘                │
+          │                              │                               │
+          └──────────────────────────────┴───────────────────────────────┘
+                                        │
+                                        ▼
+                               HTTP JSON response
+```
 
 ---
 

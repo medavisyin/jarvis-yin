@@ -15,6 +15,33 @@ This script indexes personal knowledge files (Markdown and PDF) from a dedicated
 
 ## Architecture
 
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│  ENTRY POINTS                                                           │
+│  • CLI: index_custom.main() → add │ scan │ list │ remove               │
+│  • search_ui.py: POST /api/refresh-knowledge → daemon thread →          │
+│    _run_refresh_knowledge → index_custom.index_file per .md/.markdown/.txt/.pdf │
+│      under KNOWLEDGE_ROOT                                               │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  LOAD / MUTATE SNAPSHOT                                                  │
+│  _get_client() loads .rag-store.json into in-memory Qdrant               │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  PER FILE                                                               │
+│  .md → _parse_frontmatter → body → _chunk_by_sections (+ _chunk_text)    │
+│  .pdf → PdfReader pages → text → section chunking (_extract_pdf_sections)│
+│  _infer_item_type / _infer_source from path under KNOWLEDGE_ROOT          │
+└───────────────────────────────┬─────────────────────────────────────────┘
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  OUTPUT                                                                 │
+│  MiniLM embed → deterministic UUID upserts → _save_snapshot              │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
 1. **CLI dispatch** — Subcommands route to add, scan, list, or remove flows.
 2. **Snapshot** — Load existing `.rag-store.json`, mutate collection, save full snapshot (consistent with other scripts).
 3. **Markdown path** — Read file → optional frontmatter split → body chunked by headings then paragraphs → metadata merged from frontmatter and path inference.
