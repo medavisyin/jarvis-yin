@@ -5,7 +5,7 @@ tags:
   - audio-knowledge
 category: personal
 status: current
-last-updated: 2026-04-30
+last-updated: 2026-05-03
 ---
 
 # Audio Knowledge (Podcast from RAG)
@@ -25,11 +25,12 @@ flowchart TD
   Q[Qdrant snapshot _qdrant_points] --> Sel[Filter by item_type and parent_title]
   Sel --> RAG[Assemble rag_block cap 40k chars]
   RAG --> Web[_web_search_references optional]
-  Web --> LLM[Ollama chat — memory-friendly narration]
+  Web --> LLM["Ollama chat — dual-host dialogue<br/>[主播] + [嘉宾]"]
   LLM --> Clean[_clean_narration_for_tts]
-  Clean --> Rhythm[_enhance_narration_rhythm]
-  Rhythm --> TTS[edge_tts chunk + silence + ffmpeg concat]
-  TTS --> MP3[REPORTS_ROOT/YYYY-MM-DD/knowledge-audio-HHMMSS.mp3]
+  Clean --> Parse["_parse_dialogue_turns<br/>split by role markers"]
+  Parse --> TTS["edge_tts per-turn rendering<br/>YunxiNeural(主播) + XiaoxiaoNeural(嘉宾)"]
+  TTS --> Concat[ffmpeg concat all turns]
+  Concat --> MP3[REPORTS_ROOT/YYYY-MM-DD/knowledge-audio-HHMMSS.mp3]
 ```
 
 Distinct from Daily Fetch audio: this path uses **retrieved chunk text** from the vector store, not `briefing-data.json`.
@@ -41,10 +42,10 @@ Distinct from Daily Fetch audio: this path uses **retrieved chunk text** from th
 3. **Select chunks**: Iterate `_qdrant_points`; match `item_type`; filter by `selected_parents` list if non-empty; collect title/date/source/text.
 4. **Assemble**: Concatenate chunk texts into markdown sections until ~40000 characters.
 5. **Web**: From first five titles, build query; `_resolved_web_search_references(..., 5)` optional block.
-6. **Script**: Ollama `OLLAMA_MODEL_FAST`, `think: True`, `num_predict: 16384`, language-specific system/user prompts with memory-friendly writing rules; voices `en-US-AndrewNeural` vs `zh-CN-YunxiNeural`.
+6. **Script**: Ollama `OLLAMA_MODEL_FAST`, `think: True`, `num_predict: 16384`, dual-host dialogue format with `[主播]`/`[嘉宾]` markers.
 7. **Cleanup**: Strip think tags, markdown, prefixes; `_clean_narration_for_tts`.
-8. **Rhythm**: `_enhance_narration_rhythm` splits long sentences at natural break points.
-9. **TTS**: Split into ~2000-char chunks at `。` / `.`; single or multi-part MP3; ffmpeg concat if available else binary append.
+8. **Parse**: `_parse_dialogue_turns` splits dialogue into (role, text) tuples.
+9. **TTS**: Each turn rendered with role-specific voice (YunxiNeural / XiaoxiaoNeural), chunked at ~2000 chars, concatenated via ffmpeg.
 10. **Done**: `output_path`, `output_url` under `/api/toolbar/audio-file/...`, `narration_preview`.
 
 ### Key Design Decisions
@@ -55,35 +56,33 @@ Distinct from Daily Fetch audio: this path uses **retrieved chunk text** from th
 - **Edge TTS**: Same family as Daily Fetch; rate `-5%`, pitch `+0Hz`.
 - **No SSML**: Edge-TTS v7+ (2025+) removed custom SSML support. Rhythm achieved through text manipulation and inter-segment silence.
 
-## Audio Quality & Memorability (2026-04-30)
+## Audio Quality Evolution
 
-### Problem
+### v1 (2026-04-30): Memory Techniques — REPLACED
 
-Generated audio had two issues: (1) "AI味" too strong — robotic pacing with flat delivery, (2) listeners couldn't remember content after listening.
+Initial approach forced analogies, filler words (嗯、对吧、说白了), and mandatory story openings via prompts. Result: LLM output became repetitive and formulaic (same analogies recycled, same phrases repeated across all segments).
 
-### Solution: Three-Layer Enhancement
+### v2 (2026-05-03): Dual-Host Dialogue — CURRENT
 
-**Layer 1: LLM Narration Quality (prompt rewrite)**
-- All system prompts rewritten from "broadcast reporter" to "conversational podcast host"
-- Mandatory use of everyday analogies for abstract concepts
-- Required oral filler words (嗯、对吧、你想想看、说白了) for naturalness
-- Sentence rhythm variation: long explanatory → short punchy summary
+**Problem:** v1's forced analogies and filler words made output worse — monotonous and artificial. Phrases like "你说是吗" and "买衣服" analogies appeared repeatedly across all segments.
 
-**Layer 2: Structured Memory Techniques (built into prompts)**
-- Preview: Each section opens with 1-sentence roadmap ("这一段我们聊三件事……")
-- Analogy: Every new concept starts with a relatable comparison ("这就好比……")
-- Repetition: Key terms/numbers appear twice with different phrasing
-- Recap: Each section ends with oral one-liner summary ("所以简单来说……")
-- Review: Final segment recaps all topics' core takeaways (cross-segment linking)
+**Solution: Dual-host podcast dialogue format**
 
-**Layer 3: TTS Rhythm Enhancement**
-- `_enhance_narration_rhythm()` splits overly long sentences (>120 chars) at natural clause boundaries
-- Inter-segment 800ms silence (ffmpeg `anullsrc`) for "breathing room" between topics
-- Paragraph-level separation preserved for natural TTS pausing
+All narration prompts rewritten to generate dialogue between two roles:
+- **[主播] (Host)**: A sharp journalist/anchor who asks good questions and drives the conversation. Voice: `zh-CN-YunxiNeural` (male).
+- **[嘉宾] (Guest)**: An expert analyst who provides depth, context, and clear explanations. Voice: `zh-CN-XiaoxiaoNeural` (female).
+
+Key design changes:
+1. **Removed** all forced analogy/filler/memory rules — let the dialogue flow naturally
+2. **Added** `_parse_dialogue_turns()` to split LLM output by `[主播]`/`[嘉宾]` markers
+3. **TTS pipeline** renders each turn with the appropriate voice, then concatenates
+4. **Graceful fallback**: if LLM doesn't produce markers, entire text renders as host voice
+
+English mode uses `[Host]`/`[Guest]` with `en-US-AndrewNeural` + `en-US-JennyNeural`.
 
 ### Design Note: Why Not SSML
 
-Edge-TTS v7.2.8 (2026-03) removed custom SSML support. Microsoft only permits the `<speak><voice>` envelope that the library generates internally. Available parameters: `rate`, `pitch`, `volume` via the `Communicate` constructor only. The rhythm enhancement approach works within these constraints by giving the TTS engine shorter, well-punctuated sentences that it naturally renders with better prosody.
+Edge-TTS v7.2.8 (2026-03) removed custom SSML support. Microsoft only permits the `<speak><voice>` envelope that the library generates internally. Available parameters: `rate`, `pitch`, `volume` via the `Communicate` constructor only.
 
 ## Implementation Details
 
@@ -93,11 +92,13 @@ Edge-TTS v7.2.8 (2026-03) removed custom SSML support. Microsoft only permits th
 |--------|------|
 | `_audio_jobs` | In-memory job status dict |
 | `_generate_knowledge_audio` | Background worker |
-| `_generate_segmented_narrations` | Per-source/category narration with memory techniques |
-| `_enhance_narration_rhythm` | Text-level rhythm optimization for TTS |
+| `_generate_segmented_narrations` | Per-source/category dual-host dialogue generation |
+| `_parse_dialogue_turns` | Split dialogue by `[主播]`/`[嘉宾]` markers into (role, text) tuples |
+| `_enhance_narration_rhythm` | Split long sentences at natural break points for TTS |
 | `_clean_narration_for_tts` | Strip markdown/annotations |
-| `_tts_segments_to_mp3` | Multi-segment TTS with silence gaps |
-| `_tts_to_mp3` | Single narration → MP3 |
+| `_tts_segments_to_mp3` | Multi-segment dual-voice TTS with inter-segment silence |
+| `_tts_to_mp3` | Single dialogue → dual-voice MP3 |
+| `_DIALOGUE_VOICES` | Voice mapping: zh host=YunxiNeural, guest=XiaoxiaoNeural |
 | `api_audio_knowledge` | Start job route |
 | `api_audio_knowledge_history` | List recent MP3s |
 | `api_audio_knowledge_items` | Group chunks by parent for UI |
@@ -124,7 +125,7 @@ Edge-TTS v7.2.8 (2026-03) removed custom SSML support. Microsoft only permits th
 - Empty narration after LLM: same.
 - Exceptions: `status: done`, `error` string, traceback logged.
 - `book_chapter` item type lists distinct chunk titles under each parent.
-- SSML fallback: if any TTS step fails, plain-text mode is used automatically.
+- No dialogue markers from LLM: entire text treated as single host turn (graceful fallback).
 
 ## Code Walkthrough
 
@@ -143,15 +144,16 @@ Edge-TTS v7.2.8 (2026-03) removed custom SSML support. Microsoft only permits th
 
 - Target duration slider (adjust `user_msg` length hints and `num_predict`).
 - Offline bundle: download MP3 + sidecar transcript.
-- Experiment with varied `rate` per chunk (e.g., slower `-10%` for recap sections, faster `-2%` for transitions).
+- Experiment with varied `rate` per role (e.g., host slightly faster, guest slightly slower for contrast).
 
 ### Long-term
 
 - RSS feed of `knowledge-audio-*.mp3` for podcast clients.
 - Local GPU TTS (CosyVoice / F5-TTS) for near-human quality when hardware available.
+- Multi-episode continuity (guest references previous episodes).
 
 ## References
 
-- `scripts/rag/routes/ai_news.py` — Audio from Knowledge, narration generation, TTS pipeline, rhythm enhancement
+- `scripts/rag/routes/ai_news.py` — Audio from Knowledge, dual-host dialogue generation, dialogue parser, TTS pipeline
 - `scripts/rag/routes/daily_fetch.py` — Daily Fetch audio generation (imports from ai_news)
 - `scripts/output/generate-audio.py` — Standalone audio generator (legacy)
