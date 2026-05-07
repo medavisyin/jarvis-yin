@@ -20,7 +20,7 @@ for _p in (_SCRIPTS_DIR, _RAG_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from config import JIRA_REPORT_SCRIPT, REPORTS_ROOT
+from config import JIRA_REPORT_SCRIPT, KNOWLEDGE_ROOT, REPORTS_ROOT
 from tools import tool_commit_summary
 from learning.constants import LEARNING_SESSION_IDS as _LEARNING_SESSION_IDS
 from routes.ai_news import _generate_segmented_narrations, _load_ai_kb, _tts_segments_to_mp3
@@ -54,6 +54,101 @@ def _get_global_settings() -> dict:
         except Exception as e:
             _log.error("Failed to read settings file %s: %s", settings_file, e)
     return {}
+
+
+# ---------------------------------------------------------------------------
+# AI Learning — ingest daily AI news into learning knowledge base
+# ---------------------------------------------------------------------------
+
+
+def _ingest_ai_news_to_learning(output_dir: str, date_str: str) -> int:
+    """Extract AI news items from daily briefing and append to learning notes.
+
+    Adds new items to ``ai_learning/08-ai-news-digest.md`` with deduplication
+    based on title similarity.  Returns the number of items added.
+    """
+    import json as _json
+    import hashlib
+
+    data_file = os.path.join(output_dir, "briefing-data-filtered.json")
+    if not os.path.isfile(data_file):
+        data_file = os.path.join(output_dir, "briefing-data.json")
+    if not os.path.isfile(data_file):
+        return 0
+
+    with open(data_file, "r", encoding="utf-8") as f:
+        bdata = _json.load(f)
+
+    items: list[dict] = []
+    for src_block in bdata.get("per_source_data", []):
+        src_name = src_block.get("source_name") or src_block.get("name", "")
+        for it in src_block.get("items", []):
+            title = (it.get("title") or "").strip()
+            summary = (it.get("summary") or it.get("description") or "").strip()
+            url = (it.get("url") or it.get("link") or "").strip()
+            if title:
+                items.append({
+                    "title": title,
+                    "summary": summary[:500],
+                    "source": src_name,
+                    "url": url,
+                })
+
+    if not items:
+        return 0
+
+    notes_dir = os.path.join(KNOWLEDGE_ROOT, "notes", "ai_learning")
+    os.makedirs(notes_dir, exist_ok=True)
+    digest_path = os.path.join(notes_dir, "08-ai-news-digest.md")
+
+    existing_hashes: set[str] = set()
+    existing_content = ""
+    if os.path.isfile(digest_path):
+        with open(digest_path, "r", encoding="utf-8") as f:
+            existing_content = f.read()
+        for line in existing_content.split("\n"):
+            if line.startswith("### "):
+                title_text = line.replace("### ", "").strip()
+                h = hashlib.md5(title_text.lower().encode()).hexdigest()
+                existing_hashes.add(h)
+
+    new_entries: list[str] = []
+    for it in items:
+        h = hashlib.md5(it["title"].lower().encode()).hexdigest()
+        if h in existing_hashes:
+            continue
+        existing_hashes.add(h)
+        entry = f"\n### {it['title']}\n"
+        entry += f"**Source:** {it['source']} | **Date:** {date_str}"
+        if it["url"]:
+            entry += f" | [Link]({it['url']})"
+        entry += "\n\n"
+        if it["summary"]:
+            entry += f"{it['summary']}\n"
+        new_entries.append(entry)
+
+    if not new_entries:
+        return 0
+
+    if not existing_content:
+        header = (
+            "# AI News Digest — Daily Learning Updates\n\n"
+            "Auto-populated from daily AI briefings. Each entry represents a "
+            "notable development in AI/ML that supplements the structured "
+            "learning notes.\n\n---\n"
+        )
+        existing_content = header
+
+    date_section = f"\n## {date_str}\n"
+    if date_section.strip() not in existing_content:
+        existing_content += date_section
+
+    existing_content += "\n".join(new_entries) + "\n"
+
+    with open(digest_path, "w", encoding="utf-8") as f:
+        f.write(existing_content)
+
+    return len(new_entries)
 
 
 # ---------------------------------------------------------------------------
@@ -112,6 +207,16 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                     steps.append({"step": "topic_dedup", "exit_code": r2.returncode, "output": stdout2[-300:]})
             except Exception as e:
                 steps.append({"step": "topic_dedup", "exit_code": 1, "output": str(e)[:200]})
+
+        if _should_run("ai_learning_knowledge"):
+            job["step"] = "Extracting AI news into learning knowledge..."
+            try:
+                _ingest_ai_news_to_learning(output_dir, today)
+                steps.append({"step": "ai_learning_knowledge", "exit_code": 0,
+                              "output": "AI learning knowledge updated"})
+            except Exception as e:
+                steps.append({"step": "ai_learning_knowledge", "exit_code": 1,
+                              "output": str(e)[:300]})
 
         commit_text = ""
         if _should_run("commit_report"):
@@ -906,15 +1011,23 @@ def _get_or_create_learning_session(session_type: str) -> dict:
 
 
 def _load_ai_learning_roadmap() -> str:
-    """Load the ch8 roadmap as context for AI learning sessions."""
+    """Load the AI learning roadmap (new domain/category structure)."""
     roadmap_path = os.path.normpath(
-        os.path.join(_RAG_DIR, "..", "..", "docs", "ch8-learning-roadmap.md")
+        os.path.join(_RAG_DIR, "..", "..", "docs", "ai-learning-roadmap.md")
     )
     try:
-        with open(os.path.normpath(roadmap_path), "r", encoding="utf-8") as f:
+        with open(roadmap_path, "r", encoding="utf-8") as f:
             return f.read()
     except OSError:
-        return ""
+        legacy = os.path.normpath(
+            os.path.join(_RAG_DIR, "..", "..", "docs",
+                         "learning", "rag", "ch8-learning-roadmap.md")
+        )
+        try:
+            with open(legacy, "r", encoding="utf-8") as f:
+                return f.read()
+        except OSError:
+            return ""
 
 
 def _load_aws_cert_roadmap() -> str:
@@ -1151,22 +1264,30 @@ def api_learning_context():
     ltype = request.args.get("type", "ai_learning")
     if ltype == "ai_learning":
         roadmap = _load_ai_learning_roadmap()
-        topics = []
-        current_track = ""
-        current_level = ""
+        domains = []
+        current_domain = ""
+        current_category = ""
         for line in roadmap.split("\n"):
-            if line.startswith("## Track"):
-                current_track = line.replace("## ", "").strip()
+            if line.startswith("## Domain"):
+                current_domain = line.replace("## ", "").strip()
+                current_category = ""
+            elif line.startswith("### Category:"):
+                current_category = line.replace("### Category:", "").strip()
             elif line.startswith("### "):
-                current_level = line.replace("### ", "").strip()
-            elif line.startswith("- **") and current_track:
+                current_category = line.replace("### ", "").strip()
+            elif line.startswith("- **") and current_domain:
                 topic_name = line.split("**")[1] if "**" in line else line[4:]
-                topics.append({
-                    "track": current_track,
-                    "level": current_level,
-                    "topic": topic_name.strip(":").strip(),
+                topic_text = topic_name.strip(":").strip()
+                desc = ""
+                if ":" in line.split("**", 2)[-1]:
+                    desc = line.split("**", 2)[-1].split(":", 1)[-1].strip()
+                domains.append({
+                    "domain": current_domain,
+                    "category": current_category,
+                    "topic": topic_text,
+                    "description": desc,
                 })
-        return jsonify({"type": "ai_learning", "topics": topics})
+        return jsonify({"type": "ai_learning", "domains": domains})
     elif ltype == "english_learning":
         titles = _load_recent_ai_news_titles()
         return jsonify({"type": "english_learning", "news_titles": titles})

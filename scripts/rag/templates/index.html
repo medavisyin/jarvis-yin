@@ -3027,15 +3027,40 @@ async function _openLearning(type, buildWelcome) {
 
 async function openAILearning() {
   await _openLearning('ai_learning', function(ctx) {
-    if (!ctx.topics || ctx.topics.length === 0) return null;
-    let msg = '## AI Learning Roadmap\n\nWelcome! Here are the topics you can learn. Click any topic or type a question to start a deep-dive lesson.\n\n';
-    let lastTrack = '', lastLevel = '';
-    for (const t of ctx.topics) {
-      if (t.track !== lastTrack) { msg += '\n### ' + escHtml(t.track) + '\n'; lastTrack = t.track; lastLevel = ''; }
-      if (t.level !== lastLevel) { msg += '\n**' + escHtml(t.level) + '**\n'; lastLevel = t.level; }
-      msg += '- ' + escHtml(t.topic) + '\n';
+    const domains = ctx.domains || [];
+    if (domains.length === 0) return null;
+
+    let msg = '## AI Learning — LLM, RAG & AI Engineering\n\n';
+    msg += '**7 Domains** covering the full AI/LLM engineering stack, from foundations to production.\n\n';
+
+    msg += '### 📚 Study Categories\n\n';
+    msg += 'Click any topic to start a deep-dive lesson. Each contains detailed notes, tables, and practice questions.\n\n';
+
+    let lastDomain = '';
+    let lastCategory = '';
+    for (const d of domains) {
+      if (d.domain !== lastDomain) {
+        msg += '\n#### ' + escHtml(d.domain) + '\n\n';
+        lastDomain = d.domain;
+        lastCategory = '';
+      }
+      const cat = d.category || '';
+      if (cat && cat !== lastCategory) {
+        msg += '**' + escHtml(cat) + '**\n';
+        lastCategory = cat;
+      }
+      const desc = d.description ? ' — ' + escHtml(d.description) : '';
+      msg += '- `' + escHtml(d.topic) + '`' + desc + '\n';
     }
-    msg += '\n---\n\nType a topic name to start learning, or ask any question about RAG, LLM, or HuggingFace!';
+
+    msg += '\n---\n\n';
+    msg += '### 🎯 How to Use\n\n';
+    msg += '| Command | Example |\n';
+    msg += '|---------|----------|\n';
+    msg += '| **Teach** | `teach me RAG` or `teach me transformers` |\n';
+    msg += '| **Domain overview** | `Domain 1` or `Domain 4` |\n';
+    msg += '| **Any topic** | `LoRA`, `hybrid search`, `prompt injection` |\n';
+    msg += '| **Any question** | Just ask anything about AI/LLM engineering! |\n';
     return msg;
   });
 }

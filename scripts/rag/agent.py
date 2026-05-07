@@ -336,32 +336,181 @@ def _fetch_article_content(title: str, session_id: str) -> str:
                         break
         return "\n\n---\n\n".join(parts) if parts else ""
     elif session_id == _LEARNING_SESSION_IDS.get("ai_learning"):
-        roadmap = _load_ai_learning_roadmap()
-        if roadmap:
-            import re
-            sections = re.split(r"(?=^## )", roadmap, flags=re.MULTILINE)
-            for section in sections:
-                if title_lower in section.lower():
-                    return section[:3000]
-        docs_dir = os.path.normpath(os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "..", "..", "docs"))
-        if os.path.isdir(docs_dir):
-            for fname in os.listdir(docs_dir):
-                if not fname.endswith(".md"):
-                    continue
-                fpath = os.path.join(docs_dir, fname)
+        parts = []
+        import re as _re_ai
+
+        _ai_domain_file_map = {
+            "1": "01-llm-foundations.md",
+            "2": "02-tokens-embeddings.md",
+            "3": "03-prompt-engineering.md",
+            "4": "04-rag.md",
+            "5": "05-fine-tuning.md",
+            "6": "06-ai-engineering.md",
+            "7": "07-evaluation-safety.md",
+        }
+        _ai_topic_file_hints = {
+            "transformer": "01-llm-foundations.md",
+            "attention": "01-llm-foundations.md",
+            "self-attention": "01-llm-foundations.md",
+            "gpt": "01-llm-foundations.md",
+            "bert": "01-llm-foundations.md",
+            "encoder": "01-llm-foundations.md",
+            "decoder": "01-llm-foundations.md",
+            "foundation model": "01-llm-foundations.md",
+            "scaling law": "01-llm-foundations.md",
+            "multimodal": "01-llm-foundations.md",
+            "clip": "01-llm-foundations.md",
+            "blip": "01-llm-foundations.md",
+            "token": "02-tokens-embeddings.md",
+            "tokeniz": "02-tokens-embeddings.md",
+            "bpe": "02-tokens-embeddings.md",
+            "embedding": "02-tokens-embeddings.md",
+            "word2vec": "02-tokens-embeddings.md",
+            "sentence-bert": "02-tokens-embeddings.md",
+            "sbert": "02-tokens-embeddings.md",
+            "contrastive": "02-tokens-embeddings.md",
+            "cosine": "02-tokens-embeddings.md",
+            "clustering": "02-tokens-embeddings.md",
+            "bertopic": "02-tokens-embeddings.md",
+            "umap": "02-tokens-embeddings.md",
+            "classification": "02-tokens-embeddings.md",
+            "setfit": "02-tokens-embeddings.md",
+            "prompt": "03-prompt-engineering.md",
+            "chain-of-thought": "03-prompt-engineering.md",
+            "chain of thought": "03-prompt-engineering.md",
+            "cot": "03-prompt-engineering.md",
+            "few-shot": "03-prompt-engineering.md",
+            "zero-shot": "03-prompt-engineering.md",
+            "temperature": "03-prompt-engineering.md",
+            "sampling": "03-prompt-engineering.md",
+            "top-p": "03-prompt-engineering.md",
+            "jailbreak": "03-prompt-engineering.md",
+            "prompt injection": "03-prompt-engineering.md",
+            "langchain": "03-prompt-engineering.md",
+            "memory": "03-prompt-engineering.md",
+            "rag": "04-rag.md",
+            "retrieval": "04-rag.md",
+            "retrieval-augmented": "04-rag.md",
+            "vector db": "04-rag.md",
+            "vector database": "04-rag.md",
+            "qdrant": "04-rag.md",
+            "bm25": "04-rag.md",
+            "hybrid search": "04-rag.md",
+            "rerank": "04-rag.md",
+            "cross-encoder": "04-rag.md",
+            "chunk": "04-rag.md",
+            "hyde": "04-rag.md",
+            "self-rag": "04-rag.md",
+            "crag": "04-rag.md",
+            "agent": "04-rag.md",
+            "react": "04-rag.md",
+            "tool calling": "04-rag.md",
+            "fine-tun": "05-fine-tuning.md",
+            "finetun": "05-fine-tuning.md",
+            "lora": "05-fine-tuning.md",
+            "qlora": "05-fine-tuning.md",
+            "peft": "05-fine-tuning.md",
+            "sft": "05-fine-tuning.md",
+            "rlhf": "05-fine-tuning.md",
+            "dpo": "05-fine-tuning.md",
+            "alignment": "05-fine-tuning.md",
+            "preference": "05-fine-tuning.md",
+            "instruction tuning": "05-fine-tuning.md",
+            "dataset engineering": "05-fine-tuning.md",
+            "model merging": "05-fine-tuning.md",
+            "inference": "06-ai-engineering.md",
+            "quantiz": "06-ai-engineering.md",
+            "gguf": "06-ai-engineering.md",
+            "vllm": "06-ai-engineering.md",
+            "ollama": "06-ai-engineering.md",
+            "llama.cpp": "06-ai-engineering.md",
+            "deploy": "06-ai-engineering.md",
+            "serving": "06-ai-engineering.md",
+            "mlops": "06-ai-engineering.md",
+            "llmops": "06-ai-engineering.md",
+            "monitoring": "06-ai-engineering.md",
+            "feedback": "06-ai-engineering.md",
+            "production": "06-ai-engineering.md",
+            "guardrail": "06-ai-engineering.md",
+            "cach": "06-ai-engineering.md",
+            "evaluat": "07-evaluation-safety.md",
+            "benchmark": "07-evaluation-safety.md",
+            "perplexity": "07-evaluation-safety.md",
+            "bleu": "07-evaluation-safety.md",
+            "rouge": "07-evaluation-safety.md",
+            "bertscore": "07-evaluation-safety.md",
+            "hallucination": "07-evaluation-safety.md",
+            "bias": "07-evaluation-safety.md",
+            "responsible ai": "07-evaluation-safety.md",
+            "safety": "07-evaluation-safety.md",
+            "security": "07-evaluation-safety.md",
+            "red team": "07-evaluation-safety.md",
+            "news": "08-ai-news-digest.md",
+            "latest": "08-ai-news-digest.md",
+            "recent": "08-ai-news-digest.md",
+            "trending": "08-ai-news-digest.md",
+            "digest": "08-ai-news-digest.md",
+        }
+
+        dm = _re_ai.search(r"domain\s*(\d)", title_lower)
+        ai_notes_dir = os.path.join(KNOWLEDGE_ROOT, "notes", "ai_learning")
+
+        if os.path.isdir(ai_notes_dir):
+            target_files = []
+            if dm:
+                d_num = dm.group(1)
+                if d_num in _ai_domain_file_map:
+                    target_files = [_ai_domain_file_map[d_num]]
+            else:
+                for hint_key, hint_file in _ai_topic_file_hints.items():
+                    if hint_key in title_lower:
+                        target_files = [hint_file]
+                        break
+                if not target_files:
+                    target_files = sorted(
+                        f for f in os.listdir(ai_notes_dir)
+                        if f.endswith(".md")
+                    )
+
+            for fname in target_files:
+                fpath = os.path.join(ai_notes_dir, fname)
                 try:
                     with open(fpath, "r", encoding="utf-8") as f:
                         content = f.read()
-                    if title_lower in content.lower():
-                        import re
-                        sections = re.split(r"(?=^## )", content, flags=re.MULTILINE)
-                        for section in sections:
-                            if title_lower in section.lower():
-                                return f"From {fname}:\n\n{section[:3000]}"
+                    if title_lower in content.lower() or dm:
+                        if dm:
+                            parts.append(f"From {fname}:\n\n{content[:6000]}")
+                        else:
+                            sections = _re_ai.split(
+                                r"(?=^## )", content, flags=_re_ai.MULTILINE
+                            )
+                            for section in sections:
+                                if title_lower in section.lower():
+                                    parts.append(
+                                        f"From {fname}:\n\n{section[:5000]}"
+                                    )
+                                    break
+                            if not parts:
+                                parts.append(
+                                    f"From {fname}:\n\n{content[:5000]}"
+                                )
+                        if len(parts) >= 3:
+                            break
                 except OSError:
                     continue
-        return ""
+
+        if not parts:
+            roadmap = _load_ai_learning_roadmap()
+            if roadmap:
+                sections = _re_ai.split(
+                    r"(?=^## )", roadmap, flags=_re_ai.MULTILINE
+                )
+                for section in sections:
+                    if title_lower in section.lower():
+                        parts.append(section[:3000])
+                        break
+
+        return "\n\n---\n\n".join(parts) if parts else ""
     elif session_id == _LEARNING_SESSION_IDS.get("casual_english"):
         for d_offset in range(7):
             dt = (datetime.now() - timedelta(days=d_offset)).strftime("%Y-%m-%d")
