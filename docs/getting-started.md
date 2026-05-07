@@ -5,12 +5,12 @@ tags:
   - getting-started
 category: guide
 status: current
-last-updated: 2026-04-21
+last-updated: 2026-05-07
 ---
 
 # Getting Started: Build Jarvis from Zero
 
-A complete beginner's guide. By the end you will have a working Jarvis system that collects AI news, generates PDF reports and Chinese audio podcasts, and lets you chat with an AI assistant backed by your own local knowledge base.
+A complete beginner's guide. By the end you will have a working Jarvis system that collects AI news, generates PDF reports and audio podcasts, and lets you chat with an AI assistant backed by your own local knowledge base.
 
 **Time required:** ~45 minutes (mostly waiting for downloads).
 
@@ -34,9 +34,10 @@ A complete beginner's guide. By the end you will have a working Jarvis system th
 14. [Verify Everything Works](#verify-everything-works)
 15. [Add Your Own Knowledge](#add-your-own-knowledge)
 16. [Daily Workflow](#daily-workflow)
-17. [Troubleshooting](#troubleshooting)
-18. [Glossary](#glossary)
-19. [What's Next?](#whats-next)
+17. [Environment Variables Reference](#environment-variables-reference)
+18. [Troubleshooting](#troubleshooting)
+19. [Glossary](#glossary)
+20. [What's Next?](#whats-next)
 
 ---
 
@@ -61,7 +62,7 @@ All data stays on your machine. No cloud APIs, no subscriptions, no data leaving
 │                        YOUR MACHINE                          │
 │                                                              │
 │  News Sources ──→ Briefing Pipeline ──→ PDF + Audio          │
-│  (10 AI + 6 news)   (Playwright)        (C:/reports/ai/)     │
+│  (10 AI + 6 news)   (Playwright)        (~/reports/ai/)      │
 │                          │                                   │
 │                          ▼                                   │
 │                    RAG Knowledge Base                         │
@@ -90,9 +91,10 @@ All data stays on your machine. No cloud APIs, no subscriptions, no data leaving
 | **Playwright + Chromium** | Headless browser that scrapes websites | ~3 min |
 | **Ollama** | Runs AI language models locally on your CPU/GPU | ~5 min |
 | **An Ollama model** | The actual AI brain (default: `qwen3.5:4b`) | ~10 min |
+| **ffmpeg** | Audio processing for podcast generation | ~2 min |
 | **~5 GB disk space** | For models, packages, and reports | — |
 
-**Operating system:** This guide is written for **Windows 10/11**. The Python scripts work on macOS/Linux too, but the `.bat` launchers are Windows-only.
+**Operating systems supported:** Windows 10/11, macOS, Linux. This guide provides instructions for all three.
 
 ---
 
@@ -100,7 +102,7 @@ All data stays on your machine. No cloud APIs, no subscriptions, no data leaving
 
 If you already have Python 3.10 or newer, skip to [Step 2](#step-2--get-the-jarvis-code).
 
-### Option A: Download from python.org (recommended)
+### Windows
 
 1. Go to [python.org/downloads](https://www.python.org/downloads/)
 2. Click the big yellow **"Download Python 3.x.x"** button
@@ -108,17 +110,33 @@ If you already have Python 3.10 or newer, skip to [Step 2](#step-2--get-the-jarv
 4. **Important:** Check the box that says **"Add Python to PATH"** at the bottom of the first screen
 5. Click **Install Now**
 
-### Option B: Microsoft Store
+### macOS
 
-1. Open the Microsoft Store
-2. Search for "Python 3"
-3. Click **Get** on the latest version
+**Option A: Homebrew (recommended)**
+
+```bash
+brew install python@3.12
+```
+
+**Option B: Download from python.org**
+
+1. Go to [python.org/downloads](https://www.python.org/downloads/)
+2. Download the macOS installer
+3. Run the `.pkg` file and follow the wizard
+
+### Linux (Ubuntu/Debian)
+
+```bash
+sudo apt update && sudo apt install python3 python3-pip python3-venv
+```
 
 ### Verify
 
-Open a new terminal (press `Win + R`, type `cmd`, press Enter) and run:
+Open a new terminal and run:
 
-```
+```bash
+python3 --version
+# or on Windows:
 python --version
 ```
 
@@ -130,39 +148,43 @@ You should see something like `Python 3.12.4`. If you see an error, close and re
 
 ## Step 2 — Get the Jarvis Code
 
-If you already have the code at `C:\jarvis`, skip to [Step 3](#step-3--install-python-packages).
-
 ### Option A: Clone with git
 
-If you have git installed:
-
-```
+```bash
+# Windows
 git clone <your-repo-url> C:\jarvis
+
+# macOS / Linux
+git clone <your-repo-url> ~/jarvis
 ```
 
 ### Option B: Download and extract
 
 1. Download the project as a ZIP file
-2. Extract it to `C:\jarvis`
+2. Extract it to your chosen location:
+   - **Windows:** `C:\jarvis`
+   - **macOS / Linux:** `~/jarvis`
 
 The folder should look like this:
 
 ```
-C:\jarvis\
+jarvis/
 ├── README.md
-├── bin\
-├── docs\
-├── references\
-└── scripts\
+├── bin/
+├── docs/
+├── references/
+└── scripts/
 ```
 
 ---
 
 ## Step 3 — Install Python Packages
 
-Open a terminal and run this single command to install everything Jarvis needs:
+Open a terminal, navigate to the project root, and install:
 
-```
+```bash
+cd ~/jarvis    # or C:\jarvis on Windows
+
 pip install flask qdrant-client sentence-transformers pypdf reportlab edge-tts playwright requests pyyaml feedparser ollama rank-bm25 python-telegram-bot httpx
 ```
 
@@ -175,7 +197,7 @@ pip install flask qdrant-client sentence-transformers pypdf reportlab edge-tts p
 | `sentence-transformers` | Turns text into numbers (embeddings) so the computer can compare meanings |
 | `pypdf` | Reads text from PDF files |
 | `reportlab` | Creates the daily briefing PDF |
-| `edge-tts` | Converts text to spoken Chinese audio (text-to-speech for Daily Fetch podcasts and Audio from Knowledge) |
+| `edge-tts` | Converts text to spoken audio (text-to-speech for Daily Fetch podcasts and Audio from Knowledge) |
 | `playwright` | Controls a headless browser to scrape websites |
 | `requests` | Makes HTTP requests (used for Confluence/Jira APIs) |
 | `pyyaml` | Reads YAML configuration in Markdown files |
@@ -183,7 +205,7 @@ pip install flask qdrant-client sentence-transformers pypdf reportlab edge-tts p
 | `ollama` | Python client that talks to the Ollama AI model server |
 | `rank-bm25` | Keyword search engine used alongside vector search |
 | `python-telegram-bot` | Controls a Telegram bot for remote Jarvis access from your phone |
-| `httpx` | Async HTTP client with SOCKS proxy support for Telegram connectivity |
+| `httpx` | Async HTTP client with optional SOCKS proxy support |
 
 > **What is pip?** `pip` is Python's package installer. It downloads libraries from the internet and installs them so your Python scripts can use them.
 
@@ -193,11 +215,11 @@ pip install flask qdrant-client sentence-transformers pypdf reportlab edge-tts p
 
 Playwright needs a real browser engine to scrape websites. Run:
 
-```
+```bash
 playwright install chromium
 ```
 
-This downloads a standalone Chromium browser (~150 MB). It does not affect your regular Chrome/Edge browser.
+This downloads a standalone Chromium browser (~150 MB). It does not affect your regular Chrome/Edge/Safari browser.
 
 > **What is Playwright?** Playwright is a tool that controls a web browser programmatically. Jarvis uses it to visit news websites, wait for pages to load, and extract article text — just like you would do manually, but automated.
 
@@ -211,15 +233,13 @@ Ollama is what runs the AI language model on your computer. The Chat Agent needs
 
 ### 5a. Install Ollama
 
-1. Go to [ollama.com/download](https://ollama.com/download)
-2. Click **Download for Windows**
-3. Run the installer — it installs and starts Ollama as a background service
+- **Windows**: Go to [ollama.com/download](https://ollama.com/download), download and run the installer.
+- **macOS**: `brew install ollama` or download from [ollama.com/download](https://ollama.com/download).
+- **Linux**: `curl -fsSL https://ollama.com/install.sh | sh`
 
 ### 5b. Verify Ollama is running
 
-Open a terminal and run:
-
-```
+```bash
 ollama list
 ```
 
@@ -229,7 +249,7 @@ If Ollama is running, you will see an empty table (no models yet) or a list of m
 
 Jarvis uses `qwen3.5:4b` by default — a 4-billion parameter model that runs well on CPU:
 
-```
+```bash
 ollama pull qwen3.5:4b
 ```
 
@@ -239,7 +259,7 @@ This downloads ~2.5 GB. Wait for it to finish.
 
 If you want Jarvis to analyze images you upload in chat:
 
-```
+```bash
 ollama pull qwen3-vl:8b
 ```
 
@@ -247,7 +267,7 @@ This is a larger model (~5 GB) and slower on CPU. Skip it if you just want text 
 
 ### 5e. Verify the model works
 
-```
+```bash
 ollama run qwen3.5:4b "Hello, are you working?"
 ```
 
@@ -259,49 +279,83 @@ You should see the model respond with text. Press `Ctrl+D` or type `/bye` to exi
 
 ---
 
+## Step 5.5 — Install ffmpeg (for audio generation)
+
+Jarvis uses ffmpeg to concatenate audio segments into podcast MP3 files.
+
+### Windows
+
+1. Download from [ffmpeg.org/download.html](https://ffmpeg.org/download.html) or install via:
+   ```
+   winget install ffmpeg
+   ```
+2. Ensure `ffmpeg` is in your PATH.
+
+### macOS
+
+```bash
+brew install ffmpeg
+```
+
+### Linux (Ubuntu/Debian)
+
+```bash
+sudo apt install ffmpeg
+```
+
+### Verify
+
+```bash
+ffmpeg -version
+```
+
+---
+
 ## Step 6 — Create the Reports Folder
 
-Jarvis stores all its output (PDFs, audio, knowledge base) in `C:\reports\ai`. Create it:
+Jarvis stores all its output (PDFs, audio, knowledge base) in a reports directory.
 
-```
+**Default locations:**
+- **Windows:** `C:\reports\ai`
+- **macOS / Linux:** `~/reports/ai`
+
+Create it:
+
+```bash
+# Windows
 mkdir C:\reports\ai
+
+# macOS / Linux
+mkdir -p ~/reports/ai
 ```
 
-You can use a different location by setting an environment variable:
-
-```
-set JARVIS_REPORTS_ROOT=D:\my-reports
-```
-
-But for this guide we will use the default `C:\reports\ai`.
+You can use a different location by setting an environment variable (see [Environment Variables](#environment-variables-reference)).
 
 ---
 
 ## Step 7 — Run the Briefing Pipeline
 
-Now let's collect some data. The briefing pipeline scrapes 10 AI news sources in parallel (9 by the pipeline, 1 manual-only).
+Now let's collect some data. The briefing pipeline scrapes 10 AI news sources in parallel.
 
 ### 7a. Run the preflight check
 
 This tests whether your network can reach the news sources:
 
-```
-cd C:\jarvis
+```bash
+cd ~/jarvis    # or C:\jarvis on Windows
 python scripts/pipeline/preflight-check.py
 ```
 
-You will see a list of sources with "OK" or "FAIL" next to each. If most sources fail, you are likely behind a corporate firewall and need a proxy (see [Troubleshooting](#troubleshooting)).
+You will see a list of sources with "OK" or "FAIL" next to each.
+
+**If most sources show OK** — great, you have direct internet access. No proxy needed.
+
+**If most sources FAIL** — you may be behind a corporate firewall and need a proxy (see [Proxy Configuration](#proxy-configuration-optional)).
 
 ### 7b. Run the AI briefing pipeline
 
-```
+```bash
 python scripts/pipeline/run-all-sources.py
-```
-
-**On a corporate network?** Add a proxy:
-
-```
-python scripts/pipeline/run-all-sources.py --proxy socks5://localhost:10808
 ```
 
 This takes 20–30 seconds. It will:
@@ -313,7 +367,7 @@ This takes 20–30 seconds. It will:
 
 ### 7c. (Optional) Run the world news pipeline
 
-```
+```bash
 python scripts/pipeline/run-world-news.py
 ```
 
@@ -323,11 +377,15 @@ This scrapes BBC, Reuters, AP News, Deutsche Welle, and The Guardian.
 
 After the pipeline finishes, check the output:
 
-```
+```bash
+# Windows
 dir C:\reports\ai
+
+# macOS / Linux
+ls ~/reports/ai
 ```
 
-You should see a date folder like `2026-04-13\` containing JSON data files. The PDF and audio are generated later by the AI agent during synthesis.
+You should see a date folder like `2026-04-13/` containing JSON data files. The PDF and audio are generated later by the AI agent during synthesis.
 
 > **What is web scraping?** It means using a program to visit websites and extract information automatically. Instead of you reading 9 websites every morning, Jarvis reads them all in 20 seconds.
 
@@ -339,7 +397,7 @@ You should see a date folder like `2026-04-13\` containing JSON data files. The 
 
 The Search UI lets you browse and search everything Jarvis has collected — no AI model needed.
 
-```
+```bash
 python scripts/rag/search_ui.py
 ```
 
@@ -357,7 +415,7 @@ You should see a search page. Try searching for any AI topic. The **Library** ta
 
 Open a **second terminal** (keep the Search UI running in the first one) and run:
 
-```
+```bash
 python scripts/rag/agent.py
 ```
 
@@ -381,7 +439,9 @@ The agent will automatically search the knowledge base for relevant context and 
 
 ## Step 10 — One-Click Start (Optional)
 
-Instead of opening two terminals every time, use the batch launchers in the `bin\` folder:
+### Windows
+
+Use the batch launchers in the `bin\` folder:
 
 | Launcher | What It Does |
 |----------|-------------|
@@ -390,10 +450,35 @@ Instead of opening two terminals every time, use the batch launchers in the `bin
 | `bin\jarvis-restart.bat` | Restarts both servers |
 | `bin\jarvis-servers.bat` | Interactive menu: start, stop, restart, check status |
 
-Double-click `bin\jarvis-start.bat` from File Explorer. Wait ~15 seconds, then open:
+Double-click `bin\jarvis-start.bat` from File Explorer.
+
+### macOS / Linux
+
+Create a simple start script:
+
+```bash
+#!/usr/bin/env bash
+# Save as ~/jarvis/bin/jarvis-start.sh
+cd "$(dirname "$0")/.."
+
+python scripts/rag/search_ui.py &
+python scripts/rag/agent.py &
+
+echo "Jarvis started."
+echo "  Search UI: http://localhost:18888"
+echo "  Agent:     http://localhost:18889"
+```
+
+Make it executable and run:
+
+```bash
+chmod +x bin/jarvis-start.sh
+./bin/jarvis-start.sh
+```
+
+Wait ~15 seconds, then open:
 - http://localhost:18888 (Search UI)
 - http://localhost:18889 (Chat Agent)
-- Telegram Bot: active (message @your_bot on Telegram)
 
 ---
 
@@ -403,33 +488,33 @@ Run through this checklist:
 
 | # | Check | How | Expected |
 |:-:|-------|-----|----------|
-| 1 | Python installed | `python --version` | `Python 3.10+` |
+| 1 | Python installed | `python3 --version` (or `python --version` on Windows) | `Python 3.10+` |
 | 2 | Packages installed | `python -c "import flask, qdrant_client, sentence_transformers"` | No error |
 | 3 | Playwright ready | `python -c "from playwright.sync_api import sync_playwright"` | No error |
 | 4 | Ollama running | `ollama list` | Shows `qwen3.5:4b` |
-| 5 | Reports folder exists | `dir C:\reports\ai` | Folder exists |
-| 6 | Search UI responds | Open http://localhost:18888 | Search page loads |
-| 7 | Agent responds | Open http://localhost:18889 | Chat page loads |
-| 8 | Agent can answer | Ask "hello" in the chat | Gets a response |
-| 9 | Telegram bot running | Send /start to your bot | Gets a welcome response |
+| 5 | ffmpeg installed | `ffmpeg -version` | Version info |
+| 6 | Reports folder exists | `ls ~/reports/ai` (or `dir C:\reports\ai`) | Folder exists |
+| 7 | Search UI responds | Open http://localhost:18888 | Search page loads |
+| 8 | Agent responds | Open http://localhost:18889 | Chat page loads |
+| 9 | Agent can answer | Ask "hello" in the chat | Gets a response |
 
 ---
 
 ## Add Your Own Knowledge
 
-Jarvis can index your own documents. Place files in subfolders under `C:\reports\ai\knowledge\`:
+Jarvis can index your own documents. Place files in subfolders under your reports knowledge directory:
 
 ```
-C:\reports\ai\knowledge\
-├── books\       ← Book chapters (PDF or Markdown)
-├── projects\    ← Project documentation
-├── notes\       ← Personal learning notes
-└── tasks\       ← Task descriptions
+~/reports/ai/knowledge/        (or C:\reports\ai\knowledge\ on Windows)
+├── books/       ← Book chapters (PDF or Markdown)
+├── projects/    ← Project documentation
+├── notes/       ← Personal learning notes
+└── tasks/       ← Task descriptions
 ```
 
 Then index them:
 
-```
+```bash
 python scripts/rag/index_custom.py scan
 ```
 
@@ -457,20 +542,19 @@ Once everything is set up, your daily routine is simple:
 
 ### Morning
 
-1. **Start the servers** — double-click `bin\jarvis-start.bat`
+1. **Start the servers** — run the start script (or `bin\jarvis-start.bat` on Windows)
 2. **Run the briefing pipeline** — `python scripts/pipeline/run-all-sources.py`
 3. **Open the Agent** — http://localhost:18889 and ask "daily briefing" to trigger synthesis
-4. **Telegram available** — if the bot is running, you can also do steps 2-3 from your phone via Telegram
 
 ### Anytime
 
 - **Search your knowledge** — http://localhost:18888
 - **Ask the AI** — http://localhost:18889
-- **Add documents** — drop files in `C:\reports\ai\knowledge\` and run `python scripts/rag/index_custom.py scan`
+- **Add documents** — drop files in `knowledge/` and run `python scripts/rag/index_custom.py scan`
 
 ### Periodic Maintenance
 
-```
+```bash
 python scripts/rag/reindex_all.py
 ```
 
@@ -478,22 +562,122 @@ This incrementally re-indexes all sources (briefings, codebase, Confluence). Onl
 
 ---
 
+## Environment Variables Reference
+
+All environment variables are **optional**. Jarvis works with sensible defaults on any platform.
+
+### Paths
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `JARVIS_ROOT` | Project root directory | Auto-detected from script location |
+| `JARVIS_REPORTS_ROOT` | Reports output directory | `C:/reports/ai` (Windows) or `~/reports/ai` (Mac/Linux) |
+| `STOCK_REPORTS_ROOT` | Stock analysis output | `C:/reports/stock` (Windows) or `~/reports/stock` (Mac/Linux) |
+
+### Proxy (Optional)
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `BRIEFING_PROXY` | SOCKS5 proxy for news fetchers, web search, deep dive URL fetch | *empty* (direct connection) |
+
+If you are behind a corporate firewall or VPN that blocks news sites, set this to your SOCKS5 proxy:
+
+```bash
+# Windows (PowerShell)
+$env:BRIEFING_PROXY = "socks5://localhost:10808"
+
+# Windows (cmd)
+set BRIEFING_PROXY=socks5://localhost:10808
+
+# macOS / Linux
+export BRIEFING_PROXY=socks5://localhost:10808
+```
+
+Jarvis uses a **smart proxy strategy**: for each domain, it first tries a direct connection. If that fails (timeout, blocked), it tries the proxy. The winning method is cached per domain for 7 days in `.proxy-strategy.json`, so subsequent runs are fast.
+
+**If you do NOT need a proxy** (home network, no VPN), leave `BRIEFING_PROXY` unset. Jarvis will connect directly to all sources.
+
+### AI Models
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `OLLAMA_HOST` | Ollama API endpoint | `http://localhost:11434` |
+| `OLLAMA_MODEL` | Main chat model | `qwen3.5:4b` |
+
+### Telegram Bot (Optional)
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `SOCKS_PROXY` | SOCKS proxy for Telegram connectivity | *empty* |
+
+Set via `scripts/bot_telegram.env` file.
+
+---
+
+## Proxy Configuration (Optional)
+
+This section is for users behind a **corporate firewall or VPN** that blocks access to news websites. **If you can access sites like techcrunch.com and reuters.com directly, skip this section entirely.**
+
+### When do you need a proxy?
+
+Run the preflight check:
+
+```bash
+python scripts/pipeline/preflight-check.py
+```
+
+- **All or most OK** → No proxy needed. You are done.
+- **Most FAIL** → You likely need a proxy.
+
+### Setting up a proxy
+
+1. Set up a SOCKS5 proxy (e.g. via SSH tunnel, corporate proxy, or a tool like Clash/V2Ray)
+2. Set the environment variable:
+
+```bash
+# Add to your shell profile (~/.bashrc, ~/.zshrc, or PowerShell $PROFILE)
+export BRIEFING_PROXY=socks5://localhost:10808
+```
+
+3. Run the pipeline with the proxy flag:
+
+```bash
+python scripts/pipeline/run-all-sources.py --proxy socks5://localhost:10808
+```
+
+After the first run, Jarvis remembers which domains need the proxy and which work directly. Subsequent runs (including the "Daily Fetch" button in the UI) use the cached strategy automatically.
+
+### How the smart proxy works
+
+Jarvis does **not** blindly route everything through the proxy. Instead:
+
+1. For each domain (e.g. `techcrunch.com`), it first tries **direct** access
+2. If direct fails or is blocked (403/503/Cloudflare), it tries the **proxy**
+3. The winning method is stored in `.proxy-strategy.json` and reused for 7 days
+4. After 7 days, it re-probes to adapt to network changes
+
+This means even on a corporate network, fast-loading domestic sites go direct while only blocked sites use the proxy.
+
+---
+
 ## Troubleshooting
 
 | Problem | Cause | Solution |
 |---------|-------|----------|
-| `python` not found | Python not in PATH | Reinstall Python and check "Add to PATH", or restart your terminal |
+| `python` / `python3` not found | Python not in PATH | Reinstall Python and check "Add to PATH", or restart your terminal |
 | `pip install` fails | No internet or corporate firewall | Try `pip install --proxy http://proxy:port <package>` |
-| Preflight check: all sources FAIL | Firewall blocking websites | Use `--proxy socks5://localhost:10808` (set up a SOCKS proxy first) |
+| Preflight check: all sources FAIL | Firewall blocking websites | Set `BRIEFING_PROXY` (see [Proxy Configuration](#proxy-configuration-optional)) |
 | `ollama list` errors | Ollama not installed or not running | Install from ollama.com, then run `ollama serve` |
 | `ollama pull` is slow | Large download (~2.5 GB) | Wait — it only downloads once |
 | Agent page loads but no response | Ollama not running or model not pulled | Run `ollama serve` in one terminal, then `ollama pull qwen3.5:4b` |
-| Port 18888/18889 already in use | Previous server still running | Run `bin\jarvis-stop.bat` first, or `netstat -ano \| findstr :18888` to find and kill the process |
+| Port 18888/18889 already in use | Previous server still running | Kill the old process: `lsof -i :18888` (Mac/Linux) or `netstat -ano \| findstr :18888` (Windows) |
 | Search returns no results | No data indexed yet | Run the briefing pipeline first (Step 7), or add your own documents |
 | "No module named X" | Package not installed | Run the `pip install` command from Step 3 again |
 | Edge-TTS "no audio" error | Temporary network issue | Retry — the script has built-in 3x retry logic |
 | PDF generation fails | `reportlab` not installed | `pip install reportlab` |
 | Embedding model download slow | First-time ~80 MB download | Wait — it is cached after the first use |
+| `ffmpeg` not found | ffmpeg not installed | Install via `brew install ffmpeg` (Mac), `apt install ffmpeg` (Linux), or `winget install ffmpeg` (Windows) |
+| Fetchers all timeout even without firewall | Slow network + short probe timeout | Increase `_PROBE_TIMEOUT_MS` in `scripts/fetchers/proxy_strategy.py` |
 
 ---
 
@@ -505,7 +689,7 @@ New to AI and programming? Here are the key terms used throughout this guide:
 |------|---------|
 | **Python** | A programming language. Jarvis is written in it. |
 | **pip** | Python's package installer. Downloads and installs libraries. |
-| **Terminal / Command Prompt** | The text-based interface where you type commands. On Windows: `cmd` or PowerShell. |
+| **Terminal / Command Prompt** | The text-based interface where you type commands. On Windows: `cmd` or PowerShell. On Mac: Terminal. On Linux: bash/zsh. |
 | **Playwright** | A tool that controls a web browser programmatically for scraping. |
 | **Chromium** | The open-source browser engine used by Chrome and Edge. Playwright uses its own copy. |
 | **Ollama** | A program that runs AI language models locally on your computer. |
@@ -522,6 +706,7 @@ New to AI and programming? Here are the key terms used throughout this guide:
 | **JSON** | A text format for structured data. Looks like `{"key": "value"}`. Jarvis stores data in JSON files. |
 | **API** | Application Programming Interface. A way for programs to talk to each other over HTTP. |
 | **Proxy** | A middleman server that forwards your internet traffic. Useful for bypassing corporate firewalls. |
+| **ffmpeg** | A command-line tool for processing audio/video. Jarvis uses it to join audio segments into podcast MP3s. |
 
 ---
 

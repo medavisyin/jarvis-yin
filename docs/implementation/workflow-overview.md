@@ -6,7 +6,7 @@ tags:
   - navigation
 category: overview
 status: current
-last-updated: 2026-05-02
+last-updated: 2026-05-07
 ---
 
 # Jarvis Workflow Overview
@@ -73,6 +73,7 @@ last-updated: 2026-05-02
 │    → fetch_sources → topic_dedup → commit_report → jira_daily           │
 │    → wiki_fetch → ai_audio → world_audio → china_audio                  │
 │    → daily summary + audio MP3s                                         │
+│    UI: "Recreate" (audio only) / "Refetch & Recreate" (full pipeline)   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ ② AI News Knowledge Base (ai-news-kb-impl.md)                          │
 │    Briefing JSON → scan items → LLM categorize → KB file                │
@@ -80,6 +81,7 @@ last-updated: 2026-05-02
 ├─────────────────────────────────────────────────────────────────────────┤
 │ ③ Audio Knowledge (audio-knowledge-impl.md)                             │
 │    Qdrant RAG chunks → LLM narration script → Edge TTS → MP3 output    │
+│    Per-article KB deep-dive: bilingual audio with persistent playback   │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ ④ Trend Analysis (trend-analysis-impl.md)                               │
 │    POST /api/toolbar/trend → RAG search + reports scan                  │

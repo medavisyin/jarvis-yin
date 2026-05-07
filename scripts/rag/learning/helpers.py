@@ -132,7 +132,7 @@ def resolve_topic_by_name_in_list(query: str, titles: list[str]) -> str | None:
     return None
 
 
-WEB_SEARCH_PROXY = os.environ.get("BRIEFING_PROXY", "socks5://localhost:10808")
+WEB_SEARCH_PROXY = os.environ.get("BRIEFING_PROXY", "")
 
 
 def resolve_english_topic_by_name(query: str) -> str | None:

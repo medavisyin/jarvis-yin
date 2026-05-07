@@ -177,12 +177,15 @@ def _fetch_source_url_content(url: str, timeout: int = 20) -> tuple:
         return "", "No URL provided"
     try:
         import httpx
-        proxy = os.environ.get("BRIEFING_PROXY", "socks5://localhost:10808")
+        proxy = os.environ.get("BRIEFING_PROXY", "")
         headers = {
             "User-Agent": "Mozilla/5.0 (compatible; Jarvis/1.0)",
             "Accept": "text/html,application/xhtml+xml,text/plain,*/*",
         }
-        with httpx.Client(proxy=proxy, timeout=timeout, follow_redirects=True) as client:
+        client_kwargs = {"timeout": timeout, "follow_redirects": True}
+        if proxy:
+            client_kwargs["proxy"] = proxy
+        with httpx.Client(**client_kwargs) as client:
             r = client.get(url, headers=headers)
             r.raise_for_status()
             content_type = r.headers.get("content-type", "")
@@ -240,31 +243,51 @@ def _fetch_article_content(title: str, session_id: str) -> str:
     title_lower = title.strip().lower()
     if session_id == _LEARNING_SESSION_IDS.get("aws_cert"):
         parts = []
-        roadmap = _load_aws_cert_roadmap()
-        if roadmap:
-            import re
-            sections = re.split(r"(?=^## )", roadmap, flags=re.MULTILINE)
-            for section in sections:
-                if title_lower in section.lower():
-                    parts.append(section[:3000])
-                    break
-            if not parts:
-                for section in sections:
-                    for line in section.split("\n"):
-                        if title_lower in line.lower():
-                            parts.append(section[:3000])
-                            break
-                    if parts:
-                        break
         import re as _re2
         dm = _re2.search(r"domain\s*(\d)", title_lower)
-        tm = _re2.search(r"task\s*(\d)\.(\d)", title_lower)
         _aws_domain_file_map = {
             "1": "01-ai-ml-fundamentals.md",
             "2": "02-genai-fundamentals.md",
             "3": "03-foundation-models.md",
             "4": "04-responsible-ai.md",
             "5": "05-security-compliance.md",
+        }
+        _aws_topic_file_hints = {
+            "polly": "06-aws-managed-ai-services.md",
+            "comprehend": "06-aws-managed-ai-services.md",
+            "rekognition": "06-aws-managed-ai-services.md",
+            "lex": "06-aws-managed-ai-services.md",
+            "transcribe": "06-aws-managed-ai-services.md",
+            "translate": "06-aws-managed-ai-services.md",
+            "textract": "06-aws-managed-ai-services.md",
+            "personalize": "06-aws-managed-ai-services.md",
+            "forecast": "06-aws-managed-ai-services.md",
+            "kendra": "06-aws-managed-ai-services.md",
+            "fraud detector": "06-aws-managed-ai-services.md",
+            "mturk": "06-aws-managed-ai-services.md",
+            "mechanical turk": "06-aws-managed-ai-services.md",
+            "a2i": "06-aws-managed-ai-services.md",
+            "augmented ai": "06-aws-managed-ai-services.md",
+            "deepracer": "06-aws-managed-ai-services.md",
+            "managed ai": "06-aws-managed-ai-services.md",
+            "prompt engineering": "03-foundation-models.md",
+            "rag": "03-foundation-models.md",
+            "retrieval augmented": "03-foundation-models.md",
+            "rlhf": "03-foundation-models.md",
+            "responsible ai": "04-responsible-ai.md",
+            "bias": "04-responsible-ai.md",
+            "clarify": "03-foundation-models.md",
+            "model monitor": "03-foundation-models.md",
+            "guardrail": "02-genai-fundamentals.md",
+            "bedrock": "02-genai-fundamentals.md",
+            "sagemaker": "01-ai-ml-fundamentals.md",
+            "genai": "02-genai-fundamentals.md",
+            "generative ai": "02-genai-fundamentals.md",
+            "security": "05-security-compliance.md",
+            "compliance": "05-security-compliance.md",
+            "encryption": "05-security-compliance.md",
+            "macie": "05-security-compliance.md",
+            "privatelink": "05-security-compliance.md",
         }
         aws_notes_dir = os.path.join(KNOWLEDGE_ROOT, "notes", "aws_ai_p1")
         if os.path.isdir(aws_notes_dir):
@@ -273,42 +296,44 @@ def _fetch_article_content(title: str, session_id: str) -> str:
                 d_num = dm.group(1)
                 if d_num in _aws_domain_file_map:
                     target_files = [_aws_domain_file_map[d_num]]
-            elif tm:
-                d_num = tm.group(1)
-                if d_num in _aws_domain_file_map:
-                    target_files = [_aws_domain_file_map[d_num]]
             else:
-                target_files = sorted(f for f in os.listdir(aws_notes_dir)
-                                      if f.endswith(".md"))
+                for hint_key, hint_file in _aws_topic_file_hints.items():
+                    if hint_key in title_lower:
+                        target_files = [hint_file]
+                        break
+                if not target_files:
+                    target_files = sorted(f for f in os.listdir(aws_notes_dir)
+                                          if f.endswith(".md"))
             for fname in target_files:
                 fpath = os.path.join(aws_notes_dir, fname)
                 try:
                     with open(fpath, "r", encoding="utf-8") as f:
                         content = f.read()
-                    if title_lower in content.lower() or dm or tm:
-                        if tm:
-                            task_key = f"Task {tm.group(1)}.{tm.group(2)}"
-                            sections = _re2.split(r"(?=^## )", content,
-                                                  flags=_re2.MULTILINE)
-                            for section in sections:
-                                if task_key.lower() in section.lower():
-                                    parts.append(
-                                        f"From {fname}:\n\n{section[:4000]}")
-                                    break
-                        elif dm:
-                            parts.append(f"From {fname}:\n\n{content[:5000]}")
+                    if title_lower in content.lower() or dm:
+                        if dm:
+                            parts.append(f"From {fname}:\n\n{content[:6000]}")
                         else:
                             sections = _re2.split(r"(?=^## )", content,
                                                   flags=_re2.MULTILINE)
                             for section in sections:
                                 if title_lower in section.lower():
                                     parts.append(
-                                        f"From {fname}:\n\n{section[:3000]}")
+                                        f"From {fname}:\n\n{section[:5000]}")
                                     break
+                            if not parts:
+                                parts.append(f"From {fname}:\n\n{content[:5000]}")
                         if len(parts) >= 3:
                             break
                 except OSError:
                     continue
+        if not parts:
+            roadmap = _load_aws_cert_roadmap()
+            if roadmap:
+                sections = _re2.split(r"(?=^## )", roadmap, flags=_re2.MULTILINE)
+                for section in sections:
+                    if title_lower in section.lower():
+                        parts.append(section[:3000])
+                        break
         return "\n\n---\n\n".join(parts) if parts else ""
     elif session_id == _LEARNING_SESSION_IDS.get("ai_learning"):
         roadmap = _load_ai_learning_roadmap()

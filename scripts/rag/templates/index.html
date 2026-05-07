@@ -726,7 +726,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
       <p style="font-size:0.82em;color:#8b8fa4;margin-bottom:10px">Reads AI briefing PDFs, categorizes news items, and builds a persistent knowledge base. Each run merges new items with existing data so you can track topics over time.</p>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
         <button type="button" class="send-btn" id="btnAiKBScan" onclick="runAiNewsKBScan()" style="padding:8px 18px;font-size:0.86em">&#128269; Scan &amp; Update</button>
-        <button type="button" class="toolbar-btn" id="btnAiKBSummary" onclick="runAiNewsKBSummary()" style="font-size:0.78em" disabled>&#9733; AI Summary</button>
         <span id="aiKBStatus" style="font-size:0.78em;color:#8b8fa4"></span>
         <span id="aiKBStats" style="font-size:0.78em;color:#60a5fa;margin-left:auto"></span>
       </div>
@@ -748,12 +747,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
               <th style="padding:6px 8px;text-align:left;color:#60a5fa;border-bottom:1px solid #2a2d3e;cursor:pointer" onclick="sortAiKBTable('source')">Source &#8597;</th>
               <th style="padding:6px 8px;text-align:left;color:#60a5fa;border-bottom:1px solid #2a2d3e">Title</th>
               <th style="padding:6px 8px;text-align:left;color:#60a5fa;border-bottom:1px solid #2a2d3e">Link</th>
+              <th style="padding:6px 8px;text-align:center;color:#60a5fa;border-bottom:1px solid #2a2d3e;width:50px">Audio</th>
             </tr>
           </thead>
           <tbody id="aiKBTableBody"></tbody>
         </table>
       </div>
-      <div id="aiKBSummaryResult" style="display:none;margin-top:14px;padding:14px;background:#1a1d2e;border:1px solid #2a2d3e;border-radius:8px;max-height:40vh;overflow-y:auto;font-size:0.84em;line-height:1.6;color:#c4c8f0"></div>
     </div>
   </div>
 </div>
@@ -1311,16 +1310,36 @@ async function loadDailyFetchHistory(date) {
       return;
     }
     var s = data.stats || {};
+    function _srcBreakdown(bySource, color) {
+      var keys = Object.keys(bySource || {});
+      if (keys.length === 0) return '<div style="font-size:0.68em;color:#555;margin-top:4px;font-style:italic">No sources</div>';
+      var out = '<div style="margin-top:5px;border-top:1px solid #2a2d3e;padding-top:4px">';
+      keys.sort(function(a,b){ return (bySource[b]||0)-(bySource[a]||0); });
+      for (var i=0;i<keys.length;i++) {
+        out += '<div style="display:flex;justify-content:space-between;font-size:0.68em;color:#9ca3af;line-height:1.5">';
+        out += '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:75%">' + escHtml(keys[i]) + '</span>';
+        out += '<span style="color:' + color + ';font-weight:600;flex-shrink:0">' + bySource[keys[i]] + '</span>';
+        out += '</div>';
+      }
+      out += '</div>';
+      return out;
+    }
     var h = '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px">';
     h += '<div style="background:#1a1d2e;border-radius:8px;padding:10px 14px;border:1px solid #2a2d3e">';
     h += '<div style="font-size:0.72em;color:#8b8fa4;text-transform:uppercase;letter-spacing:0.5px">AI News</div>';
-    h += '<div style="font-size:1.3em;font-weight:700;color:#60a5fa">' + (s.ai_items || 0) + ' <span style="font-size:0.55em;font-weight:400">items</span></div></div>';
+    h += '<div style="font-size:1.3em;font-weight:700;color:#60a5fa">' + (s.ai_items || 0) + ' <span style="font-size:0.55em;font-weight:400">items</span></div>';
+    h += _srcBreakdown(s.ai_by_source, '#60a5fa');
+    h += '</div>';
     h += '<div style="background:#1a1d2e;border-radius:8px;padding:10px 14px;border:1px solid #2a2d3e">';
     h += '<div style="font-size:0.72em;color:#8b8fa4;text-transform:uppercase;letter-spacing:0.5px">World News</div>';
-    h += '<div style="font-size:1.3em;font-weight:700;color:#f59e0b">' + (s.world_news_items || 0) + ' <span style="font-size:0.55em;font-weight:400">items</span></div></div>';
+    h += '<div style="font-size:1.3em;font-weight:700;color:#f59e0b">' + (s.world_news_items || 0) + ' <span style="font-size:0.55em;font-weight:400">items</span></div>';
+    h += _srcBreakdown(s.world_by_source, '#f59e0b');
+    h += '</div>';
     h += '<div style="background:#1a1d2e;border-radius:8px;padding:10px 14px;border:1px solid #2a2d3e">';
     h += '<div style="font-size:0.72em;color:#8b8fa4;text-transform:uppercase;letter-spacing:0.5px">\u4e2d\u56fd\u65b0\u95fb</div>';
-    h += '<div style="font-size:1.3em;font-weight:700;color:#ef4444">' + (s.china_news_items || 0) + ' <span style="font-size:0.55em;font-weight:400">items</span></div></div>';
+    h += '<div style="font-size:1.3em;font-weight:700;color:#ef4444">' + (s.china_news_items || 0) + ' <span style="font-size:0.55em;font-weight:400">items</span></div>';
+    h += _srcBreakdown(s.china_by_source, '#ef4444');
+    h += '</div>';
     h += '<div style="background:#1a1d2e;border-radius:8px;padding:10px 14px;border:1px solid #2a2d3e">';
     h += '<div style="font-size:0.72em;color:#8b8fa4;text-transform:uppercase;letter-spacing:0.5px">Jira Tickets</div>';
     h += '<div style="font-size:1.3em;font-weight:700;color:#a78bfa">' + (s.jira_tickets || 0) + '</div></div>';
@@ -1343,18 +1362,31 @@ async function loadDailyFetchHistory(date) {
       h += '</div></div>';
     }
     if (data.has_audio || data.has_wn_audio || data.has_cn_audio) {
+      var _cacheBust = '?t=' + Date.now();
       h += '<div style="margin-bottom:14px">';
       if (data.has_audio) {
-        h += '<div style="font-size:0.78em;font-weight:600;color:#60a5fa;margin-bottom:4px">AI Briefing Audio</div>';
-        h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/ai-briefing.mp3"></audio>';
+        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+        h += '<span style="font-size:0.78em;font-weight:600;color:#60a5fa">AI Briefing Audio</span>';
+        h += '<button type="button" onclick="recreateAudioOnly(\'ai_audio\',\'AI Briefing\',this)" style="background:#1a2a3e;border:1px solid #3b82f6;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#60a5fa;cursor:pointer" title="Regenerate audio from existing data">&#x21bb; Recreate</button>';
+        h += '<button type="button" onclick="recreateAudio(\'ai_audio\',\'AI Briefing\',this)" style="background:#0f1a2e;border:1px solid #2563eb;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#93c5fd;cursor:pointer" title="Re-fetch AI sources then recreate audio">&#x1f504; Refetch &amp; Recreate</button>';
+        h += '</div>';
+        h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/ai-briefing.mp3' + _cacheBust + '"></audio>';
       }
       if (data.has_wn_audio) {
-        h += '<div style="font-size:0.78em;font-weight:600;color:#f59e0b;margin-bottom:4px">World News Audio</div>';
-        h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/world-news.mp3"></audio>';
+        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+        h += '<span style="font-size:0.78em;font-weight:600;color:#f59e0b">World News Audio</span>';
+        h += '<button type="button" onclick="recreateAudioOnly(\'world_audio\',\'World News\',this)" style="background:#2a2a1a;border:1px solid #d97706;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#f59e0b;cursor:pointer" title="Regenerate audio from existing data">&#x21bb; Recreate</button>';
+        h += '<button type="button" onclick="recreateAudio(\'world_audio\',\'World News\',this)" style="background:#1a1a0f;border:1px solid #b45309;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fcd34d;cursor:pointer" title="Re-fetch world news then recreate audio">&#x1f504; Refetch &amp; Recreate</button>';
+        h += '</div>';
+        h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/world-news.mp3' + _cacheBust + '"></audio>';
       }
       if (data.has_cn_audio) {
-        h += '<div style="font-size:0.78em;font-weight:600;color:#ef4444;margin-bottom:4px">\u4e2d\u56fd\u65b0\u95fb Audio</div>';
-        h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/china-news.mp3"></audio>';
+        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+        h += '<span style="font-size:0.78em;font-weight:600;color:#ef4444">\u4e2d\u56fd\u65b0\u95fb Audio</span>';
+        h += '<button type="button" onclick="recreateAudioOnly(\'china_audio\',\'China News\',this)" style="background:#2a1a1a;border:1px solid #ef4444;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#ef4444;cursor:pointer" title="Regenerate audio from existing data">&#x21bb; Recreate</button>';
+        h += '<button type="button" onclick="recreateAudio(\'china_audio\',\'China News\',this)" style="background:#1a0f0f;border:1px solid #b91c1c;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fca5a5;cursor:pointer" title="Re-fetch China news then recreate audio">&#x1f504; Refetch &amp; Recreate</button>';
+        h += '</div>';
+        h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/china-news.mp3' + _cacheBust + '"></audio>';
       }
       h += '</div>';
     }
@@ -1491,6 +1523,70 @@ async function continueDailyFetchFromModal() {
     contBtn.disabled = false;
     runBtn.disabled = false;
   }
+}
+async function _runAudioJob(steps, label, btn, btnResetText) {
+  if (!_dfCurrentDate) { showToast('No date selected'); return; }
+  btn.disabled = true;
+  btn.textContent = '\u23f3 Working...';
+  var progressEl = document.getElementById('dfRunProgress');
+  var progressText = document.getElementById('dfRunProgressText');
+  progressEl.style.display = 'block';
+  progressText.textContent = label + '...';
+  progressEl.querySelector('.mini-spin').style.display = 'inline-block';
+  try {
+    var resp = await fetch('/api/toolbar/daily-fetch/continue', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({steps: steps, date: _dfCurrentDate})
+    });
+    var data = await resp.json();
+    var jobId = data.job_id;
+    var poll = setInterval(async function() {
+      try {
+        var sr = await fetch('/api/toolbar/daily-fetch/' + jobId);
+        var st = await sr.json();
+        progressText.textContent = st.step || 'Working...';
+        if (st.status === 'done') {
+          clearInterval(poll);
+          progressEl.querySelector('.mini-spin').style.display = 'none';
+          var sts = st.steps || [];
+          var stepHtml = '<div style="margin-top:8px">';
+          for (var i = 0; i < sts.length; i++) {
+            var ok = sts[i].exit_code === 0;
+            var icon = ok ? '<span style="color:#34d399">&#10004;</span>' : '<span style="color:#ef4444">&#10008;</span>';
+            stepHtml += '<div style="font-size:0.78em;color:#c4c8f0;margin:2px 0">' + icon + ' ' + escHtml(sts[i].step) + (ok ? '' : ' \u2014 ' + escHtml((sts[i].output || '').substring(0, 120))) + '</div>';
+          }
+          stepHtml += '</div>';
+          progressText.innerHTML = '<span style="color:#34d399;font-weight:600">Done!</span>' + stepHtml;
+          btn.disabled = false;
+          btn.textContent = btnResetText;
+          setTimeout(function() { loadDailyFetchHistory(_dfCurrentDate); }, 3000);
+        } else if (st.status === 'error') {
+          clearInterval(poll);
+          progressEl.querySelector('.mini-spin').style.display = 'none';
+          progressText.innerHTML = '<span style="color:#ef4444;font-weight:600">Error:</span> ' + escHtml(st.step || 'unknown');
+          btn.disabled = false;
+          btn.textContent = btnResetText;
+        }
+      } catch(pe) {}
+    }, 8000);
+  } catch(e) {
+    progressText.textContent = 'Error: ' + e.message;
+    btn.disabled = false;
+    btn.textContent = btnResetText;
+  }
+}
+async function recreateAudioOnly(stepName, label, btn) {
+  _runAudioJob([stepName], 'Recreating ' + label + ' audio', btn, '\u21bb Recreate');
+}
+async function recreateAudio(stepName, label, btn) {
+  var preSteps = [stepName];
+  if (stepName === 'ai_audio') {
+    preSteps = ['refetch_ai', stepName];
+  } else if (stepName === 'world_audio' || stepName === 'china_audio') {
+    preSteps = ['refetch_world', 'world_news_merge', stepName];
+  }
+  _runAudioJob(preSteps, 'Refetching & recreating ' + label + ' audio', btn, '\ud83d\udd04 Refetch & Recreate');
 }
 async function loadDfReportContent(dateStr, filename, btn) {
   var preview = document.getElementById('dfReportPreview');
@@ -1667,20 +1763,24 @@ async function runTrendAnalysis() {
 }
 
 var _aiKBItems = [];
+var _aiKBAudios = {};
 var _aiKBSortCol = 'date';
 var _aiKBSortAsc = false;
 
 function openAiNewsKB() {
   document.getElementById('aiKBStatus').textContent = 'Loading...';
-  document.getElementById('aiKBSummaryResult').style.display = 'none';
   document.getElementById('aiNewsKBModal').classList.add('open');
-  fetch('/api/toolbar/ai-news-kb').then(function(r){return r.json()}).then(function(d){
+  Promise.all([
+    fetch('/api/toolbar/ai-news-kb').then(function(r){return r.json()}),
+    fetch('/api/toolbar/ai-news-kb/article-audios').then(function(r){return r.json()}).catch(function(){return {audios:{}}})
+  ]).then(function(results){
+    var d = results[0];
+    _aiKBAudios = results[1].audios || {};
     _aiKBItems = d.items || [];
     _aiKBRenderTable();
     _aiKBUpdateFilters();
     document.getElementById('aiKBStatus').textContent = '';
     document.getElementById('aiKBStats').textContent = d.total + ' items | Last scan: ' + (d.last_scanned || 'never');
-    document.getElementById('btnAiKBSummary').disabled = _aiKBItems.length === 0;
   }).catch(function(e){ document.getElementById('aiKBStatus').textContent = 'Error: ' + e.message; });
 }
 function closeAiNewsKB() { document.getElementById('aiNewsKBModal').classList.remove('open'); }
@@ -1710,19 +1810,28 @@ function _aiKBRenderTable() {
     var linkHtml = it.url ? '<a href="' + it.url.replace(/"/g,'&quot;') + '" target="_blank" style="color:#60a5fa;text-decoration:none" title="' + it.url.replace(/"/g,'&quot;') + '">&#128279;</a>' : '';
     var catBadge = it.category ? '<span style="background:#2a2d3e;padding:1px 6px;border-radius:4px;font-size:0.9em;white-space:nowrap">' + _escHtml(it.category) + '</span>' : '';
     var rowId = 'aikb-row-' + i;
+    var existingAudioUrl = _aiKBAudios[it.title] || '';
+    var audioCell = '';
+    if (existingAudioUrl) {
+      audioCell = '<audio controls preload="none" style="height:28px;max-width:160px" src="' + existingAudioUrl + '"></audio>'
+        + ' <button type="button" onclick="event.stopPropagation();generateArticleAudio(' + i + ',this)" style="background:none;border:none;font-size:0.8em;color:#60a5fa;cursor:pointer;padding:0 2px" title="Regenerate">&#x1f504;</button>';
+    } else {
+      audioCell = '<button type="button" onclick="event.stopPropagation();generateArticleAudio(' + i + ',this)" style="background:#1a2a3e;border:1px solid #3b82f6;border-radius:4px;padding:1px 6px;font-size:0.85em;color:#60a5fa;cursor:pointer" title="Generate deep-dive audio">&#x1f3a7;</button>';
+    }
     html += '<tr style="border-bottom:1px solid #1a1d2e;cursor:pointer" onclick="toggleAiKBSummary(\'' + rowId + '\')">'
       + '<td style="padding:4px 8px;color:#8b8fa4;white-space:nowrap">' + _escHtml(it.date) + '</td>'
       + '<td style="padding:4px 8px">' + catBadge + '</td>'
       + '<td style="padding:4px 8px;color:#8b8fa4">' + _escHtml(it.source) + '</td>'
       + '<td style="padding:4px 8px;color:#e0e0e0">' + _escHtml(it.title) + '</td>'
       + '<td style="padding:4px 8px;text-align:center">' + linkHtml + '</td>'
+      + '<td style="padding:4px 8px;text-align:center">' + audioCell + '</td>'
       + '</tr>';
     if (it.summary) {
-      html += '<tr id="' + rowId + '" style="display:none"><td colspan="5" style="padding:4px 8px 10px 28px;color:#9ca3af;font-size:0.92em;line-height:1.5;border-bottom:1px solid #2a2d3e">' + _escHtml(it.summary) + '</td></tr>';
+      html += '<tr id="' + rowId + '" style="display:none"><td colspan="6" style="padding:4px 8px 10px 28px;color:#9ca3af;font-size:0.92em;line-height:1.5;border-bottom:1px solid #2a2d3e">' + _escHtml(it.summary) + '</td></tr>';
     }
   }
-  if (filtered.length > 500) html += '<tr><td colspan="5" style="padding:8px;color:#8b8fa4;text-align:center">Showing 500 of ' + filtered.length + ' items</td></tr>';
-  tbody.innerHTML = html || '<tr><td colspan="5" style="padding:12px;color:#8b8fa4;text-align:center">No items found</td></tr>';
+  if (filtered.length > 500) html += '<tr><td colspan="6" style="padding:8px;color:#8b8fa4;text-align:center">Showing 500 of ' + filtered.length + ' items</td></tr>';
+  tbody.innerHTML = html || '<tr><td colspan="6" style="padding:12px;color:#8b8fa4;text-align:center">No items found</td></tr>';
 }
 
 function _escHtml(s) { var d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
@@ -1753,6 +1862,67 @@ function sortAiKBTable(col) {
   _aiKBRenderTable();
 }
 
+async function generateArticleAudio(idx, btn) {
+  var items = _aiKBItems;
+  var kw = (document.getElementById('aiKBFilter').value || '').toLowerCase();
+  var cat = document.getElementById('aiKBCatFilter').value;
+  var src = document.getElementById('aiKBSourceFilter').value;
+  var filtered = items.filter(function(it) {
+    if (kw && (it.title||'').toLowerCase().indexOf(kw) < 0 && (it.source||'').toLowerCase().indexOf(kw) < 0 && (it.summary||'').toLowerCase().indexOf(kw) < 0) return false;
+    if (cat && it.category !== cat) return false;
+    if (src && it.source !== src) return false;
+    return true;
+  });
+  filtered.sort(function(a, b) {
+    var va = (a[_aiKBSortCol]||'').toLowerCase(), vb = (b[_aiKBSortCol]||'').toLowerCase();
+    if (va < vb) return _aiKBSortAsc ? -1 : 1;
+    if (va > vb) return _aiKBSortAsc ? 1 : -1;
+    return 0;
+  });
+  var it = filtered[idx];
+  if (!it) { showToast('Item not found'); return; }
+  btn.disabled = true;
+  btn.innerHTML = '&#x23f3;';
+  btn.title = 'Generating...';
+  var statusEl = document.getElementById('aiKBStatus');
+  statusEl.textContent = 'Generating audio for: ' + it.title.substring(0, 50) + '...';
+  try {
+    var resp = await fetch('/api/toolbar/ai-news-kb/article-audio', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({title: it.title, summary: it.summary || '', url: it.url || '', source: it.source || ''})
+    });
+    var data = await resp.json();
+    if (data.error) { showToast(data.error); btn.disabled = false; btn.innerHTML = '&#x1f3a7;'; statusEl.textContent = ''; return; }
+    var jobId = data.job_id;
+    var poll = setInterval(async function() {
+      try {
+        var sr = await fetch('/api/toolbar/audio-knowledge/' + jobId);
+        var st = await sr.json();
+        if (st.status === 'done') {
+          clearInterval(poll);
+          btn.disabled = false;
+          btn.innerHTML = '&#x1f3a7;';
+          if (st.error) {
+            statusEl.innerHTML = '<span style="color:#ef4444">Error: ' + _escHtml(st.error).substring(0, 100) + '</span>';
+          } else if (st.output_url) {
+            _aiKBAudios[it.title] = st.output_url;
+            _aiKBRenderTable();
+            statusEl.innerHTML = '<span style="color:#34d399">&#10004; Audio ready</span>';
+          }
+        } else {
+          statusEl.textContent = (st.status || 'Working') + '...';
+        }
+      } catch(pe) {}
+    }, 5000);
+  } catch(e) {
+    showToast('Error: ' + e.message);
+    btn.disabled = false;
+    btn.innerHTML = '&#x1f3a7;';
+    statusEl.textContent = '';
+  }
+}
+
 async function runAiNewsKBScan() {
   var btn = document.getElementById('btnAiKBScan');
   var status = document.getElementById('aiKBStatus');
@@ -1769,7 +1939,6 @@ async function runAiNewsKBScan() {
     _aiKBItems = d2.items || [];
     _aiKBRenderTable();
     _aiKBUpdateFilters();
-    document.getElementById('btnAiKBSummary').disabled = _aiKBItems.length === 0;
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
   } finally {
@@ -1789,52 +1958,6 @@ function _simpleMarkdownToHtml(text) {
   s = s.replace(/\n\n/g, '<br><br>');
   s = s.replace(/\n/g, '<br>');
   return s;
-}
-
-async function runAiNewsKBSummary() {
-  var btn = document.getElementById('btnAiKBSummary');
-  var status = document.getElementById('aiKBStatus');
-  var resultEl = document.getElementById('aiKBSummaryResult');
-  btn.disabled = true;
-  status.textContent = 'Generating AI summary...';
-  resultEl.style.display = 'block';
-  resultEl.innerHTML = '';
-  var fullText = '';
-  try {
-    var resp = await fetch('/api/toolbar/ai-news-kb/summary', {
-      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
-    });
-    if (!resp.ok) {
-      var errJ = await resp.json().catch(function(){return {};});
-      resultEl.textContent = 'Error: ' + (errJ.error || resp.statusText);
-      status.textContent = '';
-      return;
-    }
-    var reader = resp.body.getReader();
-    var decoder = new TextDecoder();
-    while (true) {
-      var chunk = await reader.read();
-      if (chunk.done) break;
-      var lines = decoder.decode(chunk.value, {stream: true}).split('\n');
-      lines.forEach(function(line) {
-        if (line.startsWith('data: ')) {
-          try {
-            var ev = JSON.parse(line.substring(6));
-            if (ev.type === 'token') { fullText += ev.content || ''; resultEl.innerHTML = _simpleMarkdownToHtml(fullText); }
-            if (ev.type === 'done') { fullText = ev.content || fullText; resultEl.innerHTML = _simpleMarkdownToHtml(fullText); }
-            if (ev.type === 'error') { resultEl.textContent = 'Error: ' + (ev.message || 'unknown'); }
-          } catch(e) {}
-        }
-      });
-    }
-    status.textContent = '';
-    addSystemMessage('AI News KB', 'Summary generated. See the AI News KB modal for details.');
-  } catch (e) {
-    resultEl.textContent = 'Error: ' + e.message;
-    status.textContent = '';
-  } finally {
-    btn.disabled = false;
-  }
 }
 
 async function loadDonorAnalysis() {
@@ -1962,6 +2085,10 @@ function openAudioKnowledgeModal() {
   document.getElementById('audioStep2').style.display = 'none';
   document.querySelectorAll('input[name="audioSourceType"]').forEach(function(r) { r.checked = false; });
   document.getElementById('audioKnowledgeModal').classList.add('open');
+  fetch('/api/settings').then(function(r){return r.json()}).then(function(d){
+    var el = document.getElementById('audioLanguage');
+    if (el && d.audio_lang_knowledge) el.value = d.audio_lang_knowledge;
+  }).catch(function(){});
   _loadAudioHistory();
 }
 var _audioHistoryData = [];
@@ -2955,18 +3082,10 @@ async function openAWSCert() {
     const domains = ctx.domains || [];
     const progress = ctx.progress || {};
     const domainWeights = {'1':'20%','2':'24%','3':'28%','4':'14%','5':'14%'};
-    const domainNames = {
-      '1':'Fundamentals of AI and ML',
-      '2':'Fundamentals of Generative AI',
-      '3':'Applications of Foundation Models',
-      '4':'Guidelines for Responsible AI',
-      '5':'Security, Compliance & Governance'
-    };
 
     let msg = '## AWS Certified AI Practitioner (AIF-C01)\n\n';
     msg += '**Exam:** 65 questions | 90 min | Passing: 700/1000\n\n';
 
-    // Progress summary
     const pd = progress.domains || {};
     let hasProgress = false;
     for (const dn of ['1','2','3','4','5']) {
@@ -2974,7 +3093,7 @@ async function openAWSCert() {
       if ((dd.topics_taught||[]).length > 0 || (dd.topics_quizzed||[]).length > 0) { hasProgress = true; break; }
     }
     if (hasProgress) {
-      msg += '### Your Progress\n\n';
+      msg += '### 📊 Your Progress\n\n';
       for (const dn of ['1','2','3','4','5']) {
         const dd = pd[dn] || {};
         const pct = dd.completion_pct || 0;
@@ -2986,24 +3105,34 @@ async function openAWSCert() {
       msg += '\n**Overall Readiness: ' + (progress.overall_readiness||0) + '%**\n\n';
     }
 
-    msg += '### Exam Domains\n\n';
+    msg += '### 📚 Study Categories\n\n';
+    msg += 'Click any category to drill down. Each contains detailed notes, exam tips, and practice questions.\n\n';
     let lastDomain = '';
+    let lastCategory = '';
     for (const d of domains) {
       if (d.domain !== lastDomain) {
-        msg += '\n**' + escHtml(d.domain) + '**\n';
+        msg += '\n#### ' + escHtml(d.domain) + '\n\n';
         lastDomain = d.domain;
+        lastCategory = '';
       }
-      if (d.task) msg += '  ' + escHtml(d.task) + '\n';
-      msg += '  - ' + escHtml(d.topic) + '\n';
+      const cat = d.category || '';
+      if (cat && cat !== lastCategory) {
+        msg += '**' + escHtml(cat) + '**\n';
+        lastCategory = cat;
+      }
+      const desc = d.description ? ' — ' + escHtml(d.description) : '';
+      msg += '- `' + escHtml(d.topic) + '`' + desc + '\n';
     }
 
     msg += '\n---\n\n';
-    msg += '**Commands:**\n';
-    msg += '- `teach me Domain 1` — Start a lesson on any domain\n';
-    msg += '- `teach me Amazon Bedrock` — Learn a specific topic\n';
-    msg += '- `quiz me on Domain 2` — Take a practice quiz\n';
-    msg += '- `progress` — View your study progress\n';
-    msg += '- Or just ask any question about the AIF-C01 exam!\n';
+    msg += '### 🎯 How to Use\n\n';
+    msg += '| Command | Example |\n';
+    msg += '|---------|----------|\n';
+    msg += '| **Teach** | `teach me Amazon Bedrock` or `teach me RAG` |\n';
+    msg += '| **Quiz** | `quiz me on Domain 2` or `quiz me on prompt engineering` |\n';
+    msg += '| **Domain overview** | `Domain 1` or `Domain 3` |\n';
+    msg += '| **Progress** | `progress` or `show progress` |\n';
+    msg += '| **Any question** | Just ask anything about the AIF-C01 exam! |\n';
     return msg;
   });
 }

@@ -1,6 +1,6 @@
 param(
     [int]$Hours = 48,
-    [string]$OutputDir = $(if ($env:JARVIS_REPORTS_ROOT) { $env:JARVIS_REPORTS_ROOT } else { "C:/reports/ai" })
+    [string]$OutputDir = $(if ($env:JARVIS_REPORTS_ROOT) { $env:JARVIS_REPORTS_ROOT } elseif ($IsWindows -or $PSVersionTable.PSEdition -ne 'Core') { "C:/reports/ai" } else { "$HOME/reports/ai" })
 )
 
 $ErrorActionPreference = "Continue"

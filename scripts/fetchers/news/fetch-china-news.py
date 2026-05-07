@@ -17,6 +17,10 @@ import sys
 import time
 from datetime import datetime, timedelta
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(SCRIPT_DIR, ".."))
+from proxy_strategy import get_proxies_for_requests
+
 try:
     import feedparser
 except ImportError:
@@ -29,11 +33,6 @@ except ImportError:
 
 SOURCE_NAME = "china-news"
 OUTPUT_DIR = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.getcwd(), "_world_news_tmp")
-
-PROXY = os.environ.get("BRIEFING_PROXY", "")
-PROXIES = {}
-if PROXY:
-    PROXIES = {"http": PROXY, "https": PROXY}
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
@@ -97,7 +96,7 @@ def fetch_sina_roll() -> list[dict]:
                 params={"pageid": "153", "lid": lid, "num": str(num), "page": "1"},
                 headers=HEADERS,
                 timeout=15,
-                proxies=PROXIES,
+                proxies=get_proxies_for_requests(SINA_ROLL_API),
             )
             resp.raise_for_status()
             data = resp.json()
@@ -152,7 +151,7 @@ def _fetch_rss_text(url: str, timeout: int = 12) -> str:
     if requests is None:
         return ""
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=timeout, proxies=PROXIES)
+        resp = requests.get(url, headers=HEADERS, timeout=timeout, proxies=get_proxies_for_requests(url))
         resp.raise_for_status()
         return resp.text
     except Exception as e:
@@ -206,7 +205,7 @@ def fetch_weibo_hot() -> list[dict]:
                 "Referer": "https://weibo.com/",
             },
             timeout=12,
-            proxies=PROXIES,
+            proxies=get_proxies_for_requests("https://weibo.com/ajax/side/hotSearch"),
         )
         if not resp.ok:
             return items
@@ -256,7 +255,7 @@ def fetch_cls_telegraph() -> list[dict]:
             params={"app": "CailianpressWeb", "os": "web", "sv": "7.7.5", "rn": "20"},
             headers={**HEADERS, "Referer": "https://www.cls.cn/telegraph"},
             timeout=15,
-            proxies=PROXIES,
+            proxies=get_proxies_for_requests("https://www.cls.cn/nodeapi/updateTelegraphList"),
         )
         if not resp.ok:
             return items
@@ -309,7 +308,9 @@ def fetch_toutiao_trending() -> list[dict]:
                 "Referer": "https://www.toutiao.com/",
             },
             timeout=15,
-            proxies=PROXIES,
+            proxies=get_proxies_for_requests(
+                "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc"
+            ),
         )
         resp.raise_for_status()
         data = resp.json()

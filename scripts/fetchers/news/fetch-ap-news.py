@@ -17,7 +17,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", ".."))
 from raw_saver import save_raw_content
 
-PROXY = os.environ.get("BRIEFING_PROXY")
+sys.path.insert(0, os.path.join(SCRIPT_DIR, ".."))
+from proxy_strategy import get_proxy_for_playwright
 
 SOURCE_NAME = "ap-news"
 MAX_ITEMS = 3
@@ -110,10 +111,8 @@ async def fetch():
     seen_titles = set()
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            proxy={"server": PROXY} if PROXY else None,
-        )
+        proxy_arg = await get_proxy_for_playwright(p, "https://apnews.com")
+        browser = await p.chromium.launch(headless=True, **proxy_arg)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
             viewport={"width": 1280, "height": 900},

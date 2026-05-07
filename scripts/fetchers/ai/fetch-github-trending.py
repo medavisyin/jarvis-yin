@@ -16,7 +16,9 @@ import sys
 import time
 from playwright.async_api import async_playwright
 
-PROXY = os.environ.get("BRIEFING_PROXY")
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(SCRIPT_DIR, ".."))
+from proxy_strategy import get_proxy_for_playwright
 
 SOURCE_NAME = "github-trending"
 SOURCE_URL = "https://github.com/trending?since=daily"
@@ -33,13 +35,14 @@ async def fetch():
     t0 = time.monotonic()
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, proxy={"server": PROXY} if PROXY else None)
+        proxy_arg = await get_proxy_for_playwright(p, SOURCE_URL)
+        browser = await p.chromium.launch(headless=True, **proxy_arg)
         page = await browser.new_page(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
         )
 
         t = time.monotonic()
-        await page.goto(SOURCE_URL, wait_until="domcontentloaded", timeout=20000)
+        await page.goto(SOURCE_URL, wait_until="domcontentloaded", timeout=60000)
         await page.wait_for_timeout(1500)
         _step(timing, "navigate", t)
 

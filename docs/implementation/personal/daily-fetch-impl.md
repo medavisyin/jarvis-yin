@@ -5,12 +5,12 @@ tags:
   - daily-fetch
 category: personal
 status: current
-last-updated: 2026-04-28
+last-updated: 2026-05-07b
 ---
 
 # Daily Fetch Pipeline
 
-> **Category**: PERSONAL | **Source**: `scripts/rag/agent.py`, `scripts/pipeline/run-all-sources.py`, `scripts/pipeline/preflight-check.py`, `scripts/pipeline/merge-sources.py`, `scripts/pipeline/filter_topics.py`, `scripts/pipeline/topic_index.py`, `scripts/pipeline/run-world-news.py`, `scripts/output/generate-audio.py`, `scripts/output/briefing-template.py`
+> **Category**: PERSONAL | **Source**: `scripts/rag/agent.py`, `scripts/fetchers/proxy_strategy.py`, `scripts/rag/routes/ai_news.py`, `scripts/pipeline/run-all-sources.py`, `scripts/pipeline/preflight-check.py`, `scripts/pipeline/merge-sources.py`, `scripts/pipeline/filter_topics.py`, `scripts/pipeline/topic_index.py`, `scripts/pipeline/run-world-news.py`, `scripts/output/generate-audio.py`, `scripts/output/briefing-template.py`
 
 ## Overview
 
@@ -25,10 +25,13 @@ The pipeline bridges **orchestrated subprocesses** (`run-all-sources.py` and fri
 ```mermaid
 flowchart TD
   UI[Daily Fetch UI] --> POST["POST /api/toolbar/daily-fetch"]
+  UI --> RecreateOnly["Recreate btn → continue(audio_step only)"]
+  UI --> RefetchRecreate["Refetch & Recreate btn → continue(refetch + audio)"]
   POST --> Thread[daemon Thread]
   Thread --> RAS["run-all-sources.py"]
   RAS --> PF[preflight-check.py]
   RAS --> Fetch[Parallel fetch-*.py]
+  Fetch --> Proxy["proxy_strategy.py<br/>smart per-domain direct/proxy selection"]
   RAS --> Merge[merge-sources.py]
   RAS --> LG[generate_learning_guide.py]
   RAS --> Idx[index_briefing.py optional]
@@ -40,18 +43,19 @@ flowchart TD
   Thread --> Wiki[index_confluence_user.py loop]
   Thread --> Sum[Build daily_summary markdown]
   Thread --> Audio[Segmented Ollama + Edge TTS MP3s]
+  Audio --> Enrich["_enrich_vocabulary<br/>(English narration only: 2nd LLM pass)"]
 ```
 
 ### Data Flow
 
 1. **Start job**: `api_daily_fetch` allocates `job_id`, initializes `_daily_fetch_jobs[job_id]`, starts `_run_daily_fetch` in a thread (`4930–4937:scripts/rag/agent.py`).
-2. **Fetch phase**: `python pipeline/run-all-sources.py --output-dir <REPORTS_ROOT/YYYY-MM-DD> --proxy socks5://localhost:10808` (`4417–4423`). That script runs preflight, parallel AI fetches, merge, learning guide, optional briefing RAG + Confluence indexing, then world news under `world-news/` (`89–257:scripts/pipeline/run-all-sources.py`).
+2. **Fetch phase**: `python pipeline/run-all-sources.py --output-dir <REPORTS_ROOT/YYYY-MM-DD>`. Individual fetchers use `proxy_strategy.py` for per-domain direct vs. SOCKS5 proxy selection with persistent caching (`scripts/fetchers/proxy_strategy.py`). Per-script timeout: 180s. That script runs preflight, parallel AI fetches, merge, learning guide, optional briefing RAG + Confluence indexing, then world news under `world-news/` (`89–257:scripts/pipeline/run-all-sources.py`).
 3. **Topic dedup**: If `briefing-data.json` exists, `filter_topics.py` writes `briefing-data-filtered.json` in aggressive mode (`4429–4441`).
 4. **Commit report**: PowerShell `tools/commit-report.ps1` or `tool_commit_summary` fallback (`4446–4467`).
 5. **Jira daily**: PowerShell script from `JIRA_SCRIPT`; may read back `atlassian-daily-report-*.md` (`4470–4489`).
 6. **Wiki fetch**: Sequential `index_confluence_user.py` per hard-coded team user with `--date-from yesterday --report-json`; optional Ollama summaries; writes `wiki-fetch-<date>.md` (`4492–4649`).
 7. **Summary**: Reads filtered or raw briefing JSON and `world-news-data.json` for key bullets; concatenates commit/Jira excerpts into `job["daily_summary"]` (`4651–4713`).
-8. **Audio**: Per-source segments from briefing JSON → `_generate_segmented_narrations` → `_tts_segments_to_mp3` → `ai-briefing.mp3` with `audio_lang_ai` (`4715–4758`). World/China segments from merged world news JSON, split by source tag `中国新闻`, using `audio_lang_world` / `audio_lang_china` (`4808–4910`). Optional `world_news_merge` recovery merges raw world-news JSONs via `run-world-news.py --no-fetch` or `merge_news()` (`4760–4806`).
+8. **Audio**: Per-source segments from briefing JSON → `_generate_segmented_narrations` (model: `qwen3.5:4b`) → English segments get `_enrich_vocabulary` (2nd LLM pass to add vocabulary annotations) → `_tts_segments_to_mp3` → `ai-briefing.mp3` with `audio_lang_ai`. World/China segments similar. Narration model upgraded from `qwen3:1.7b` to `qwen3.5:4b` for richer content. Merged world news JSON, split by source tag `中国新闻`, drives world/China MP3s with `audio_lang_world` / `audio_lang_china` (`4715–4758`, `4808–4910`). Optional `world_news_merge` recovery merges raw world-news JSONs via `run-world-news.py --no-fetch` or `merge_news()` (`4760–4806`).
 9. **Completion**: `job["status"] = "done"`, `steps` and `files` populated (`4912–4921`). Errors set `status: "error"` (`4923–4926`).
 
 ### Key Design Decisions
@@ -61,6 +65,9 @@ flowchart TD
 - **Segmented narration**: Long briefings are split per source/category to avoid single huge LLM calls; uses `OLLAMA_MODEL_NARRATION` via `_ollama_narration_call` (`4107–4214`, `4047–4073`).
 - **Fault tolerance**: Each step appends to `steps` with exit code and truncated output; failures in one step do not always abort later steps (exceptions are caught per block).
 - **Continue semantics**: `only_steps` filters which named steps run; history computes `missing_steps` for the UI (`4940–4956`, `5084–5106`).
+- **Split Recreate / Refetch & Recreate**: Each audio type has two buttons: "Recreate" runs only the audio generation step from existing data (fast, useful after code/prompt tweaks); "Refetch & Recreate" re-runs fetchers + merge first, then regenerates audio (slower, gets fresh content). Both use the same `_runAudioJob` helper and the `/api/toolbar/daily-fetch/continue` endpoint with different `steps` arrays.
+- **Smart proxy strategy**: Fetchers use `proxy_strategy.py` to automatically probe direct vs. SOCKS5 proxy access per domain, caching results in `.proxy-strategy.json`. Probes run on first access; subsequent fetches use the cached method. Functions provided for Playwright (`get_proxy_for_playwright`), httpx (`get_proxy_for_httpx`), and requests (`get_proxies_for_requests`).
+- **English vocabulary enrichment**: English narration passes through a 2-pass pipeline: content generation followed by `_enrich_vocabulary()` which rewrites the dialogue to insert 5-8 em-dash vocabulary annotations for CET-6 level learners. Uses `qwen3.5:4b` model (upgraded from `qwen3:1.7b`).
 
 ## Implementation Details
 
@@ -76,6 +83,8 @@ flowchart TD
 | `filter_topics` + `TopicIndex` | Dedup using persistent topic index from `config.TOPIC_INDEX_PATH` (`27–80` in filter, `64–80` in topic_index) |
 | `run-world-news` | Fetches/merges international + China feeds; `merge_news()` for recovery (`121–150`) |
 | `_generate_segmented_narrations`, `_tts_segments_to_mp3` | Narration + Edge TTS with ffmpeg concat fallback (`4107–4295`) |
+| `proxy_strategy.py` | Smart per-domain proxy selection with persistent cache; provides helpers for Playwright, httpx, requests |
+| `_enrich_vocabulary` | Post-process English narration to inject vocabulary annotations via 2nd LLM call (in `ai_news.py`) |
 
 ### API Surface
 
@@ -87,8 +96,9 @@ flowchart TD
 ### Configuration
 
 - Output root: `REPORTS_ROOT` / `today` subdirectory (`4407–4408`).
-- Proxy: `socks5://localhost:10808` hard-coded on `run-all-sources` invocation (`4421`).
+- Proxy: Per-domain strategy via `proxy_strategy.py`; default SOCKS5 at `socks5://localhost:10808` from `BRIEFING_PROXY` env or fallback. Cache persisted at `REPORTS_ROOT/.proxy-strategy.json`.
 - Audio languages: `_GLOBAL_SETTINGS["audio_lang_ai" | "audio_lang_world" | "audio_lang_china"]` default `"zh"`; `"en"` selects `en-US-AndrewNeural` (`4741–4742`, `4851–4852`, `4886–4887`).
+- Narration model: `RAG_NARRATION_MODEL` default `qwen3.5:4b` (upgraded from `qwen3:1.7b`); English mode uses 2-pass enrichment for vocabulary teaching.
 - `briefing-template.py` / `generate-audio.py`: use `REPORTS_ROOT` from `scripts/config.py`; schema aligned with `merge-sources` output—not called by `_run_daily_fetch`.
 
 ### Error Handling & Edge Cases
@@ -111,7 +121,7 @@ flowchart TD
 
 ### Short-term
 
-- Make proxy URL configurable via `_GLOBAL_SETTINGS` or env instead of hard-coding `socks5://localhost:10808`.
+- ~~Make proxy URL configurable~~ — **DONE (2026-05-06)**: Implemented smart per-domain proxy strategy with persistent caching; reads `BRIEFING_PROXY` env.
 - Surface `preflight-results.json` and `timing-log.json` in the daily-fetch status JSON for quicker debugging.
 
 ### Medium-term
@@ -130,3 +140,5 @@ flowchart TD
 - `scripts/pipeline/run-all-sources.py` — End-to-end fetch orchestration
 - `scripts/pipeline/preflight-check.py`, `merge-sources.py`, `filter_topics.py`, `topic_index.py`, `run-world-news.py`
 - `scripts/output/briefing-template.py`, `scripts/output/generate-audio.py` — PDF and alternate MP3 path
+- `scripts/fetchers/proxy_strategy.py` — Smart per-domain proxy selection
+- `scripts/rag/routes/ai_news.py` — Narration generation, vocabulary enrichment, TTS pipeline

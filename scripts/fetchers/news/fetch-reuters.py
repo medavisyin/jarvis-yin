@@ -17,7 +17,8 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", ".."))
 from raw_saver import save_raw_content
 
-PROXY = os.environ.get("BRIEFING_PROXY")
+sys.path.insert(0, os.path.join(SCRIPT_DIR, ".."))
+from proxy_strategy import get_proxy_for_playwright, get_proxy_for_httpx
 
 SOURCE_NAME = "reuters"
 MAX_ITEMS = 3
@@ -67,8 +68,7 @@ def _try_rss(timing):
     for category, url in RSS_FEEDS:
         try:
             kwargs = {"timeout": 10}
-            if PROXY:
-                kwargs["proxy"] = PROXY
+            kwargs.update(get_proxy_for_httpx(url))
             r = httpx.get(url, **kwargs)
             r.raise_for_status()
             feed = feedparser.parse(r.text)
@@ -207,10 +207,8 @@ async def fetch():
     if not all_items:
         seen_titles = set()
         async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                proxy={"server": PROXY} if PROXY else None,
-            )
+            proxy_arg = await get_proxy_for_playwright(p, "https://www.reuters.com")
+            browser = await p.chromium.launch(headless=True, **proxy_arg)
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 viewport={"width": 1280, "height": 900},
@@ -239,10 +237,8 @@ async def fetch():
             await browser.close()
     else:
         async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                proxy={"server": PROXY} if PROXY else None,
-            )
+            proxy_arg = await get_proxy_for_playwright(p, "https://www.reuters.com")
+            browser = await p.chromium.launch(headless=True, **proxy_arg)
             context = await browser.new_context(
                 user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 viewport={"width": 1280, "height": 900},

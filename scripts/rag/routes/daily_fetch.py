@@ -26,6 +26,7 @@ from learning.constants import LEARNING_SESSION_IDS as _LEARNING_SESSION_IDS
 from routes.ai_news import _generate_segmented_narrations, _load_ai_kb, _tts_segments_to_mp3
 
 daily_fetch_bp = Blueprint("daily_fetch", __name__)
+_log = logging.getLogger(__name__)
 
 JIRA_SCRIPT = JIRA_REPORT_SCRIPT
 
@@ -37,6 +38,22 @@ def _resolve_agent():
         if m is not None and hasattr(m, "_load_session_file"):
             return m
     return sys.modules["__main__"]
+
+
+def _get_global_settings() -> dict:
+    """Get global settings reliably — tries in-memory first, falls back to disk."""
+    gs = getattr(_resolve_agent(), "_GLOBAL_SETTINGS", None)
+    if gs and isinstance(gs, dict) and any(k.startswith("audio_lang") for k in gs):
+        return gs
+    _log.warning("_GLOBAL_SETTINGS not found in-memory (got %r), reading from disk", type(gs))
+    settings_file = os.path.join(_RAG_DIR, ".global_settings.json")
+    if os.path.isfile(settings_file):
+        try:
+            with open(settings_file, "r", encoding="utf-8") as f:
+                return json.loads(f.read())
+        except Exception as e:
+            _log.error("Failed to read settings file %s: %s", settings_file, e)
+    return {}
 
 
 # ---------------------------------------------------------------------------
@@ -67,8 +84,12 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
             job["step"] = "Running AI + world news fetchers..."
             try:
                 run_all = os.path.join(scripts_dir, "pipeline", "run-all-sources.py")
+                cmd = ["python", run_all, "--output-dir", output_dir]
+                proxy_url = os.environ.get("BRIEFING_PROXY", "")
+                if proxy_url:
+                    cmd.extend(["--proxy", proxy_url])
                 r = sp.run(
-                    ["python", run_all, "--output-dir", output_dir, "--proxy", "socks5://localhost:10808"],
+                    cmd,
                     capture_output=True, text=False, timeout=600, cwd=scripts_dir
                 )
                 stdout = r.stdout.decode("utf-8", errors="replace") if r.stdout else ""
@@ -320,7 +341,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                 items_list = []
                 if isinstance(psd, list):
                     for src_block in psd:
-                        src_name = src_block.get("source_name", "")
+                        src_name = src_block.get("source_name") or src_block.get("name") or ""
                         for it in src_block.get("items", [])[:3]:
                             items_list.append(f"- [{src_name}] {it.get('title', 'Untitled')}")
                 ai_key_points = "\n".join(items_list[:15]) if items_list else "No AI news items"
@@ -369,33 +390,68 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
 
         job["daily_summary"] = "\n".join(summary_parts)
 
+        # --- Refetch AI sources (for Recreate with fresh data) ---
+        if _should_run("refetch_ai"):
+            job["step"] = "Re-fetching AI sources..."
+            try:
+                run_all = os.path.join(scripts_dir, "pipeline", "run-all-sources.py")
+                r_ai = sp.run(
+                    ["python", run_all, "--output-dir", output_dir],
+                    capture_output=True, text=False, timeout=600, cwd=scripts_dir
+                )
+                stdout_ai = r_ai.stdout.decode("utf-8", errors="replace") if r_ai.stdout else ""
+                steps.append({"step": "refetch_ai", "exit_code": r_ai.returncode, "output": stdout_ai[-500:]})
+                if r_ai.returncode == 0:
+                    filter_script = os.path.join(scripts_dir, "pipeline", "filter_topics.py")
+                    input_json = os.path.join(output_dir, "briefing-data.json")
+                    filtered_json = os.path.join(output_dir, "briefing-data-filtered.json")
+                    if os.path.exists(input_json):
+                        job["step"] = "Running topic deduplication on fresh data..."
+                        sp.run(
+                            ["python", filter_script, input_json, filtered_json, "--mode", "aggressive"],
+                            capture_output=True, text=False, timeout=60, cwd=scripts_dir
+                        )
+            except Exception as e:
+                steps.append({"step": "refetch_ai", "exit_code": 1, "output": str(e)[:300]})
+
         # --- Audio generation: AI Briefing (segmented per-source) ---
         if _should_run("ai_audio"):
             job["step"] = "Generating AI briefing audio (segmented)..."
             try:
-                data_file = os.path.join(output_dir, "briefing-data-filtered.json")
+                data_file = os.path.join(output_dir, "briefing-data.json")
                 if not os.path.exists(data_file):
-                    data_file = os.path.join(output_dir, "briefing-data.json")
+                    data_file = os.path.join(output_dir, "briefing-data-filtered.json")
                 if os.path.exists(data_file):
                     import json as _json
                     with open(data_file, "r", encoding="utf-8") as df:
                         bdata = _json.load(df)
                     ai_segments: list[dict] = []
                     for src_block in (bdata.get("per_source_data") or []):
-                        src_name = src_block.get("source_name", "")
+                        src_name = src_block.get("source_name") or src_block.get("name") or ""
                         items_text_parts = []
                         for it in src_block.get("items", [])[:5]:
                             title = it.get("title", "")
-                            summary_text = it.get("summary", "") or it.get("description", "")
-                            if title:
-                                items_text_parts.append(f"{title}\n{summary_text}")
+                            summary_text = it.get("summary") or it.get("description") or ""
+                            url = it.get("url") or ""
+                            points = it.get("points") or []
+                            if not title:
+                                continue
+                            parts = [title]
+                            if summary_text:
+                                parts.append(summary_text)
+                            else:
+                                if points:
+                                    parts.append(" | ".join(str(p) for p in points[:5]))
+                                if url:
+                                    parts.append(f"Source: {url}")
+                            items_text_parts.append("\n".join(parts))
                         if items_text_parts:
                             ai_segments.append({
                                 "name": src_name or "AI News",
                                 "content": "\n\n".join(items_text_parts),
                             })
                     if ai_segments:
-                        gs = getattr(_resolve_agent(), "_GLOBAL_SETTINGS", {})
+                        gs = _get_global_settings()
                         ai_lang = gs.get("audio_lang_ai", "zh")
                         ai_voice = "en-US-AndrewNeural" if ai_lang == "en" else "zh-CN-YunxiNeural"
                         job["step"] = f"Generating AI narration ({len(ai_segments)} segments, lang={ai_lang})..."
@@ -414,6 +470,22 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                     steps.append({"step": "ai_audio", "exit_code": -1, "output": "No briefing data file found"})
             except Exception as e:
                 steps.append({"step": "ai_audio", "exit_code": 1, "output": str(e)[:300]})
+
+        # --- Refetch World News sources (for Recreate with fresh data) ---
+        if _should_run("refetch_world"):
+            job["step"] = "Re-fetching world news sources..."
+            try:
+                wn_dir = os.path.join(output_dir, "world-news")
+                os.makedirs(wn_dir, exist_ok=True)
+                wn_script = os.path.join(scripts_dir, "pipeline", "run-world-news.py")
+                r_wn = sp.run(
+                    ["python", wn_script, "--output-dir", wn_dir],
+                    capture_output=True, text=False, timeout=600, cwd=scripts_dir
+                )
+                stdout_wn = r_wn.stdout.decode("utf-8", errors="replace") if r_wn.stdout else ""
+                steps.append({"step": "refetch_world", "exit_code": r_wn.returncode, "output": stdout_wn[-500:]})
+            except Exception as e:
+                steps.append({"step": "refetch_world", "exit_code": 1, "output": str(e)[:300]})
 
         # --- Ensure world-news-data.json exists (merge recovery) ---
         if _should_run("world_news_merge"):
@@ -505,7 +577,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                         wdata = _json.load(wf)
                     categories = wdata.get("categories") or []
 
-                    gs = getattr(_resolve_agent(), "_GLOBAL_SETTINGS", {})
+                    gs = _get_global_settings()
                     wn_lang = gs.get("audio_lang_world", "zh")
                     wn_voice = "en-US-AndrewNeural" if wn_lang == "en" else "zh-CN-YunxiNeural"
                     wn_segments = _build_audio_segments(
@@ -541,7 +613,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                         wdata = _json.load(wf)
                     categories = wdata.get("categories") or []
 
-                    gs = getattr(_resolve_agent(), "_GLOBAL_SETTINGS", {})
+                    gs = _get_global_settings()
                     cn_lang = gs.get("audio_lang_china", "zh")
                     cn_voice = "en-US-AndrewNeural" if cn_lang == "en" else "zh-CN-YunxiNeural"
                     cn_segments = _build_audio_segments(
@@ -648,7 +720,11 @@ def api_daily_fetch_history():
                 })
 
     ai_count = 0
+    ai_by_source: dict[str, int] = {}
     wn_count = 0
+    wn_by_source: dict[str, int] = {}
+    cn_count = 0
+    cn_by_source: dict[str, int] = {}
     jira_tickets = 0
     confluence_pages = 0
 
@@ -660,11 +736,13 @@ def api_daily_fetch_history():
             with open(briefing_file, "r", encoding="utf-8") as f:
                 bd = json.load(f)
             for src in (bd.get("per_source_data") or []):
-                ai_count += len(src.get("items") or [])
+                src_name = src.get("source_name") or src.get("name") or "Unknown"
+                item_count = len(src.get("items") or [])
+                ai_count += item_count
+                ai_by_source[src_name] = ai_by_source.get(src_name, 0) + item_count
         except Exception:
             pass
 
-    cn_count = 0
     _CHINA_TAG = "中国新闻"
     wn_file = os.path.join(date_dir, "world-news", "world-news-data.json")
     if os.path.isfile(wn_file):
@@ -675,11 +753,13 @@ def api_daily_fetch_history():
             if isinstance(cats, list):
                 for c in cats:
                     for it in (c.get("items") or []):
-                        src = it.get("source", "")
-                        if _CHINA_TAG in src:
+                        src_label = it.get("source", "")
+                        if _CHINA_TAG in src_label:
                             cn_count += 1
+                            cn_by_source[src_label] = cn_by_source.get(src_label, 0) + 1
                         else:
                             wn_count += 1
+                            wn_by_source[src_label] = wn_by_source.get(src_label, 0) + 1
             elif isinstance(cats, dict):
                 for v in cats.values():
                     wn_count += len(v) if isinstance(v, list) else 0
@@ -773,8 +853,11 @@ def api_daily_fetch_history():
         "files": files,
         "stats": {
             "ai_items": ai_count,
+            "ai_by_source": ai_by_source,
             "world_news_items": wn_count,
+            "world_by_source": wn_by_source,
             "china_news_items": cn_count,
+            "china_by_source": cn_by_source,
             "jira_tickets": jira_tickets,
             "confluence_pages": confluence_pages,
             "wiki_pages": wiki_pages,
@@ -1094,19 +1177,26 @@ def api_learning_context():
         roadmap = _load_aws_cert_roadmap()
         domains = []
         current_domain = ""
-        current_task = ""
+        current_category = ""
         for line in roadmap.split("\n"):
-            if line.startswith("## Domain"):
+            if line.startswith("## Domain") or line.startswith("## Exam Strategy"):
                 current_domain = line.replace("## ", "").strip()
-                current_task = ""
-            elif line.startswith("### Task"):
-                current_task = line.replace("### ", "").strip()
+                current_category = ""
+            elif line.startswith("### Category:"):
+                current_category = line.replace("### Category:", "").strip()
+            elif line.startswith("### "):
+                current_category = line.replace("### ", "").strip()
             elif line.startswith("- **") and current_domain:
                 topic_name = line.split("**")[1] if "**" in line else line[4:]
+                topic_text = topic_name.strip(":").strip()
+                desc = ""
+                if ":" in line.split("**", 2)[-1]:
+                    desc = line.split("**", 2)[-1].split(":", 1)[-1].strip()
                 domains.append({
                     "domain": current_domain,
-                    "task": current_task,
-                    "topic": topic_name.strip(":").strip(),
+                    "category": current_category,
+                    "topic": topic_text,
+                    "description": desc,
                 })
         progress = _load_aws_cert_progress()
         return jsonify({

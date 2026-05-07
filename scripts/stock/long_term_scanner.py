@@ -34,6 +34,7 @@ import pandas as pd
 import requests
 
 from config import (
+    REPORTS_ROOT,
     STOCK_CACHE_DIR,
     STOCK_REPORTS_ROOT,
     MODEL_USAGE,
@@ -44,7 +45,7 @@ log = logging.getLogger(__name__)
 
 LONG_TERM_DIR = os.path.join(STOCK_REPORTS_ROOT, "long_term")
 PROGRESS_FILE = os.path.join(LONG_TERM_DIR, "lt_progress.json")
-_REPORTS_AI_ROOT = os.environ.get("JARVIS_REPORTS_ROOT", "C:/reports/ai")
+_REPORTS_AI_ROOT = REPORTS_ROOT
 
 SIGNAL_WINDOW_DAYS = 14
 MAX_PICKS = 5

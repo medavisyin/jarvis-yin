@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 import akshare as ak
 import pandas as pd
 
-from config import STOCK_DATA_DIR, STOCK_CACHE_DIR, STOCK_REPORTS_ROOT
+from config import REPORTS_ROOT, STOCK_DATA_DIR, STOCK_CACHE_DIR, STOCK_REPORTS_ROOT
 
 log = logging.getLogger(__name__)
 
@@ -949,9 +949,7 @@ def _append_history(snapshot: dict):
 def _save_national_team_knowledge(snapshot: dict):
     """将国家队监控数据保存为RAG知识文件。"""
     try:
-        knowledge_dir = os.path.normpath(
-            os.environ.get("JARVIS_REPORTS_ROOT", "C:/reports/ai")
-        )
+        knowledge_dir = os.path.normpath(REPORTS_ROOT)
         knowledge_dir = os.path.join(knowledge_dir, "knowledge", "stock")
         os.makedirs(knowledge_dir, exist_ok=True)
 

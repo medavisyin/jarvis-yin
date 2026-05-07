@@ -16,9 +16,9 @@ from playwright.async_api import async_playwright
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", ".."))
+sys.path.insert(0, os.path.join(SCRIPT_DIR, ".."))
 from raw_saver import save_raw_content, should_save_raw
-
-PROXY = os.environ.get("BRIEFING_PROXY")
+from proxy_strategy import get_proxy_for_playwright
 
 SOURCE_NAME = "rundown"
 SOURCE_URL = "https://www.therundown.ai/"
@@ -36,7 +36,8 @@ async def fetch():
     t0 = time.monotonic()
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, proxy={"server": PROXY} if PROXY else None)
+        proxy_arg = await get_proxy_for_playwright(p, SOURCE_URL)
+        browser = await p.chromium.launch(headless=True, **proxy_arg)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 900},
@@ -44,7 +45,7 @@ async def fetch():
         page = await context.new_page()
 
         t = time.monotonic()
-        resp = await page.goto(SOURCE_URL, wait_until="domcontentloaded", timeout=25000)
+        resp = await page.goto(SOURCE_URL, wait_until="domcontentloaded", timeout=60000)
         await page.wait_for_timeout(5000)
         _step(timing, "navigate", t)
 

@@ -5,7 +5,7 @@ tags:
   - audio-knowledge
 category: personal
 status: current
-last-updated: 2026-05-03
+last-updated: 2026-05-07b
 ---
 
 # Audio Knowledge (Podcast from RAG)
@@ -27,7 +27,8 @@ flowchart TD
   RAG --> Web[_web_search_references optional]
   Web --> LLM["Ollama chat — dual-host dialogue<br/>[主播] + [嘉宾]"]
   LLM --> Clean[_clean_narration_for_tts]
-  Clean --> Parse["_parse_dialogue_turns<br/>split by role markers"]
+  Clean --> Enrich["_enrich_vocabulary (English only)<br/>2nd LLM pass: add vocab annotations"]
+  Enrich --> Parse["_parse_dialogue_turns<br/>split by role markers"]
   Parse --> TTS["edge_tts per-turn rendering<br/>YunxiNeural(主播) + XiaoxiaoNeural(嘉宾)"]
   TTS --> Concat[ffmpeg concat all turns]
   Concat --> MP3[REPORTS_ROOT/YYYY-MM-DD/knowledge-audio-HHMMSS.mp3]
@@ -80,6 +81,58 @@ Key design changes:
 
 English mode uses `[Host]`/`[Guest]` with `en-US-AndrewNeural` + `en-US-JennyNeural`.
 
+### v3 (2026-05-07): English Vocabulary Enrichment — CURRENT for English mode
+
+**Problem:** v2's dual-host dialogue format worked well for Chinese. But for English mode (used by a Chinese CET-6 level learner), the `qwen3:1.7b` model was too small to follow multi-part instructions ("discuss news + explain vocabulary simultaneously"). Even `qwen3.5:4b` only produced ~2 vocabulary explanations in a single pass, far below the target of 5-8.
+
+**Solution: 2-pass vocabulary enrichment pipeline**
+
+1. **Pass 1 — Content generation**: Generate the podcast dialogue focusing purely on news discussion (same as v2).
+2. **Pass 2 — Vocabulary annotation**: A second focused LLM call (`_enrich_vocabulary()`) rewrites the dialogue to insert 5-8 em-dash vocabulary explanations inline.
+
+Pattern: `[Guest] This is a paradigm shift — a fundamental change in approach — for the industry.`
+
+Key design changes:
+1. **Model upgrade**: Narration model changed from `qwen3:1.7b` → `qwen3.5:4b` for richer, longer output
+2. **Added** `_enrich_vocabulary()` post-processor that runs a second Ollama call with a focused editing prompt
+3. **Enrichment only for English**: Chinese narration is unaffected (no vocabulary teaching needed)
+4. **Diverse vocabulary**: Prompt requires each explained word to be different (idioms, phrasal verbs, formal vocabulary above CET-6 level)
+5. **Trade-off**: ~2x generation time per segment (~5-7 min total for 2 passes), but significantly better English learning value
+
+Why 2-pass instead of single-pass:
+- Small local models (1.7B–4B) cannot reliably follow multiple competing instructions in a single prompt
+- Separating "generate content" from "annotate vocabulary" gives each call a single focused task
+- The enrichment pass preserves the original dialogue structure while adding annotations
+
+### v4 (2026-05-07): AI News KB Per-Article Deep-Dive Audio — CURRENT
+
+**Problem:** Users could only generate audio for the full Knowledge Audio pool (grouped by parent). For the AI News KB, users wanted to deep-dive into a single article — retrieving it from RAG and generating bilingual (Chinese first, English second with vocabulary) audio. Additionally, generated audio was lost when closing and reopening the KB modal.
+
+**Solution: Per-article deep-dive audio with persistence**
+
+1. **New API endpoint** `POST /api/toolbar/ai-news-kb/article-audio`: Accepts article title/summary/url/source, generates bilingual deep-dive audio in a background thread.
+2. **Bilingual output**: Two separate LLM calls (Chinese deep-dive + English deep-dive with `_enrich_vocabulary`), each rendered to MP3 via Edge TTS, then concatenated with `ffmpeg`.
+3. **Deterministic filenames**: `article-audio-{md5_hash_of_title[:10]}.mp3` — same article always maps to the same file, enabling lookup without a database.
+4. **Persistence API** `GET /api/toolbar/ai-news-kb/article-audios`: Scans report directories for `article-audio-*.mp3` files, matches hashes back to KB article titles, returns `{title: audio_url}` map.
+5. **Frontend**: On KB modal open, fetches existing audios alongside items via `Promise.all`. Articles with audio show an inline `<audio>` player + regenerate button; articles without show a generate button. After generation, `_aiKBAudios` map is updated and table re-renders immediately.
+
+```mermaid
+flowchart TD
+  KB[AI News KB Modal] --> Load["Promise.all: /ai-news-kb + /article-audios"]
+  Load --> Render[Render table with audio players where available]
+  Render --> GenBtn["🎧 Generate / 🔄 Regenerate button per row"]
+  GenBtn --> POST["POST /ai-news-kb/article-audio"]
+  POST --> Worker["_generate_article_audio thread"]
+  Worker --> RAG["Retrieve article text from Qdrant (up to 8000 chars)"]
+  RAG --> ZH["Chinese deep-dive LLM call"]
+  RAG --> EN["English deep-dive LLM call + _enrich_vocabulary"]
+  ZH --> TTS_ZH["Edge TTS → zh part MP3"]
+  EN --> TTS_EN["Edge TTS → en part MP3"]
+  TTS_ZH --> Concat["ffmpeg concat → article-audio-{hash}.mp3"]
+  TTS_EN --> Concat
+  Concat --> Done["Poll job → update _aiKBAudios → re-render table"]
+```
+
 ### Design Note: Why Not SSML
 
 Edge-TTS v7.2.8 (2026-03) removed custom SSML support. Microsoft only permits the `<speak><voice>` envelope that the library generates internally. Available parameters: `rate`, `pitch`, `volume` via the `Communicate` constructor only.
@@ -96,6 +149,7 @@ Edge-TTS v7.2.8 (2026-03) removed custom SSML support. Microsoft only permits th
 | `_parse_dialogue_turns` | Split dialogue by `[主播]`/`[嘉宾]` markers into (role, text) tuples |
 | `_enhance_narration_rhythm` | Split long sentences at natural break points for TTS |
 | `_clean_narration_for_tts` | Strip markdown/annotations |
+| `_enrich_vocabulary` | Post-process English dialogue to inject vocabulary annotations via a second LLM call |
 | `_tts_segments_to_mp3` | Multi-segment dual-voice TTS with inter-segment silence |
 | `_tts_to_mp3` | Single dialogue → dual-voice MP3 |
 | `_DIALOGUE_VOICES` | Voice mapping: zh host=YunxiNeural, guest=XiaoxiaoNeural |
@@ -103,6 +157,9 @@ Edge-TTS v7.2.8 (2026-03) removed custom SSML support. Microsoft only permits th
 | `api_audio_knowledge_history` | List recent MP3s |
 | `api_audio_knowledge_items` | Group chunks by parent for UI |
 | `api_audio_knowledge_status` | Poll job |
+| `api_article_audio` | Start per-article deep-dive audio job |
+| `_generate_article_audio` | Background worker: bilingual (zh+en) article audio with vocabulary enrichment |
+| `api_article_audios` | List existing article audios mapped by title (hash-based file lookup) |
 | `api_serve_audio_file` | Static serve MP3/PDF |
 
 ### API Surface
@@ -111,11 +168,13 @@ Edge-TTS v7.2.8 (2026-03) removed custom SSML support. Microsoft only permits th
 - `GET /api/toolbar/audio-knowledge/history`
 - `GET /api/toolbar/audio-knowledge/items?type=<item_type>`
 - `GET /api/toolbar/audio-knowledge/<job_id>`
+- `POST /api/toolbar/ai-news-kb/article-audio` — JSON: `title` (required), `summary`, `url`, `source`; returns `{ job_id }`
+- `GET /api/toolbar/ai-news-kb/article-audios` — returns `{ audios: { title: url } }` map of persisted article audios
 - `GET /api/toolbar/audio-file/<date_str>/<filename>`
 
 ### Configuration
 
-- Ollama: `OLLAMA_HOST`, `OLLAMA_MODEL_FAST`, `RAG_NARRATION_MODEL`
+- Ollama: `OLLAMA_HOST`, `OLLAMA_MODEL_FAST` (qwen3:1.7b), `RAG_NARRATION_MODEL` (qwen3.5:4b, upgraded from qwen3:1.7b for richer narration)
 - Output: `REPORTS_ROOT` + today's date folder
 - Voices fixed per language branch
 
@@ -130,7 +189,9 @@ Edge-TTS v7.2.8 (2026-03) removed custom SSML support. Microsoft only permits th
 ## Code Walkthrough
 
 - Audio worker + Knowledge Audio TTS: `scripts/rag/routes/ai_news.py` (lines 378–600+)
+- Per-article deep-dive audio: `scripts/rag/routes/ai_news.py` — `api_article_audio` (643–661), `_generate_article_audio` (664–806), `api_article_audios` (810–832)
 - Daily Fetch audio pipeline: `scripts/rag/routes/daily_fetch.py` (imports `_generate_segmented_narrations`, `_tts_segments_to_mp3`)
+- Frontend KB modal with persistent audio: `scripts/rag/templates/index.html` — `_aiKBAudios`, `generateArticleAudio`, `_aiKBRenderTable` with inline players
 - Standalone audio generator: `scripts/output/generate-audio.py` (legacy, not enhanced)
 
 ## Improvement Ideas

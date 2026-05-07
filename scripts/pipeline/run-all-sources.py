@@ -3,7 +3,7 @@ Orchestrator: runs pre-flight check then all fetch scripts in parallel.
 
 1. Runs preflight-check.py to test source reachability
 2. Launches all 9 fetch-*.py scripts as parallel subprocesses
-3. Waits for all to complete (per-script timeout: 120s)
+3. Waits for all to complete (per-script timeout: 180s)
 4. Calls merge-sources.py to combine results + write timing log
 5. Prints a summary of results and timing
 
@@ -36,7 +36,7 @@ FETCH_SCRIPTS = [
     # "fetchers/ai/fetch-mit-review.py",
 ]
 
-PER_SCRIPT_TIMEOUT = 120
+PER_SCRIPT_TIMEOUT = 180
 
 
 async def run_script(script_name: str, output_dir: str) -> dict:

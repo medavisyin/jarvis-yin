@@ -5,7 +5,8 @@ All paths derived from environment variables or project defaults.
 Override any path via its env var.
 
 Environment variables (all optional):
-  STOCK_REPORTS_ROOT   Stock data/reports directory (default: C:/reports/stock)
+  STOCK_REPORTS_ROOT   Stock data/reports directory
+                       (default: ~/reports/stock on Mac/Linux, C:/reports/stock on Windows)
   STOCK_PROXY          HTTP/SOCKS proxy for external requests (default: None)
   OLLAMA_HOST          Ollama API host (default: http://localhost:11434)
 
@@ -24,7 +25,7 @@ JARVIS_ROOT = _mod.JARVIS_ROOT
 REPORTS_ROOT = _mod.REPORTS_ROOT
 
 STOCK_REPORTS_ROOT = os.path.normpath(
-    os.environ.get("STOCK_REPORTS_ROOT", "C:/reports/stock")
+    os.environ.get("STOCK_REPORTS_ROOT", _mod.STOCK_REPORTS_ROOT)
 )
 STOCK_DATA_DIR = os.path.join(STOCK_REPORTS_ROOT, "data")
 STOCK_MODELS_DIR = os.path.join(STOCK_REPORTS_ROOT, "models")

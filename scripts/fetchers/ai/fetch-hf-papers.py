@@ -15,6 +15,10 @@ import sys
 import time
 from playwright.async_api import async_playwright
 
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(SCRIPT_DIR, ".."))
+from proxy_strategy import get_proxy_for_playwright
+
 SOURCE_NAME = "hf-papers"
 SOURCE_URL = "https://huggingface.co/papers/trending"
 MAX_ITEMS = 8
@@ -31,7 +35,8 @@ async def fetch():
     t0 = time.monotonic()
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
+        proxy_arg = await get_proxy_for_playwright(p, SOURCE_URL)
+        browser = await p.chromium.launch(headless=True, **proxy_arg)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
             viewport={"width": 1280, "height": 900},

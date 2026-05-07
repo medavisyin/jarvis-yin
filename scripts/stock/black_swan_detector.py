@@ -20,11 +20,11 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 
-from config import STOCK_REPORTS_ROOT
+from config import REPORTS_ROOT, STOCK_REPORTS_ROOT
 
 log = logging.getLogger(__name__)
 
-_REPORTS_AI_ROOT = os.environ.get("JARVIS_REPORTS_ROOT", "C:/reports/ai")
+_REPORTS_AI_ROOT = REPORTS_ROOT
 _CACHE_DIR = os.path.join(STOCK_REPORTS_ROOT, "market_sentiment")
 
 RISK_PATTERNS = {

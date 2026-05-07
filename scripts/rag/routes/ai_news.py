@@ -9,6 +9,7 @@ to avoid circular imports when ``agent`` imports this blueprint.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -284,79 +285,6 @@ def api_ai_news_kb_scan():
         "total": len(kb["items"]),
         "last_scanned": kb["last_scanned"],
     })
-
-
-@ai_news_bp.route("/api/toolbar/ai-news-kb/summary", methods=["POST"])
-def api_ai_news_kb_summary():
-    """Generate an AI summary of the knowledge base with learning links."""
-    kb = _load_ai_kb()
-    if not kb["items"]:
-        return jsonify({"error": "No items in KB. Run Scan first."}), 400
-
-    recent = kb["items"][:80]
-    cat_groups: dict[str, list[str]] = {}
-    for it in recent:
-        cat = it.get("category", "Other")
-        cat_groups.setdefault(cat, []).append(
-            f"- [{it['source']}] ({it['date']}) {it['title']}: {it['summary'][:100]}"
-        )
-
-    data_block = ""
-    for cat, lines in sorted(cat_groups.items()):
-        data_block += f"\n### {cat}\n" + "\n".join(lines[:12]) + "\n"
-
-    user_msg = (
-        f"Below is a categorized AI news knowledge base ({len(recent)} items). "
-        f"Provide:\n"
-        f"1. **Top Themes** — the 5-8 dominant themes across all categories\n"
-        f"2. **Key Developments** — the most impactful 5-8 items with a plain-English explanation "
-        f"of the technology (assume the reader is a Java developer learning AI)\n"
-        f"3. **Learning Path** — for each key development, suggest a concrete resource "
-        f"(paper link, GitHub repo, tutorial, blog post) with estimated time to learn\n"
-        f"4. **Emerging Trends** — what's gaining momentum and likely to matter in 2-4 weeks\n"
-        f"5. **Connections to Healthcare IT** — any items relevant to medical imaging, DICOM, FHIR\n\n"
-        f"DATA:\n{data_block[:8000]}"
-    )
-
-    def generate():
-        try:
-            resp = req_mod.post(
-                f"{OLLAMA_HOST}/api/chat",
-                json={
-                    "model": OLLAMA_MODEL_FAST,
-                    "messages": [
-                        {"role": "system", "content": "You are an AI technology analyst writing for a Java developer in healthcare IT. Be specific, cite items from the data, and include actionable learning resources."},
-                        {"role": "user", "content": user_msg},
-                    ],
-                    "stream": True,
-                    "think": False,
-                    "options": {"num_predict": 3072, "temperature": 0.3},
-                },
-                stream=True,
-                timeout=300,
-            )
-            full = ""
-            for line in resp.iter_lines():
-                if line:
-                    try:
-                        chunk = json.loads(line)
-                        token = chunk.get("message", {}).get("content", "")
-                        if token:
-                            full += token
-                            yield f"data: {json.dumps({'type':'token','content':token})}\n\n"
-                        if chunk.get("done"):
-                            break
-                    except json.JSONDecodeError:
-                        pass
-            yield f"data: {json.dumps({'type':'done','content':full})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'type':'error','message':str(e)})}\n\n"
-
-    return Response(
-        generate(),
-        mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
 
 
 def _resolved_web_search_references(query: str, num_results: int = 5) -> str:
@@ -640,6 +568,204 @@ def api_audio_knowledge():
     return jsonify({"job_id": job_id})
 
 
+@ai_news_bp.route("/api/toolbar/ai-news-kb/article-audio", methods=["POST"])
+def api_article_audio():
+    """Generate a deep-dive audio for a single AI News KB article."""
+    data = request.get_json(silent=True) or {}
+    title = data.get("title", "").strip()
+    if not title:
+        return jsonify({"error": "Missing title"}), 400
+    summary = data.get("summary", "")
+    url = data.get("url", "")
+    source = data.get("source", "")
+    language = data.get("language", "en")
+    job_id = str(uuid.uuid4())[:8]
+    _audio_jobs[job_id] = {"status": "queued", "created": datetime.now().isoformat()}
+    threading.Thread(
+        target=_generate_article_audio,
+        args=(job_id, title, summary, url, source, language),
+        daemon=True,
+    ).start()
+    return jsonify({"job_id": job_id})
+
+
+def _generate_article_audio(job_id: str, title: str, summary: str,
+                            url: str, source: str, language: str):
+    """Background worker: deep-dive audio for a single article.
+
+    Generates a bilingual audio: Chinese deep-dive first, then English
+    deep-dive with vocabulary explanations, concatenated into one MP3.
+    """
+    try:
+        _audio_jobs[job_id]["status"] = "searching"
+
+        rag_text = ""
+        _get_qdrant()
+        _sync_qdrant_points_from_snapshot()
+        title_lower = title.lower()
+        for entry in get_qdrant_points():
+            pl = entry.get("payload") or {}
+            pt = (pl.get("title") or "").lower()
+            if title_lower in pt or pt in title_lower:
+                chunk = (pl.get("text") or "").strip()
+                if chunk:
+                    rag_text += chunk + "\n\n"
+        rag_text = rag_text[:12000]
+
+        content_block = f"# {title}\n"
+        if source:
+            content_block += f"Source: {source}\n"
+        if url:
+            content_block += f"URL: {url}\n"
+        if summary:
+            content_block += f"\nSummary:\n{summary}\n"
+        if rag_text:
+            content_block += f"\nDetailed content from knowledge base:\n{rag_text}\n"
+
+        _audio_jobs[job_id]["content_chars"] = len(content_block)
+        _audio_jobs[job_id]["has_rag"] = bool(rag_text)
+
+        import tempfile
+        import shutil
+        import subprocess as _sp
+
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        out_dir = os.path.join(REPORTS_ROOT, today_str)
+        os.makedirs(out_dir, exist_ok=True)
+        title_hash = hashlib.md5(title.encode()).hexdigest()[:10]
+        tmp_dir = tempfile.mkdtemp()
+        part_files = []
+
+        try:
+            # --- Part 1: Chinese deep-dive → separate MP3 ---
+            _audio_jobs[job_id]["status"] = "generating_script_zh"
+            zh_system = (
+                "你在写一档AI科技播客的深度解读对话，两个角色：\n"
+                "- [主播]：好奇心强的科技记者，善于提问。\n"
+                "- [嘉宾]：资深AI专家，讲解清晰有见解。\n"
+                "每句必须以[主播]或[嘉宾]开头。不要用markdown。\n"
+                "全部用中文写作，只有专有名词保留英文。\n"
+                "尽可能详细地覆盖文章的所有要点。"
+            )
+            zh_user = (
+                f"写一段关于这篇文章的深度解读播客对话（约2000-3000字）。"
+                f"详细解释它是什么、为什么重要、技术细节和更广泛的影响。"
+                f"覆盖文章中的所有关键信息点。"
+                f"用你的知识补充摘要之外的内容。\n\n{content_block}"
+            )
+            narration_zh = _ollama_narration_call(zh_system, zh_user,
+                                                  max_tokens=6144, timeout=420)
+            if narration_zh and len(narration_zh) > 50:
+                _audio_jobs[job_id]["status"] = "tts_zh"
+                zh_path = os.path.join(tmp_dir, "part_0_zh.mp3")
+                _tts_to_mp3(_clean_narration_for_tts(narration_zh), zh_path,
+                            voice=_DIALOGUE_VOICES["zh"]["host"])
+                if os.path.isfile(zh_path) and os.path.getsize(zh_path) > 0:
+                    part_files.append(zh_path)
+                _log.info("Article audio ZH done: %d chars → %s",
+                          len(narration_zh), "OK" if part_files else "empty")
+
+            # --- Part 2: English deep-dive with vocabulary → separate MP3 ---
+            _audio_jobs[job_id]["status"] = "generating_script_en"
+            en_system = (
+                "You are writing a deep-dive podcast dialogue about a SINGLE tech article.\n"
+                "Two speakers:\n"
+                "- [Host]: Curious tech journalist, asks sharp questions.\n"
+                "- [Guest]: Expert who explains clearly and provides insights.\n"
+                "Every line starts with [Host] or [Guest]. No markdown.\n\n"
+                "VOCABULARY TEACHING (listener is Chinese at CET-6 level):\n"
+                "When using an advanced word, explain it with a dash:\n"
+                "[Guest] This is a paradigm shift — a fundamental change in approach — for the industry.\n"
+                "Include at least 5 such explanations spread across the dialogue.\n"
+                "Cover ALL key points from the article thoroughly."
+            )
+            en_user = (
+                f"Write a deep-dive podcast dialogue about this article "
+                f"(approximately 1500-2500 words). Cover ALL key points: "
+                f"what it is, why it matters, the technical details, "
+                f"and broader implications. Be thorough — do not skip any "
+                f"important information from the article.\n\n"
+                f"{content_block}"
+            )
+            narration_en = _ollama_narration_call(en_system, en_user,
+                                                  max_tokens=6144, timeout=420)
+            if narration_en and len(narration_en) > 50:
+                narration_en = _enrich_vocabulary(narration_en)
+                _audio_jobs[job_id]["status"] = "tts_en"
+                en_path = os.path.join(tmp_dir, "part_1_en.mp3")
+                _tts_to_mp3(_clean_narration_for_tts(narration_en), en_path,
+                            voice=_DIALOGUE_VOICES["en"]["host"])
+                if os.path.isfile(en_path) and os.path.getsize(en_path) > 0:
+                    part_files.append(en_path)
+                _log.info("Article audio EN done: %d chars → %s",
+                          len(narration_en), "OK" if len(part_files) > (1 if narration_zh else 0) else "empty")
+
+            if not part_files:
+                _audio_jobs[job_id]["status"] = "done"
+                _audio_jobs[job_id]["error"] = "LLM/TTS produced no usable audio for either language."
+                return
+
+            # --- Concat all parts into final MP3 ---
+            _audio_jobs[job_id]["status"] = "concatenating"
+            out_filename = f"article-audio-{title_hash}.mp3"
+            out_path = os.path.join(out_dir, out_filename)
+
+            if len(part_files) == 1:
+                shutil.copy2(part_files[0], out_path)
+            else:
+                concat_list = os.path.join(tmp_dir, "concat.txt")
+                with open(concat_list, "w") as cl:
+                    for pf in part_files:
+                        cl.write(f"file '{pf}'\n")
+                _sp.run(
+                    ["ffmpeg", "-y", "-f", "concat", "-safe", "0",
+                     "-i", concat_list, "-c", "copy", out_path],
+                    capture_output=True, timeout=60,
+                )
+
+            total_chars = len(narration_zh or "") + len(narration_en or "")
+            _audio_jobs[job_id]["status"] = "done"
+            _audio_jobs[job_id]["output_path"] = out_path
+            _audio_jobs[job_id]["output_url"] = f"/api/toolbar/audio-file/{today_str}/{out_filename}"
+            _audio_jobs[job_id]["narration_preview"] = (
+                _clean_narration_for_tts(narration_zh or narration_en or "")[:300]
+            )
+            _log.info("Article audio done: %s (%d chars, %d parts)", out_filename, total_chars, len(part_files))
+
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    except Exception as e:
+        _audio_jobs[job_id]["status"] = "done"
+        _audio_jobs[job_id]["error"] = str(e)
+        _log.exception("Article audio failed for '%s'", title)
+
+
+@ai_news_bp.route("/api/toolbar/ai-news-kb/article-audios", methods=["GET"])
+def api_article_audios():
+    """Return a map of title -> audio URL for all existing article audios."""
+    audios: dict[str, str] = {}
+    if os.path.isdir(REPORTS_ROOT):
+        for date_dir in sorted(os.listdir(REPORTS_ROOT), reverse=True):
+            date_path = os.path.join(REPORTS_ROOT, date_dir)
+            if not os.path.isdir(date_path) or len(date_dir) != 10:
+                continue
+            for fname in os.listdir(date_path):
+                if fname.startswith("article-audio-") and fname.endswith(".mp3"):
+                    title_hash = fname.replace("article-audio-", "").replace(".mp3", "")
+                    if title_hash not in audios:
+                        audios[title_hash] = f"/api/toolbar/audio-file/{date_dir}/{fname}"
+    kb = _load_ai_kb()
+    title_map: dict[str, str] = {}
+    for it in kb.get("items", []):
+        t = it.get("title", "").strip()
+        if t:
+            h = hashlib.md5(t.encode()).hexdigest()[:10]
+            if h in audios:
+                title_map[t] = audios[h]
+    return jsonify({"audios": title_map})
+
+
 @ai_news_bp.route("/api/toolbar/audio-knowledge/history", methods=["GET"])
 def api_audio_knowledge_history():
     """List previously generated knowledge-audio MP3 files."""
@@ -830,6 +956,24 @@ def _generate_segmented_narrations(
     narrations: list[str] = []
     use_en = lang == "en"
 
+    _ENGLISH_LEARNING = (
+        "\n\n[VOCABULARY TEACHING — MANDATORY]:\n"
+        "The listener is Chinese (CET-6 level). You MUST explain 4-6 difficult English words/phrases in the dialogue.\n"
+        "Use this exact pattern — say the word, then explain it with a dash:\n\n"
+        "EXAMPLE (follow this pattern exactly):\n"
+        '[Host] They decided to pivot — meaning to completely change direction — toward enterprise customers.\n'
+        '[Guest] The ramifications — the consequences and knock-on effects — could be enormous for the whole industry.\n'
+        '[Host] It really moves the needle — an idiom meaning it makes a significant difference — for smaller companies.\n'
+        '[Guest] They plan to roll out — to gradually release and make available — the feature next month.\n'
+        '[Host] The situation is unprecedented — meaning it has never happened before — in the history of AI.\n'
+        '[Guest] They are doubling down — investing even more heavily — on their safety research.\n\n'
+        "RULES:\n"
+        "- Pick advanced words: idioms, phrasal verbs, formal vocabulary (NOT basic words like 'important' or 'big')\n"
+        "- Spread the explanations throughout the dialogue, not at the end\n"
+        "- Each explanation is short: just a few words after the dash\n"
+        "- This is REQUIRED. A dialogue without vocabulary explanations is WRONG.\n"
+    )
+
     _DIALOGUE_FORMAT_ZH = (
         "\n\n【对话格式规则——严格遵守】：\n"
         "1. 每一句话必须以 [主播] 或 [嘉宾] 开头，标明说话人\n"
@@ -840,6 +984,8 @@ def _generate_segmented_narrations(
         "6. 不要生硬地加比喻或口头禅，自然表达即可\n"
         "7. 全部用中文，只有专有名词保留英文\n"
         "8. 不要用markdown格式\n"
+        "9. 禁止在对话内容中提及角色身份（如\u201c我是主播\u201d\u201c今天请到嘉宾\u201d\u201c主持人\u201d\u201c分析师\u201d等），直接讨论话题内容\n"
+        "10. 不要自我介绍或介绍对方，不要说\u201c欢迎来到XX节目\u201d之类的套话，直接进入话题\n"
         "\n示例格式：\n"
         "[主播] 今天我们来聊一个很有意思的话题。\n"
         "[嘉宾] 对，这个话题最近确实很火。\n"
@@ -856,6 +1002,8 @@ def _generate_segmented_narrations(
         "5. Vary sentence lengths for good rhythm\n"
         "6. Don't force analogies or catchphrases — speak naturally\n"
         "7. No markdown formatting\n"
+        "8. NEVER mention speaker roles in dialogue content (no 'I'm your host', 'our guest today', 'presenter', 'analyst', etc.) — just discuss the topic directly\n"
+        "9. No self-introductions or show introductions ('welcome to the show' etc.) — jump straight into the topic\n"
         "\nExample format:\n"
         "[Host] Let's talk about something really interesting today.\n"
         "[Guest] Yeah, this has been a hot topic recently.\n"
@@ -868,8 +1016,8 @@ def _generate_segmented_narrations(
         is_last = idx == total - 1
         seg_name = seg["name"]
         seg_content = seg["content"]
-        min_chars = max(400, len(seg_content) // 3)
-        max_chars = max(800, len(seg_content) // 2)
+        min_chars = max(800, len(seg_content))
+        max_chars = max(1500, len(seg_content) * 2)
 
         review_zh = ""
         review_en = ""
@@ -890,7 +1038,12 @@ def _generate_segmented_narrations(
                     "You are writing a world news podcast dialogue between two people:\n"
                     "- [Host]: A sharp news anchor who asks good questions and drives the conversation.\n"
                     "- [Guest]: An experienced analyst who provides depth, context, and clear explanations.\n"
-                    "Write natural, professional dialogue. No markdown. Every line must start with [Host] or [Guest]."
+                    "Write natural, professional dialogue. No markdown. Every line must start with [Host] or [Guest].\n\n"
+                    "MANDATORY VOCABULARY TEACHING (the listener is a Chinese English learner at CET-6 level):\n"
+                    "When using an advanced word, IMMEDIATELY explain it with a dash, like:\n"
+                    "[Guest] The situation is unprecedented — meaning it has never happened before — in modern history.\n"
+                    "[Host] The ramifications — the far-reaching consequences — are enormous.\n"
+                    "You MUST include at least 4 such vocabulary explanations spread across the dialogue."
                 )
                 intro = "Host opens with a brief welcome and introduces today's topic. " if is_first else ""
                 outro = f"Host thanks the guest and wraps up.{review_en} " if is_last else ""
@@ -899,6 +1052,7 @@ def _generate_segmented_narrations(
                     f"(approximately {min_chars}-{max_chars} words). "
                     f"{intro}Cover background, impact, and implications. "
                     f"{outro}"
+                    f"{_ENGLISH_LEARNING}"
                     f"{_DIALOGUE_FORMAT_EN}\n\n{seg_content}"
                 )
             else:
@@ -919,21 +1073,47 @@ def _generate_segmented_narrations(
                     f"以下是素材（请用中文重新组织讲解）：\n\n{seg_content}"
                 )
         else:
+            _content_depth_en = (
+                "\n\nCRITICAL CONTENT RULES:\n"
+                "- You MUST discuss each news item listed below by name. Cover what it is, why it matters, and its implications.\n"
+                "- If only headlines are provided without detailed summaries, use your knowledge to explain the topic substantively.\n"
+                "- Every news item must get meaningful discussion — do NOT skip items or replace them with generic commentary.\n"
+                "- NO filler content: no generic AI philosophy, no vague predictions unrelated to the items, no padding.\n"
+                "- Stay focused on the specific news items provided. Each item should get at least 2-3 exchanges.\n"
+            )
+            _content_depth_zh = (
+                "\n\n【内容规则——最高优先级】：\n"
+                "- 你必须逐条讨论下面列出的每条新闻，包括它是什么、为什么重要、有什么影响。\n"
+                "- 如果素材只提供了标题没有详细摘要，请根据你的知识对该话题进行实质性讨论和解读。\n"
+                "- 每条新闻都必须得到有意义的讨论——不要跳过，不要用笼统的评论代替。\n"
+                "- 禁止填充内容：不要泛泛而谈AI哲学、不要说与新闻条目无关的空泛预测、不要凑字数。\n"
+                "- 紧扣提供的具体新闻条目，每条至少有2-3轮对话讨论。\n"
+            )
+
             if use_en:
                 system_prompt = (
                     "You are writing an AI tech podcast dialogue between two people:\n"
                     "- [Host]: A curious tech journalist who asks sharp questions.\n"
                     "- [Guest]: An AI expert who explains things clearly and insightfully.\n"
-                    "Write natural, engaging dialogue. No markdown. Every line must start with [Host] or [Guest]."
+                    "Write natural, engaging dialogue. No markdown. Every line must start with [Host] or [Guest].\n"
+                    "FORBIDDEN: Never mention speaker roles in dialogue ('I'm your host', 'our guest', 'presenter', 'analyst'). No self-introductions. Jump directly into topic discussion.\n\n"
+                    "MANDATORY VOCABULARY TEACHING (the listener is a Chinese English learner at CET-6 level):\n"
+                    "When using an advanced word, IMMEDIATELY explain it with a dash, like:\n"
+                    "[Guest] This is a paradigm shift — a fundamental change in approach — for the industry.\n"
+                    "[Host] They plan to roll out — gradually release — the new features next month.\n"
+                    "You MUST include at least 4 such vocabulary explanations spread across the dialogue."
                 )
-                intro = "Host opens with a brief welcome and introduces the topic. " if is_first else ""
-                outro = f"Host wraps up the segment.{review_en} " if is_last else ""
+                intro = "Open by jumping straight into the topic (no self-introductions). " if is_first else ""
+                outro = f"Wrap up the segment briefly.{review_en} " if is_last else ""
                 user_prompt = (
                     f"Write a podcast dialogue about '{seg_name}' "
                     f"(approximately {min_chars}-{max_chars} words). "
-                    f"{intro}Explain concepts, analyze trends, discuss impact. "
+                    f"{intro}Discuss each news item below in depth — explain what it is, why it matters, and its impact. "
                     f"{outro}"
-                    f"{_DIALOGUE_FORMAT_EN}\n\n{seg_content}"
+                    f"{_content_depth_en}"
+                    f"{_ENGLISH_LEARNING}"
+                    f"{_DIALOGUE_FORMAT_EN}\n\n"
+                    f"NEWS ITEMS TO DISCUSS:\n\n{seg_content}"
                 )
             else:
                 system_prompt = (
@@ -941,22 +1121,24 @@ def _generate_segmented_narrations(
                     "- [主播]：好奇心强的科技记者，善于提出好问题，引导话题方向。\n"
                     "- [嘉宾]：资深AI专家，善于把复杂技术讲清楚，有独到见解。\n"
                     "对话要自然流畅，不要堆砌比喻和口头禅。不要用markdown。每句必须以[主播]或[嘉宾]开头。\n"
-                    "重要：全部用中文写作，不要附加英文原文。只有专有名词保留英文。"
+                    "重要：全部用中文写作，不要附加英文原文。只有专有名词保留英文。\n"
+                    "禁止：不要在对话中提及\u201c主播\u201d\u201c嘉宾\u201d\u201c主持人\u201d\u201c分析师\u201d等角色身份词，不要自我介绍或介绍对方，直接讨论内容。"
                 )
-                intro = "主播先简短开场，引入本段话题。" if is_first else ""
-                outro = f"主播简短收尾。{review_zh}" if is_last else ""
+                intro = "用一句话引出今天要聊的话题（不要自我介绍）。" if is_first else ""
+                outro = f"简短收尾总结。{review_zh}" if is_last else ""
                 user_prompt = (
                     f"写一段关于「{seg_name}」的AI科技播客对话"
                     f"（约{min_chars}-{max_chars}字）。"
-                    f"{intro}深入讲解内容，解释概念、分析趋势。{outro}"
+                    f"{intro}逐条深入讨论下面的每条新闻——解释它是什么、为什么重要、有什么影响。{outro}"
+                    f"{_content_depth_zh}"
                     f"{_DIALOGUE_FORMAT_ZH}\n\n"
-                    f"以下是素材（请用中文重新组织讲解）：\n\n{seg_content}"
+                    f"以下是要讨论的新闻条目（请用中文重新组织讲解）：\n\n{seg_content}"
                 )
 
         _log.info("Generating dialogue segment %d/%d: %s (%d chars input)",
                   idx + 1, total, seg_name, len(seg_content))
         try:
-            narration = _ollama_narration_call(system_prompt, user_prompt, max_tokens=8192, timeout=600)
+            narration = _ollama_narration_call(system_prompt, user_prompt, max_tokens=4096, timeout=300)
             if narration and len(narration) > 50:
                 narrations.append(narration)
                 _log.info("Segment %d/%d done: %d chars dialogue", idx + 1, total, len(narration))
@@ -967,6 +1149,59 @@ def _generate_segmented_narrations(
             _log.warning("Segment %d/%d failed: %s", idx + 1, total, str(e)[:200])
 
     return narrations
+
+
+def _enrich_vocabulary(dialogue: str) -> str:
+    """Post-process English dialogue to insert vocabulary explanations.
+
+    The generation model may not consistently inline vocab teaching,
+    so this second pass rewrites the dialogue with annotations added.
+    """
+    system = (
+        "You are an editor. Rewrite the podcast dialogue below, keeping it EXACTLY the same "
+        "but inserting 5-8 vocabulary explanations using em-dashes.\n\n"
+        "PATTERN — insert an explanation immediately after a difficult word:\n"
+        '[Guest] This is a paradigm shift — a fundamental change in approach — for the industry.\n'
+        '[Host] They plan to roll out — gradually release — the new features soon.\n'
+        '[Guest] The ramifications — the far-reaching consequences — could be huge.\n'
+        '[Host] It is unprecedented — never happened before — in AI history.\n'
+        '[Guest] They are doubling down — investing even more heavily — on safety.\n'
+        '[Host] The move could galvanize — energize and motivate — the open-source community.\n\n'
+        "RULES:\n"
+        "- Pick words above CET-6 level: idioms, phrasal verbs, formal vocabulary\n"
+        "- Each explained word must be DIFFERENT — never repeat the same word/phrase\n"
+        "- Spread explanations evenly: put some at the start, middle, and end\n"
+        "- Keep each explanation very short (3-8 words between dashes)\n"
+        "- Do NOT change the meaning, structure, or [Host]/[Guest] tags\n"
+        "- Do NOT add new dialogue turns or remove existing ones\n"
+        "- Output ONLY the rewritten dialogue, nothing else"
+    )
+    user = f"Rewrite this dialogue by adding 5-8 vocabulary explanations (each word explained must be different):\n\n{dialogue}"
+    try:
+        resp = req_mod.post(
+            f"{OLLAMA_HOST}/api/chat",
+            json={
+                "model": OLLAMA_MODEL_FAST,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                "stream": False,
+                "think": False,
+                "options": {"temperature": 0.5, "num_predict": 6000},
+            },
+            timeout=120,
+        )
+        resp.raise_for_status()
+        enriched = resp.json().get("message", {}).get("content", "").strip()
+        enriched = re.sub(r"</?think>", "", enriched).strip()
+        if enriched and len(enriched) > len(dialogue) * 0.7:
+            return enriched
+        _log.warning("Vocabulary enrichment returned too short (%d vs %d), using original",
+                     len(enriched) if enriched else 0, len(dialogue))
+    except Exception as e:
+        _log.warning("Vocabulary enrichment failed: %s", str(e)[:200])
+    return dialogue
 
 
 _TTS_VOICE_FALLBACKS = ["zh-CN-YunxiNeural", "zh-CN-YunjianNeural", "zh-CN-XiaoxiaoNeural"]
@@ -1039,7 +1274,7 @@ def _parse_dialogue_turns(text: str) -> list[tuple[str, str]]:
 
 
 def _clean_narration_for_tts(text: str) -> str:
-    """Strip markdown formatting and sound-effect annotations that break TTS."""
+    """Strip markdown formatting, sound-effect annotations, and role mentions that break TTS."""
     text = re.sub(r"\*\*\*([^*]+)\*\*\*", r"\1", text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
     text = re.sub(r"\*([^*\n]+)\*", r"\1", text)
@@ -1055,6 +1290,8 @@ def _clean_narration_for_tts(text: str) -> str:
     text = re.sub(r"（过渡音效[^）]*）", "", text)
     text = re.sub(r"【[^】]*】", "", text)
     text = re.sub(r"（注[^）]*）", "", text)
+    text = re.sub(r"(?:我是|这里是|欢迎来到|欢迎收听|欢迎收看)(?:主播|主持人|嘉宾|分析师|记者|专家)[^，。！？\n]*[，。！？]?", "", text)
+    text = re.sub(r"(?:今天(?:我们)?(?:请到|邀请到?|有幸邀请)了?(?:我们的)?)(?:嘉宾|专家|分析师)[^，。！？\n]*[，。！？]?", "", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
 

@@ -83,8 +83,8 @@ def get_qdrant_points() -> list[dict[str, Any]]:
 
 
 def sync_qdrant_points_from_snapshot() -> None:
-    """Reload `_qdrant_points` if `.rag-store.json` changed (e.g. after toolbar reindex)."""
-    global _qdrant_points, _qdrant_points_snapshot_mtime
+    """Reload `_qdrant_points` AND the Qdrant client if `.rag-store.json` changed."""
+    global _qdrant_client, _qdrant_points, _qdrant_points_snapshot_mtime
     if not os.path.exists(SNAPSHOT_PATH):
         return
     mtime = os.path.getmtime(SNAPSHOT_PATH)
@@ -97,6 +97,26 @@ def sync_qdrant_points_from_snapshot() -> None:
         {"id": p.get("id"), "payload": dict(p.get("payload") or {})}
         for p in points
     ]
+    if _qdrant_client is not None and points:
+        from qdrant_client.models import (
+            Distance, VectorParams, PointStruct,
+            HnswConfigDiff, OptimizersConfigDiff,
+        )
+        _qdrant_client.delete_collection(collection_name=COLLECTION)
+        _qdrant_client.create_collection(
+            collection_name=COLLECTION,
+            vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+            hnsw_config=HnswConfigDiff(m=16, ef_construct=100),
+            optimizers_config=OptimizersConfigDiff(indexing_threshold=0),
+        )
+        batch_size = 500
+        for i in range(0, len(points), batch_size):
+            batch = [
+                PointStruct(id=p["id"], vector=p["vector"], payload=p["payload"])
+                for p in points[i:i + batch_size]
+            ]
+            _qdrant_client.upsert(collection_name=COLLECTION, points=batch)
+        print(f"  Reloaded {len(points)} points from updated snapshot", flush=True)
     _qdrant_points_snapshot_mtime = mtime
 
 

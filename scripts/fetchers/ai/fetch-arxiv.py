@@ -16,9 +16,10 @@ from playwright.async_api import async_playwright
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", ".."))
-from raw_saver import save_raw_content, should_save_raw
+sys.path.insert(0, os.path.join(SCRIPT_DIR, ".."))
+from proxy_strategy import get_proxy_for_playwright
 
-PROXY = os.environ.get("BRIEFING_PROXY")
+from raw_saver import save_raw_content, should_save_raw
 
 SOURCE_NAME = "arxiv"
 SOURCE_URL = "https://arxiv.org/list/cs.AI/recent"
@@ -36,7 +37,8 @@ async def fetch():
     t0 = time.monotonic()
 
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, proxy={"server": PROXY} if PROXY else None)
+        proxy_arg = await get_proxy_for_playwright(p, SOURCE_URL)
+        browser = await p.chromium.launch(headless=True, **proxy_arg)
         page = await browser.new_page()
 
         t = time.monotonic()

@@ -6,159 +6,219 @@
 
 ## Domain 1: Fundamentals of AI and ML (20%)
 
-### Task 1.1 — Explain basic AI concepts and terminologies
-- **AI vs ML vs Deep Learning vs GenAI:** Hierarchy of AI fields, how they relate and differ
-- **Neural network basics:** Input/hidden/output layers, weights, activation functions
-- **Types of inferencing:** Real-time vs batch, use cases for each
-- **Key terms:** Training, inferencing, bias, fairness, fit (underfit/overfit/good fit)
+### Category: Artificial Intelligence
+- **What is AI:** Field of computer science for systems that exhibit intelligent behavior
+- **How AI Processes Information:** Data collection → algorithm selection → training → testing → deployment
+- **AI Architecture Layers:** Data layer, Model layer, Application layer
+- **Applications of AI:** Chatbots, IDP, APM, predictive maintenance, medical research, business analytics
+- **Limitations of AI:** Data quality, computational costs, ethical concerns, human oversight needed
 
-### Task 1.2 — Identify practical use cases for AI
-- **NLP use cases:** Amazon Comprehend, Amazon Lex, Amazon Transcribe, Amazon Translate
-- **Computer vision use cases:** Amazon Rekognition, Amazon Textract
-- **Recommendation systems:** Amazon Personalize
-- **Fraud detection:** Amazon Fraud Detector
-- **Forecasting:** Amazon Forecast
-- **Search:** Amazon Kendra (intelligent enterprise search)
+### Category: Basic AI Terminologies
+- **Machine Learning:** Subset of AI — algorithms improve through experience and data
+- **Deep Learning:** Subset of ML using multi-layer neural networks
+- **LLM:** Large Language Model — deep learning on extensive text data with transformers
+- **Neural Networks:** Computing systems inspired by biological neurons
+- **NLP:** Natural Language Processing — extracting meaning from text
+- **Computer Vision:** Interpreting visual information from images and videos
+- **Speech Recognition:** Deciphering human speech using deep learning
+- **Generative AI:** Producing original content from instructions
 
-### Task 1.3 — Describe the ML development lifecycle
-- **ML pipeline stages:** Data collection → preparation → feature engineering → training → evaluation → deployment → monitoring
-- **Data preparation:** Labeling, cleaning, splitting (train/validation/test)
-- **Feature engineering:** Transforming raw data into model-ready features
-- **Model training and tuning:** Hyperparameters, epochs, learning rate
-- **Evaluation metrics:** Accuracy, precision, recall, F1, AUC-ROC, RMSE, confusion matrix
-- **MLOps:** Model monitoring, retraining triggers, data drift, concept drift
+### Category: AI vs ML vs Deep Learning vs GenAI
+- **Comparison:** Definition, types, data dependency, applications, examples
+- **Hierarchy:** AI ⊃ ML ⊃ Deep Learning ⊃ GenAI
 
-### Task 1.4 — Understand ML approaches
-- **Supervised learning:** Classification (labels are categories) and regression (labels are numbers)
-- **Unsupervised learning:** Clustering, anomaly detection, dimensionality reduction
-- **Reinforcement learning:** Agent-environment interaction, rewards, RLHF
-- **Self-supervised learning:** Pretext tasks, used for foundation model training
-- **Semi-supervised learning:** Combining labeled and unlabeled data
+### Category: Understanding Foundation Models
+- **Features:** Adaptability, general-purpose nature
+- **Applications:** Language processing, visual comprehension, code generation
+- **Examples:** BERT, GPT, Amazon Titan, Claude, Llama, Stable Diffusion
+- **Challenges:** High resource demands, integration complexity, comprehension issues
+- **AWS Support:** Amazon Bedrock, SageMaker JumpStart
+
+### Category: AI Models — Types
+- **Computer Vision:** Amazon Rekognition
+- **NLP:** Amazon Comprehend, Translate, Lex, Polly
+- **Speech:** Amazon Transcribe
+- **Document Processing:** Amazon Textract
+- **Recommendations & Forecasting:** Amazon Personalize, Forecast
+- **Search:** Amazon Kendra
+- **Custom ML:** Amazon SageMaker
+- **Generative AI:** Amazon Bedrock, SageMaker JumpStart
+- **Edge AI:** AWS IoT Greengrass ML Inference
+- **Hybrid AI:** Amazon Neptune ML
+
+### Category: Machine Learning
+- **Types:** Supervised (classification, regression), unsupervised (clustering, anomaly detection), reinforcement learning
+- **Evaluation Metrics:** Accuracy, precision, recall, F1, AUC-ROC, RMSE, confusion matrix
+
+### Category: ML Pipeline with AWS Services
+- **Data Collection:** Amazon S3, AWS Glue, Amazon RDS
+- **EDA:** SageMaker Studio, Amazon Athena
+- **Pre-processing:** AWS Glue, SageMaker Data Wrangler, SageMaker Processing
+- **Feature Engineering:** SageMaker Feature Store, Data Wrangler
+- **Model Training:** Amazon SageMaker, AWS Deep Learning AMIs
+- **Hyperparameter Tuning:** SageMaker Automatic Model Tuning
+- **Model Evaluation:** SageMaker Debugger, Model Monitor
+- **Deployment:** SageMaker Endpoints, Amazon EKS
+- **Monitoring:** Amazon CloudWatch, SageMaker Model Monitor
+
+### Category: Fundamentals of MLOps
+- **Key Practices:** Experimentation, pipeline automation, scalable systems, version control
+- **CI/CD:** AWS CodePipeline, Jenkins
+- **Model Registry:** SageMaker Model Registry
+- **Retraining:** Automated via SageMaker Pipelines and Step Functions
+
+### Category: Amazon SageMaker
+- **Prepare:** Feature Store, Data Wrangler, Geospatial ML
+- **Build:** Notebooks, JumpStart, Studio Lab
+- **Train:** Model Training, Experiments (MLflow), HyperPod
+- **Deploy:** Endpoints, Pipelines
+- **End-to-End:** MLOps, Canvas (no-code), Studio (full IDE)
+- **Governance:** Clarify, Ground Truth, Model Cards
 
 ---
 
 ## Domain 2: Fundamentals of Generative AI (24%)
 
-### Task 2.1 — Explain basic concepts of GenAI
-- **Generative AI terminology:** Token, chunking, embedding, vector, prompt, transformer, foundation model
-- **Transformer architecture:** Attention mechanism, encoder-decoder, self-attention
-- **Foundation model types:** LLM, diffusion model, multimodal model, GAN
-- **GenAI use cases:** Text generation, image generation, code generation, summarization, chatbots, translation
+### Category: Generative AI
+- **Definition:** AI that creates original content from instructions
+- **How It Works:** Foundation models trained on massive datasets
+- **GenAI Model Types:** Diffusion, GANs, VAEs, Transformer-based
+- **Transformer Concepts:** Self-attention, attention heads, encoder/decoder, tokenization, embeddings
+- **Inference Parameters:** Temperature, top-p, top-k, max tokens, stop sequences
+- **Benefits:** Accelerates research, enhances CX, optimizes processes, boosts productivity
+- **Limitations:** Security, creativity constraints, cost, explainability, hallucination, context windows
 
-### Task 2.2 — Understand GenAI capabilities and limitations
-- **Capabilities:** Content creation, code generation, analysis, summarization, translation
-- **Limitations:** Hallucination, bias amplification, context window limits, training data cutoff
-- **Hallucination mitigation:** RAG, grounding, temperature control, guardrails
-- **Responsible use:** Content filtering, human-in-the-loop, watermarking
+### Category: GenAI Security Scoping Matrix
+- **Scope 1:** Consumer App — use public GenAI service
+- **Scope 2:** Enterprise App — third-party enterprise with GenAI
+- **Scope 3:** Pre-trained Models — use existing FM via API
+- **Scope 4:** Fine-tuned Models — refine FM with your data
+- **Scope 5:** Self-trained Models — build from scratch
+- **Security Disciplines:** Governance, legal/privacy, risk management, controls, resilience
 
-### Task 2.3 — Describe AWS infrastructure for GenAI
-- **Amazon Bedrock:** Managed access to foundation models via API (Claude, Titan, Llama, Jurassic, Stable Diffusion)
-- **Bedrock features:** Agents, Knowledge Bases, Guardrails, Model Evaluation, Provisioned Throughput
-- **Amazon SageMaker:** Full ML platform — build, train, deploy custom models
-- **SageMaker features:** JumpStart, Canvas, Ground Truth, Clarify, Model Monitor, Endpoints
-- **Amazon Q:** AI assistant for developers (Q Developer) and business (Q Business)
-- **Amazon Nova:** AWS's own foundation model family
-- **PartyRock:** No-code GenAI app builder on Bedrock
+### Category: Amazon SageMaker JumpStart
+- **Features:** Foundation models, built-in algorithms, prebuilt solutions
+- **Use Cases:** FM integration, LLMs, text classification, image generation, no-code solutions
+
+### Category: Amazon Bedrock
+- **Core:** Managed serverless access to FMs via unified API
+- **Capabilities:** Model choice, customization, RAG, agents
+- **Model States:** Active, Legacy, EOL
+- **Bedrock Agents:** Autonomous agents with data access, task orchestration, code execution, memory
+- **Bedrock Guardrails:** Content filters, denied topics, PII redaction, grounding checks
+- **PartyRock:** No-code GenAI playground (chat, text, image)
+
+### Category: Amazon Q
+- **Q Business:** Enterprise data assistant — answers, summaries, content generation
+- **Q Developer:** Coding, testing, error diagnosis, security assessments, AWS optimization
+- **Integrations:** QuickSight, Connect, Supply Chain
 
 ---
 
 ## Domain 3: Applications of Foundation Models (28%)
 
-### Task 3.1 — Design considerations for FM applications
-- **Model selection criteria:** Cost, modality, latency, multi-lingual, model size, customization, context window
-- **Inference parameters:** Temperature, top-p, top-k, max tokens, stop sequences
-- **Cost optimization:** Provisioned throughput, prompt caching, token budgeting
-- **When to use which service:** Bedrock (managed FMs) vs SageMaker (custom ML) vs Q (assistants)
+### Category: Prompt Engineering
+- **Anatomy:** Instruction, context, input data, output indicator
+- **Techniques:** Zero-shot, few-shot, chain-of-thought, tree-of-thought, self-refine
+- **Advanced:** Maieutic, complexity-based, generated knowledge, least-to-most, directional-stimulus
+- **Security:** Prompt injection, jailbreaking, prompt leaking, model poisoning
 
-### Task 3.2 — Prompt engineering techniques
-- **Zero-shot prompting:** No examples, just the instruction
-- **Few-shot prompting:** Include examples in the prompt
-- **Chain-of-thought (CoT):** "Think step by step" reasoning
-- **System prompts:** Setting role, tone, constraints, output format
-- **Prompt templates:** Reusable patterns with variable placeholders
-- **Negative prompting:** Specifying what NOT to include
-- **Prompt injection prevention:** Input validation, guardrails, output filtering
+### Category: Retrieval Augmented Generation (RAG)
+- **How It Works:** Create external data → embed → retrieve → augment prompt → generate
+- **Key Components:** Embedding models, vector databases, Knowledge Bases for Bedrock
+- **Benefits:** Cost-effective, current information, enhanced trust, developer control
 
-### Task 3.3 — Training and fine-tuning techniques
-- **Customization preference order:** Prompt engineering → RAG → Fine-tuning → Continued pre-training
-- **RAG architecture:** Retrieve relevant documents, augment prompt, generate answer
-- **Fine-tuning:** Adapt FM to domain-specific data (Bedrock custom model training)
-- **Continued pre-training:** Further train FM on domain corpus
-- **Domain adaptation:** Transfer learning for specific industries
-- **RLHF:** Reinforcement Learning from Human Feedback — aligning model behavior
-- **Knowledge Bases for Bedrock:** Managed RAG with S3 data sources and vector store
+### Category: RLHF
+- **Process:** Data collection → supervised fine-tuning → reward model → optimization
+- **AWS Service:** SageMaker Ground Truth for data labeling
+- **ROUGE Metric:** Recall-oriented text evaluation (ROUGE-N, ROUGE-L, ROUGE-S)
 
-### Task 3.4 — Evaluate FM performance
-- **Text metrics:** ROUGE, BLEU, BERTScore, perplexity
-- **Classification metrics:** Accuracy, precision, recall, F1, confusion matrix
-- **Human evaluation:** Relevance, coherence, helpfulness, harmlessness
-- **Bedrock Model Evaluation:** Built-in evaluation jobs, automatic and human-based
-- **A/B testing:** Compare model versions in production
-- **Benchmarking:** Compare against baseline models
+### Category: Model Selection & Design
+- **Criteria:** Cost, modality, latency, multi-lingual, model size, customization, context window
+- **Cost Optimization:** Provisioned throughput, prompt caching, token budgeting, model distillation
+
+### Category: Training and Fine-tuning
+- **Customization Order:** Prompt Engineering → RAG → Fine-tuning → Continued Pre-training
+- **Transfer Learning:** Reuse pre-trained model features for new tasks
+
+### Category: Evaluating FM Performance
+- **Text Metrics:** ROUGE (recall), BLEU (precision), BERTScore (semantic), perplexity (confidence)
+- **Classification:** Accuracy, precision, recall, F1, confusion matrix
+- **Human Evaluation:** Relevance, coherence, helpfulness, harmlessness
+- **Bedrock:** Model Evaluation with automatic and human-based methods
+
+### Category: Responsible AI
+- **FEPST:** Fairness, Explainability, Privacy, Safety, Transparency
+- **Additional:** Controllability, veracity/robustness, governance
+- **Bias Types:** Selection, measurement, confirmation, representation
+
+### Category: Amazon SageMaker Clarify
+- **Bias Detection:** Pre-training, post-training, runtime monitoring
+- **Explainability:** SHAP values, feature importance
+- **Fairness Metrics:** Disparate impact, equalized odds, demographic parity
+
+### Category: Amazon SageMaker Model Monitor
+- **Monitoring Types:** Data quality, model quality, bias drift, feature attribution drift
+- **Model Cards:** Standardized model documentation for governance
 
 ---
 
 ## Domain 4: Guidelines for Responsible AI (14%)
 
-### Task 4.1 — Develop responsible AI systems
-- **FEPST framework:** Fairness, Explainability, Privacy, Safety, Transparency
-- **Bias types:** Selection bias, measurement bias, confirmation bias, representation bias
-- **Bias detection:** Amazon SageMaker Clarify — pre-training and post-training bias metrics
-- **Explainability:** SageMaker Clarify SHAP values, feature importance
-- **Human-in-the-loop:** Amazon A2I (Augmented AI) for review workflows
+### Category: Responsible AI Principles
+- **FEPST Framework:** Fairness, Explainability, Privacy/Security, Safety, Transparency
+- **Risks of GenAI:** Toxicity, hallucination, IP issues, bias amplification, privacy violations
+- **Hallucination Mitigation:** RAG, lower temperature, guardrails, human review, citations
 
-### Task 4.2 — Recognize AI safety and governance
-- **Transparency principles:** Model cards, data sheets, documentation
-- **Content safety:** Bedrock Guardrails — content filters, denied topics, word filters, PII redaction
-- **Toxicity detection:** Content classification, profanity filters
-- **Intellectual property:** Training data licensing, output attribution
-- **Regulatory awareness:** GDPR, HIPAA, SOC 2, ISO 27001 considerations
+### Category: Bias Detection and Mitigation
+- **SageMaker Clarify:** Pre-training, post-training, and runtime bias detection
+- **SHAP Values:** Explain individual predictions with feature importance
+- **Fairness Metrics:** Disparate impact, equalized odds, demographic parity
 
-### Task 4.3 — Evaluate responsible AI
-- **Fairness metrics:** Disparate impact, equalized odds, demographic parity
-- **Model monitoring:** Data drift detection, concept drift, performance degradation
-- **Audit trails:** AWS CloudTrail for tracking API calls
-- **AWS AI Service Cards:** Transparency documentation for AWS AI services
+### Category: Human-in-the-Loop
+- **Amazon A2I:** Human review workflows for low-confidence predictions
+- **Integrations:** Textract, Rekognition, Comprehend, Transcribe, custom SageMaker
+
+### Category: Safety and Governance
+- **Bedrock Guardrails:** Content filters, denied topics, PII redaction, grounding checks
+- **Model Cards:** Standardized model documentation
+- **AI Service Cards:** Transparency documentation for AWS AI services
 
 ---
 
 ## Domain 5: Security, Compliance, and Governance (14%)
 
-### Task 5.1 — Secure AI systems on AWS
-- **IAM for AI:** Roles, policies, least-privilege access for Bedrock, SageMaker
+### Category: Security for AI Systems
+- **IAM:** Least privilege, roles, policies for Bedrock and SageMaker
 - **Encryption:** AWS KMS (at rest), TLS (in transit), VPC endpoints
-- **Data protection:** Amazon Macie (PII detection), AWS PrivateLink
-- **Shared responsibility model:** AWS vs customer responsibilities for AI workloads
-- **Prompt injection prevention:** Input sanitization, output validation, guardrails
+- **Data Protection:** Amazon Macie (PII), AWS PrivateLink (private connectivity)
+- **Shared Responsibility Model:** AWS secures infrastructure; customer secures data and access
 
-### Task 5.2 — Data governance for AI
-- **Data lineage:** Tracking data origin, transformations, usage
-- **Data quality:** Validation, completeness, consistency, timeliness
-- **Data privacy:** PII handling, data anonymization, consent management
-- **Data lifecycle:** Collection → storage → processing → retention → deletion
-- **AWS data services:** AWS Glue (ETL), AWS Lake Formation (data lake), AWS Data Exchange
+### Category: Data Governance
+- **Data Lifecycle:** Collection → storage → processing → retention → deletion
+- **Data Quality:** Completeness, consistency, accuracy, timeliness, validity
+- **Data Lineage:** Tracking origin, transformations, usage
+- **AWS Services:** AWS Glue (ETL), Lake Formation (data lakes), Data Exchange
 
-### Task 5.3 — Compliance and regulation
-- **AWS compliance programs:** SOC 1/2/3, ISO 27001, HIPAA, FedRAMP, GDPR
-- **AWS Artifact:** Access compliance reports and agreements
-- **AWS Audit Manager:** Continuous auditing and evidence collection
-- **AWS Config:** Track resource configuration and compliance
-- **AWS Trusted Advisor:** Best practice recommendations
-- **Cost management:** AWS Budgets, Cost Explorer — monitor AI spending
+### Category: Compliance and Regulation
+- **Standards:** HIPAA, GDPR, SOC 1/2/3, ISO 27001, FedRAMP
+- **AWS Tools:** Artifact (reports), Audit Manager (continuous auditing), Config (compliance tracking)
+- **Audit:** CloudTrail (API logs), Trusted Advisor (best practices)
+- **Cost:** AWS Budgets, Cost Explorer
 
 ---
 
 ## Exam Strategy & Key Points
 
-### Top exam tips
-- **Customization order:** Prompt Engineering → RAG → Fine-tuning → Pre-training (cheapest/fastest first)
-- **Bedrock = managed FMs via API** (no infrastructure) | **SageMaker = full ML platform** (build/train/deploy)
+### Top Exam Tips
+- **Customization order:** Prompt Engineering → RAG → Fine-tuning → Pre-training (cheapest first)
+- **Bedrock = managed FMs via API** (no infrastructure) | **SageMaker = full ML platform**
 - **Responsible AI = FEPST** (Fairness, Explainability, Privacy, Safety, Transparency)
-- **Security = encrypt at rest (KMS) + in transit (TLS), IAM policies, Guardrails**
-- **Domains 2+3 = 52% of exam** — focus on GenAI concepts and Bedrock/SageMaker
-- Questions test *understanding of trade-offs* and *matching use cases to services* — not coding
+- **Security = KMS + TLS + IAM + Guardrails**
+- **Domains 2 + 3 = 52%** — focus on GenAI and Bedrock/SageMaker
+- Questions test *understanding of trade-offs* and *matching use cases to services*
 
-### AWS services cheat sheet
+### AWS Services Cheat Sheet
 | Service | One-liner |
 |---------|-----------|
 | Amazon Bedrock | Managed access to foundation models via API |
