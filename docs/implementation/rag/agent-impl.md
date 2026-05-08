@@ -2,7 +2,7 @@
 
 ## Overview
 
-`agent.py` is the main Jarvis RAG chat application: a **thin Flask orchestrator** (~1,405 lines) that streams answers over **Server-Sent Events (SSE)**, wires **automatic retrieval** from Qdrant with optional **tool calling** (Jira, git commits, Confluence search, etc.), and serves a **chat UI** loaded from **`scripts/rag/templates/index.html`** (large standalone HTML/CSS/JS file, read at process startup and rendered via `render_template_string`). Heavy HTTP surface area has been moved into **`routes/`** Blueprints (`toolbar`, `ai_news`, `daily_fetch`, `donor`, `stock`). Query understanding runs through **`pipeline.py`** (routing → intent → RAG confidence → **conversation memory** injection → optional decomposition) before **`agent_loop.run_agent`** performs auto-RAG and generation.
+`agent.py` is the main Jarvis RAG chat application: a **thin Flask orchestrator** (~1,405 lines) that streams answers over **Server-Sent Events (SSE)**, wires **automatic retrieval** from Qdrant with optional **tool calling** (Jira, git commits, Confluence search, etc.), and serves a **chat UI** loaded from **`scripts/rag/templates/index.html`** (large standalone HTML/CSS/JS file, read at process startup and rendered via `render_template_string`). Heavy HTTP surface area has been moved into **`routes/`** Blueprints (`toolbar`, `ai_news`, `daily_fetch`, `stock`). Query understanding runs through **`pipeline.py`** (routing → intent → RAG confidence → **conversation memory** injection → optional decomposition) before **`agent_loop.run_agent`** performs auto-RAG and generation.
 
 Location: `scripts/rag/agent.py`. Default URL: **`http://127.0.0.1:18889`** (`python agent.py [port]`).
 
@@ -13,7 +13,7 @@ Location: `scripts/rag/agent.py`. Default URL: **`http://127.0.0.1:18889`** (`py
 - **qdrant-client:** in-memory collections (`ai_briefings`, `conversation_memory`) loaded from snapshots; filtered vector search
 - **ollama (Python package):** `ollama.chat` with `stream=True` for token streaming; native tool-call support; health via `ollama.list`
 - **`ollama` HTTP API (requests):** used in `intent.py` for fast LLM classify/enhance paths
-- **Front end:** single-file `templates/index.html` (markdown rendering, image upload, session sidebar, toolbar actions, stock/donor modals, etc.)
+- **Front end:** single-file `templates/index.html` (markdown rendering, image upload, session sidebar, toolbar actions, stock modals, etc.)
 
 The top-of-file docstring still mentions `requests`; chat uses the **`ollama`** client library, while intent enhancement/classification uses **`requests`** against the Ollama HTTP API.
 
@@ -27,10 +27,11 @@ flowchart TB
   subgraph orchestrator [agent.py Flask]
     Idx["GET /"]
     Core["Core routes: /api/agent, health, memory, sessions, notes, settings"]
-    BP["register_blueprint: toolbar, ai_news, daily_fetch, donor, stock"]
+    BP["register_blueprint: toolbar, ai_news, daily_fetch, stock"]
   end
   subgraph pipeline [pipeline.py]
     R0[route_session router.py]
+    RW[smart_rewrite query_rewrite.py]
     R1[process_query intent.py]
     R2[RAG capability check]
     R3[memory retriever query injection]
@@ -65,8 +66,8 @@ flowchart TB
 **Request path (non-learning chat):**
 
 1. `POST /api/agent` receives JSON (`query`, optional `image`, `history`, `session_id`).
-2. **`handle_query`** in `pipeline.py` runs: **`router.route_session`** → **`intent.process_query`** (enhancement, session/heuristic/LLM classification, RAG probe for knowledge-like intents) → **memory context** + tool hints on low/medium RAG confidence → **`decomposer.decompose_query`** for multi-part questions.
-3. SSE generator may emit a **`confidence`** event from pipeline metadata, then **`run_agent`** streams tokens and tool cycles.
+2. **`handle_query`** in `pipeline.py` runs: **`router.route_session`** → **`intent.process_query`** (smart query rewrite via `query_rewrite.py`, session/heuristic/LLM classification, RAG probe for knowledge-like intents) → **memory context** + tool hints on low/medium RAG confidence → **`decomposer.decompose_query`** for multi-part questions.
+3. SSE generator may emit a **`query_rewrite`** event (showing alias expansion and LLM rewrite steps), then a **`confidence`** event from pipeline metadata, then **`run_agent`** streams tokens and tool cycles.
 4. After the stream, a background thread may run **`memory.extractor.extract_immediate`** for fact extraction.
 
 **Learning / AWS / deep-dive paths** still apply extra prompt and RAG overrides inside `api_agent` after routing; if the pipeline raises, execution falls back to a legacy direct `run_agent` path.
@@ -79,14 +80,14 @@ flowchart TB
 | **`routes/toolbar.py`** | Reindex, chunk analysis, deep-dive session seed, wiki-fetch, commit-summary, Jira report, trend-analysis |
 | **`routes/ai_news.py`** | AI news KB (scan, summary), audio-from-knowledge jobs, audio/report file serving |
 | **`routes/daily_fetch.py`** | Daily fetch pipeline jobs, history/continue, learning-session and learning-context helpers |
-| **`routes/donor.py`** | Donor listing/scoring, AI reason, PDF export |
 | **`routes/stock.py`** | Stock analysis, watchlist, scan/long-term jobs, training, prediction, sentiment, risk, timing, backtest, China data |
 | **`pipeline.py`** | Single orchestrator for pre-LLM query processing; builds `PipelineContext` for `run_agent` |
 | **`router.py`** | Session ID → learning mode, system prompt stem, `deep_dive` detection |
-| **`intent.py`** | Query enhancement, **3-stage** classification (session type → keyword heuristic → fast LLM), RAG capability scoring |
+| **`query_rewrite.py`** | Unified smart query rewriting: domain alias expansion (project names, tech terms, team names) + domain-aware LLM rewrite; used by `intent.py` and `rag_engine.py` |
+| **`intent.py`** | Query rewrite orchestration (delegates to `query_rewrite.py`), **3-stage** classification (session type → keyword heuristic → fast LLM), RAG capability scoring |
 | **`decomposer.py`** | Multi-part query decomposition and per-subquery tool hints |
 | **`memory/`** | Qdrant **`conversation_memory`** store, LLM extraction, Q→A patterns, retrieval injection (`store`, `extractor`, `patterns`, `retriever`) |
-| **`rag_engine.py`** | Embeddings, Qdrant `ai_briefings`, **`auto_rag_search`**, query rewrite |
+| **`rag_engine.py`** | Embeddings, Qdrant `ai_briefings`, **`auto_rag_search`**; uses `query_rewrite` for retry rewriting on weak hits |
 | **`agent_loop.py`** | Streaming loop, auto-RAG + auto-tools parallelism, tool execution bridge |
 | **`tools/`** | `TOOL_SCHEMAS`, registrations, tool implementations (`implementations.py`, `registry.py`, `schemas.py`) |
 | **`learning/`** | `constants.py` + **`helpers.py`** — topic resolution (`resolve_english_topic_by_name`), learning input classification (`classify_and_resolve_learning_input`), `fetch_fresh_topics`, `web_search_references`; imported from `agent.py` |
@@ -176,7 +177,7 @@ Session IDs must be valid UUID strings (except fixed learning IDs from `learning
 
 ## API reference (core vs blueprints)
 
-Core application routes are implemented **in `agent.py`**. Toolbar, AI news KB, audio, daily fetch, donor, and stock URLs are implemented on **Flask Blueprints** in **`scripts/rag/routes/`** but expose the **same URL prefixes** as before (`/api/toolbar/...`, `/api/donor-analysis`, `/api/stock/...`), so clients do not need path changes — only **code organization** moved.
+Core application routes are implemented **in `agent.py`**. Toolbar, AI news KB, audio, daily fetch, and stock URLs are implemented on **Flask Blueprints** in **`scripts/rag/routes/`** but expose the **same URL prefixes** as before (`/api/toolbar/...`, `/api/stock/...`), so clients do not need path changes — only **code organization** moved.
 
 ### Core (`agent.py`)
 
@@ -206,10 +207,6 @@ AI news KB (**`/api/toolbar/ai-news-kb/*`**), **audio-from-knowledge** jobs (**`
 ### Blueprint: `routes/daily_fetch.py` (`daily_fetch_bp`)
 
 Daily fetch **POST `/api/toolbar/daily-fetch`**, **POST `/api/toolbar/daily-fetch/continue`**, status/history **`/api/toolbar/daily-fetch/<job_id>`**, **`/api/toolbar/daily-fetch/history`**, plus **learning-session** helpers **`/api/toolbar/learning-session`**, **`/api/toolbar/learning-context`** (implementations delegate to helpers imported where needed).
-
-### Blueprint: `routes/donor.py` (`donor_bp`)
-
-**`GET /api/donor-analysis`**, **`POST /api/donor-analysis/ai-reason`**, **`POST /api/donor-analysis/pdf`**.
 
 ### Blueprint: `routes/stock.py` (`stock_bp`)
 
@@ -246,10 +243,6 @@ Orchestration, background threads, segmented narration, wiki fetch, merge recove
 
 **`GET/POST /api/settings`** on the main app (`agent.py`). See [Global Settings Implementation](./global-settings-impl.md) for full details on the backend API, frontend modal, and extension points.
 
-## Donor Analysis
-
-**`routes/donor.py`** exposes listing, **`/ai-reason`**, and PDF export. Parsing/scoring specifics remain documented in tooling under `scripts/tools/parse-cryos-donors.py` etc.
-
 ## Design decisions
 
 - **SSE over WebSockets:** One-way token streaming with ordinary HTTP infra.
@@ -260,10 +253,9 @@ Orchestration, background threads, segmented narration, wiki fetch, merge recove
 - **Conditional tool schemas:** Still used when auto-context saturates prompts (agent loop responsibility).
 - **Iteration cap:** `MAX_AGENT_ITERATIONS` prevents infinite tool loops.
 - **External UI file:** **`templates/index.html`** keeps `agent.py` maintainable versus a mega inline string — still rendered through **`render_template_string`** for simplicity (no separate build step).
-- **Blueprints:** Large domains (stock, daily fetch, ai news/audio, toolbar, donor) register on one Flask app — clear ownership and grep-friendly files.
+- **Blueprints:** Large domains (stock, daily fetch, ai news/audio, toolbar) register on one Flask app — clear ownership and grep-friendly files.
 - **Fast model for batch tasks:** Narration/classify uses **`qwen3:1.7b`** tier models where appropriate (see env vars).
 - **No-cache headers:** HTML responses send strict no-cache headers so refreshed JS/CSS is picked up immediately.
-- **HTML parsing vs Playwright (donors):** Manual save + BeautifulSoup — avoids brittle auth automation.
 - **Daily Fetch background jobs:** Long pipelines stay off HTTP request latency (daemon threads + polling in `daily_fetch` blueprint).
 
 ## Learning Features

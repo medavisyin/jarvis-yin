@@ -119,13 +119,18 @@ Each learning mode has a system prompt that controls the LLM's teaching behavior
 
 ### Current prompt designs
 
-**AI Learning** — Fundamentals-first teaching:
+**AI Learning** — 8-domain curriculum with structured notes:
 ```
-1. FIRST: Explain the fundamental concept from zero
-2. THEN: Go deeper — theory, algorithms, trade-offs
-3. ONLY AFTER: Connect to the student's Jarvis project
+1. State which domain and category this topic belongs to
+2. Explain from zero — define every term before using it
+3. Go deeper — theory, algorithms, trade-offs, comparison tables
+4. Include code snippets or pseudocode when helpful
+5. Connect to the student's Jarvis project (Qdrant, SBERT, Ollama)
+6. Provide 1–2 practice/thought questions
+7. Suggest related categories or topics to study next
 ```
-Knowledge source priority: RAG → own knowledge → web references.
+Knowledge source priority: Study notes (8 domain files) → RAG → own knowledge → web references.
+Covers 8 domains: LLM Foundations, Tokens & Embeddings, Prompt Engineering, RAG, Fine-Tuning, AI Engineering, Evaluation & Safety, AI News Digest (auto-updated).
 
 **Tech English** — Article analysis flow:
 ```
@@ -236,18 +241,41 @@ When a topic is resolved, the system fetches the full article content from the r
 
 | Mode | Data file | Fields used |
 |------|-----------|-------------|
-| AI Learning | `ch8-learning-roadmap.md` + `docs/*.md` | Section text matching topic |
+| AI Learning | `notes/ai_learning/01-08.md` (direct) + Qdrant RAG (notes + books) | Two-layer: structured notes via keyword hints, plus RAG vector search across all indexed content. See below. |
 | Tech English | `briefing-data-filtered.json` | `title`, `source`, `url`, `summary`, `body` |
 | Casual English | `world-news-data.json` | `title`, `source`, `url`, `summary`, `key_points` |
 | AWS AIF-C01 | `aws-cert-learning-roadmap.md` + `knowledge/notes/aws_ai_p1/*.md` | Domain-mapped study notes (5 files for 5 domains). Uses `KNOWLEDGE_ROOT` from `config.py`. |
 
+### AI Learning: Two-Layer Knowledge Strategy
+
+AI Learning uses a **notes + books** strategy where content comes from two complementary sources:
+
+| Layer | Source | Chunks in RAG | Role |
+|-------|--------|:---:|------|
+| **Primary: Structured Notes** | `notes/ai_learning/01-08.md` (9 files) | ~487 | Synthesized teaching content organized by domain/category, with tables, tips, examples |
+| **Secondary: Original Books** | PDFs in `knowledge/books/` (5 books + 2 papers) | ~98 | Raw book content for additional depth, quotes, and alternative explanations |
+
+**Three retrieval paths:**
+
+| Query type | Method | What's searched |
+|-----------|--------|----------------|
+| Topic from numbered list | `_fetch_article_content` + `_ai_topic_file_hints` | Reads specific note file directly (e.g., "rag" → `04-rag.md`) |
+| Domain request ("Domain 4") | `_fetch_article_content` + `_ai_domain_file_map` | Reads mapped domain note file directly |
+| Free-form question | `_auto_rag_search` (Qdrant) | Searches ALL indexed chunks: notes + books + briefings |
+
+For topic/domain requests, structured notes are the primary source. For free-form queries, the RAG vector search finds relevant chunks from **both** notes and books, giving the LLM comprehensive context to build answers.
+
+Both layers must be indexed via `python scripts/rag/index_custom.py scan` to be available for free-form RAG queries.
+
 ### How the LLM prompt differs by mode
 
-**AI Learning** (topic selected):
+**AI Learning** (topic/domain query):
 ```
-"The student selected topic: '{title}'.
-Here is the full article content: {content}
-Teach them about this topic using the article above."
+Uses _ai_topic_file_hints to map keywords (e.g., "rag", "lora", "transformer")
+to specific note files (e.g., 04-rag.md, 05-fine-tuning.md).
+Falls back to _ai_domain_file_map for "Domain N" queries.
+Content from matching note file is injected as context.
+For free-form queries: RAG vector search finds chunks from notes + books.
 ```
 
 **Tech/Casual English** (topic selected):
@@ -263,6 +291,8 @@ Start by summarizing, then extract key phrases, expressions, vocabulary."
 **To add a new data source:** Add a new `elif` branch in `_fetch_article_content()` checking the `session_id`.
 
 **To change what fields are extracted:** Edit the `parts.append()` calls inside the function.
+
+**To re-index after adding new notes or books:** Run `python scripts/rag/index_custom.py scan` to index all content in `knowledge/`.
 
 ---
 

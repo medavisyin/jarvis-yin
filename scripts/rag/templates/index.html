@@ -102,6 +102,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 @keyframes spin{to{transform:rotate(360deg)}}
 .tool-badge{display:inline-block;padding:2px 8px;background:#2a2d3a;border-radius:4px;
             font-family:monospace;font-size:0.85em;color:#a78bfa}
+.query-rewrite{align-self:flex-start;padding:10px 16px;background:#1a2235;border:1px solid #1e3a5f;
+               border-radius:8px;font-size:0.82em;color:#8ba4c4;max-width:85%}
+.query-rewrite .qr-header{display:flex;align-items:center;gap:6px;margin-bottom:6px;
+                          color:#60a5fa;font-weight:500;font-size:0.95em}
+.query-rewrite .qr-step{margin:3px 0;padding-left:8px;border-left:2px solid #2a3d5a}
+.query-rewrite .qr-original{color:#6b7280;text-decoration:line-through}
+.query-rewrite .qr-arrow{color:#4b5563;margin:0 4px}
+.query-rewrite .qr-expanded{color:#34d399}
+.query-rewrite .qr-rewritten{color:#60a5fa;font-weight:500}
+.query-rewrite .qr-alias{display:inline-block;padding:1px 6px;margin:1px 2px;background:#1e3a5f;
+                          border-radius:4px;font-family:monospace;font-size:0.9em;color:#93c5fd}
+.query-rewrite .qr-fuzzy{border-style:dashed;background:#2a2235;color:#c4b5fd}
 .sources{margin-top:10px;padding:10px 14px;background:#161822;border:1px solid #2a2d3a;
          border-radius:8px;font-size:0.82em}
 .sources summary{cursor:pointer;color:#60a5fa;font-weight:500;margin-bottom:6px}
@@ -312,7 +324,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <span>Personal</span><span class="toolbar-cat-chevron">&#9660;</span>
       </button>
       <div class="toolbar-cat-body">
-        <button type="button" class="toolbar-btn" onclick="openDonorAnalysis()" title="Analyze and score donor profiles">&#128300; Donor Analysis</button>
         <button type="button" class="toolbar-btn" id="btnDailyFetch" onclick="openDailyFetchModal()" title="Run full daily briefing pipeline + commit report + Jira daily">&#128240; Daily Fetch</button>
       </div>
     </div>
@@ -614,37 +625,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" onclick="closeExplainThisModal()" style="font-size:0.78em">Cancel</button>
         <button type="button" class="send-btn" onclick="startExplainThis()" style="padding:8px 20px;font-size:0.88em">&#128218; Explain</button>
       </div>
-    </div>
-  </div>
-</div>
-
-<div id="donorAnalysisModal" class="modal-overlay" role="dialog" aria-modal="true">
-  <div class="modal-panel" style="max-width:95vw;max-height:90vh;width:1100px">
-    <div class="modal-head">
-      <h2>&#128300; Donor Analysis</h2>
-      <button type="button" class="modal-close" onclick="closeDonorAnalysis()" title="Close">&times;</button>
-    </div>
-    <div class="modal-content" style="padding:12px 16px">
-      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:10px">
-        <label style="font-size:0.82em;color:#8b8fa4">Recipient CMV:</label>
-        <select id="donorCmvFilter" style="background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:4px 8px;font-size:0.82em">
-          <option value="negative">Negative</option>
-          <option value="positive">Positive</option>
-        </select>
-        <button type="button" class="send-btn" id="btnDonorLoad" onclick="loadDonorAnalysis()" style="padding:6px 16px;font-size:0.82em">Load &amp; Score</button>
-        <button type="button" class="toolbar-btn" id="btnDonorTop10" onclick="donorTop10()" style="font-size:0.78em" disabled>Top 20 + AI Reasoning</button>
-        <label style="font-size:0.82em;color:#8b8fa4">PDF Lang:</label>
-        <select id="donorPdfLang" style="background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:4px 8px;font-size:0.82em">
-          <option value="en">English</option>
-          <option value="zh">Chinese</option>
-        </select>
-        <button type="button" class="toolbar-btn" id="btnDonorPdf" onclick="donorExportPdf()" style="font-size:0.78em" disabled>Export PDF</button>
-        <span id="donorCount" style="font-size:0.78em;color:#8b8fa4"></span>
-      </div>
-      <div id="donorTableWrap" style="max-height:65vh;overflow:auto">
-        <p style="font-size:0.82em;color:#8b8fa4">Click "Load &amp; Score" to analyze donor profiles.</p>
-      </div>
-      <div id="donorTop10Result" style="display:none;margin-top:12px;padding:12px;background:#1e2030;border-radius:8px;max-height:30vh;overflow-y:auto;font-size:0.82em;white-space:pre-wrap;color:#c4c8f0"></div>
     </div>
   </div>
 </div>
@@ -1178,22 +1158,22 @@ function toggleSysBlock(uid, btn, count) {
 async function toolbarCommitFetch24(btn) {
   if (!btn) btn = document.getElementById('btnCommitFetch');
   if (btn) { btn.disabled = true; toolbarReindexSpinner(btn, true); }
-  showToast('Fetching commits (48h) — scanning all repos…');
+  showToast('Fetching commits (24h) — scanning all repos…');
   try {
     const r = await fetch('/api/toolbar/commit-summary', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ hours: 48 }),
+      body: JSON.stringify({ hours: 24 }),
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Request failed');
     const report = d.result || '';
-    if (!report) { showToast('No commits found in the last 48 hours'); return; }
-    addCollapsibleSystemMessage('Commit fetch (48h)', report, 12);
-    conversationHistory.push({role: 'assistant', content: '[Git Commits Last 48h]\n' + report});
+    if (!report) { showToast('No commits found in the last 24 hours'); return; }
+    addCollapsibleSystemMessage('Commit fetch (24h)', report, 12);
+    conversationHistory.push({role: 'assistant', content: '[Git Commits Last 24h]\n' + report});
     showToast('Generating commit summary…');
     if (!isStreaming) {
-      queryInput.value = 'IMPORTANT: Use ONLY the latest commit data block above (the one marked [Git Commits Last 48h]). Ignore any older commit data in the conversation. Summarize ALL commits: group by team member and repository, highlight key changes, and note any patterns. Do NOT invent job titles or roles for anyone.';
+      queryInput.value = 'IMPORTANT: Use ONLY the latest commit data block above (the one marked [Git Commits Last 24h]). Ignore any older commit data in the conversation. Summarize ALL commits: group by team member and repository, highlight key changes, and note any patterns. Do NOT invent job titles or roles for anyone.';
       sendMessage();
     }
   } catch (e) {
@@ -1672,20 +1652,6 @@ async function startDeepDive(title, sourceUrl, rawFile) {
   }
 }
 
-var _donorData = null;
-function openDonorAnalysis() {
-  document.getElementById('donorTableWrap').innerHTML = '<p style="font-size:0.82em;color:#8b8fa4">Click "Load &amp; Score" to analyze donor profiles.</p>';
-  document.getElementById('donorTop10Result').style.display = 'none';
-  document.getElementById('btnDonorTop10').disabled = true;
-  document.getElementById('btnDonorPdf').disabled = true;
-  document.getElementById('donorCount').textContent = '';
-  _donorData = null;
-  document.getElementById('donorAnalysisModal').classList.add('open');
-}
-function closeDonorAnalysis() {
-  document.getElementById('donorAnalysisModal').classList.remove('open');
-}
-
 function openTrendAnalysis() {
   document.getElementById('trendAnalysisStatus').textContent = '';
   var res = document.getElementById('trendAnalysisResult');
@@ -1958,116 +1924,6 @@ function _simpleMarkdownToHtml(text) {
   s = s.replace(/\n\n/g, '<br><br>');
   s = s.replace(/\n/g, '<br>');
   return s;
-}
-
-async function loadDonorAnalysis() {
-  var cmv = document.getElementById('donorCmvFilter').value;
-  var btn = document.getElementById('btnDonorLoad');
-  btn.disabled = true; btn.textContent = 'Loading...';
-  document.getElementById('donorTableWrap').innerHTML = '<p style="font-size:0.82em;color:#8b8fa4">Scoring donors...</p>';
-  try {
-    var resp = await fetch('/api/donor-analysis?recipient_cmv=' + cmv);
-    var data = await resp.json();
-    if (data.error) { document.getElementById('donorTableWrap').innerHTML = '<p style="color:#f87171">' + escHtml(data.error) + '</p>'; return; }
-    _donorData = data;
-    document.getElementById('donorCount').textContent = data.count + ' donors scored';
-    document.getElementById('btnDonorTop10').disabled = false;
-    document.getElementById('btnDonorPdf').disabled = false;
-    renderDonorTable(data.donors);
-  } catch(e) {
-    document.getElementById('donorTableWrap').innerHTML = '<p style="color:#f87171">Error: ' + escHtml(e.message) + '</p>';
-  } finally { btn.disabled = false; btn.textContent = 'Load & Score'; }
-}
-
-function renderDonorTable(donors) {
-  var cols = ['#','ID','Score','Race','Ethnicity','Height','Eyes','Hair','Blood','CMV','Ship From','Profile','Face Match','Genetic','Stock'];
-  var html = '<table style="width:100%;border-collapse:collapse;font-size:0.75em;color:#c4c8f0"><thead><tr>';
-  cols.forEach(function(c) { html += '<th style="padding:4px 6px;background:#2a2d3a;color:#60a5fa;position:sticky;top:0;text-align:left;white-space:nowrap">' + c + '</th>'; });
-  html += '</tr></thead><tbody>';
-  donors.forEach(function(d, i) {
-    var sc = d._total_score || 0;
-    var bg = i % 2 === 0 ? '#1a1d2e' : '#1e2030';
-    var scoreColor = sc >= 80 ? '#4ade80' : sc >= 60 ? '#60a5fa' : sc >= 40 ? '#fbbf24' : '#f87171';
-    var stockCount = 0;
-    (d.stock || []).forEach(function(s) { var nums = (s.details||'').match(/\\d+/g); if(nums) nums.forEach(function(n){stockCount+=parseInt(n)}); });
-    html += '<tr style="background:' + bg + '">';
-    html += '<td style="padding:3px 6px">' + (i+1) + '</td>';
-    html += '<td style="padding:3px 6px"><a href="' + escHtml(d.url||'') + '" target="_blank" style="color:#60a5fa">' + escHtml(d.donor_id||'') + '</a></td>';
-    html += '<td style="padding:3px 6px;color:' + scoreColor + ';font-weight:bold">' + sc.toFixed(0) + '</td>';
-    html += '<td style="padding:3px 6px">' + escHtml(d.race||'') + '</td>';
-    html += '<td style="padding:3px 6px">' + escHtml(d.ethnicity||'') + '</td>';
-    html += '<td style="padding:3px 6px">' + escHtml(d.height__cm||'') + '</td>';
-    html += '<td style="padding:3px 6px">' + escHtml(d.eye_colour||'') + '</td>';
-    html += '<td style="padding:3px 6px">' + escHtml(d.hair_colour||'') + '</td>';
-    html += '<td style="padding:3px 6px">' + escHtml(d.blood_type||'') + '</td>';
-    html += '<td style="padding:3px 6px">' + escHtml(d.cmv_status||'') + '</td>';
-    html += '<td style="padding:3px 6px">' + escHtml(d.shipped_from||'') + '</td>';
-    html += '<td style="padding:3px 6px">' + escHtml(d.profile_type||'') + '</td>';
-    html += '<td style="padding:3px 6px">' + escHtml(d.cryos_face_matching||'') + '</td>';
-    html += '<td style="padding:3px 6px">' + escHtml(d.genetic_matching||'') + '</td>';
-    html += '<td style="padding:3px 6px">' + stockCount + '</td>';
-    html += '</tr>';
-  });
-  html += '</tbody></table>';
-  document.getElementById('donorTableWrap').innerHTML = html;
-}
-
-async function donorTop10() {
-  if (!_donorData) return;
-  var btn = document.getElementById('btnDonorTop10');
-  btn.disabled = true; btn.textContent = 'Analyzing with qwen3-vl:8b...';
-  var resultEl = document.getElementById('donorTop10Result');
-  resultEl.style.display = 'block';
-  resultEl.textContent = 'Sending top 20 donors to qwen3-vl:8b for deep analysis... (this may take a few minutes)';
-  try {
-    var resp = await fetch('/api/donor-analysis/ai-reason', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({top_n: 20, recipient_cmv: document.getElementById('donorCmvFilter').value})
-    });
-    var reader = resp.body.getReader();
-    var decoder = new TextDecoder();
-    var fullText = '';
-    while (true) {
-      var chunk = await reader.read();
-      if (chunk.done) break;
-      var lines = decoder.decode(chunk.value, {stream: true}).split('\n');
-      lines.forEach(function(line) {
-        if (line.startsWith('data: ')) {
-          try {
-            var ev = JSON.parse(line.substring(6));
-            if (ev.type === 'token') { fullText += ev.content || ''; resultEl.textContent = fullText; }
-            if (ev.type === 'done') { fullText = ev.content || fullText; resultEl.textContent = fullText; }
-            if (ev.type === 'error') { resultEl.textContent = 'Error: ' + (ev.message||'unknown'); }
-          } catch(e) {}
-        }
-      });
-    }
-    _donorData._reasonText = fullText;
-  } catch(e) {
-    resultEl.textContent = 'Error: ' + e.message;
-  } finally { btn.disabled = false; btn.textContent = 'Top 20 + AI Reasoning'; }
-}
-
-async function donorExportPdf() {
-  if (!_donorData) return;
-  var btn = document.getElementById('btnDonorPdf');
-  btn.disabled = true; btn.textContent = 'Generating PDF...';
-  try {
-    var resp = await fetch('/api/donor-analysis/pdf', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({
-        top_n: 20,
-        recipient_cmv: document.getElementById('donorCmvFilter').value,
-        reason_text: _donorData._reasonText || '',
-        language: document.getElementById('donorPdfLang').value
-      })
-    });
-    var data = await resp.json();
-    if (data.error) { showToast('PDF error: ' + data.error); return; }
-    showToast('PDF generated!');
-    window.open(data.pdf_url, '_blank');
-  } catch(e) { showToast('Error: ' + e.message); }
-  finally { btn.disabled = false; btn.textContent = 'Export PDF'; }
 }
 
 var _audioSelectedType = '';
@@ -2660,6 +2516,43 @@ function addThinking(toolName, args) {
   return div;
 }
 
+function addQueryRewrite(event) {
+  const div = document.createElement('div');
+  div.className = 'query-rewrite';
+  let html = '<div class="qr-header">\u{1f50d} Query Rewrite</div>';
+
+  if (event.aliases && event.aliases.length > 0) {
+    const aliasHtml = event.aliases.map(a => {
+      const cls = a.fuzzy ? 'qr-alias qr-fuzzy' : 'qr-alias';
+      return '<span class="' + cls + '">' + escHtml(a.original) +
+             ' \u2192 ' + escHtml(a.expanded) + '</span>';
+    }).join(' ');
+    html += '<div class="qr-step"><b>Aliases:</b> ' + aliasHtml + '</div>';
+  }
+
+  if (event.alias_expanded && event.alias_expanded !== event.original) {
+    html += '<div class="qr-step">' +
+            '<span class="qr-original">' + escHtml(event.original) + '</span>' +
+            '<span class="qr-arrow"> \u2192 </span>' +
+            '<span class="qr-expanded">' + escHtml(event.alias_expanded) + '</span>' +
+            '</div>';
+  }
+
+  if (event.rewritten && event.rewritten !== (event.alias_expanded || event.original)) {
+    const from = event.alias_expanded || event.original;
+    html += '<div class="qr-step">' +
+            '<span style="color:#6b7280">' + escHtml(from) + '</span>' +
+            '<span class="qr-arrow"> \u2192 </span>' +
+            '<span class="qr-rewritten">' + escHtml(event.rewritten) + '</span>' +
+            '</div>';
+  }
+
+  div.innerHTML = html;
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return div;
+}
+
 function addSources(sources, parentEl) {
   if (!sources || sources.length === 0) return;
   const unique = [];
@@ -2766,7 +2659,9 @@ async function sendMessage() {
         let event;
         try { event = JSON.parse(payload); } catch { continue; }
 
-        if (event.type === 'model') {
+        if (event.type === 'query_rewrite') {
+          addQueryRewrite(event);
+        } else if (event.type === 'model') {
           // show which model is being used
         } else if (event.type === 'thinking') {
           thinkingEls.push(addThinking(event.tool, event.args));

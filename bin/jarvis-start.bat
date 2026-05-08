@@ -3,7 +3,11 @@ title Starting Jarvis Servers...
 set SCRIPT_DIR=%~dp0
 set LOG=%SCRIPT_DIR%..\jarvis-start.log
 
+:: Set proxy for news fetchers (BBC, Reuters, DW, Guardian need SOCKS proxy)
+if not defined BRIEFING_PROXY set BRIEFING_PROXY=socks5://localhost:10808
+
 echo [%date% %time%] Starting Jarvis... > "%LOG%"
+echo [%date% %time%] BRIEFING_PROXY=%BRIEFING_PROXY% >> "%LOG%"
 
 :: Verify Python is available and resolve real executable path
 for /f "delims=" %%P in ('python -c "import sys; print(sys.executable)" 2^>nul') do set "PYTHON=%%P"

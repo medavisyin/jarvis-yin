@@ -94,8 +94,6 @@ from rag_engine import (
     sync_qdrant_points_from_snapshot as _sync_qdrant_points_from_snapshot,
     batch_encode as _batch_encode,
     vector_search as _vector_search,
-    should_rewrite_query as _should_rewrite_query,
-    rewrite_query as _rewrite_query,
     load_project_graph as _load_project_graph,
     auto_rag_search as _auto_rag_search,
 )
@@ -347,6 +345,7 @@ def _fetch_article_content(title: str, session_id: str) -> str:
             "5": "05-fine-tuning.md",
             "6": "06-ai-engineering.md",
             "7": "07-evaluation-safety.md",
+            "8": "08-ai-news-digest.md",
         }
         _ai_topic_file_hints = {
             "transformer": "01-llm-foundations.md",
@@ -631,7 +630,7 @@ def _fetch_article_content(title: str, session_id: str) -> str:
 def api_agent():
     """Main agent endpoint. Accepts JSON with query, optional image, optional history."""
     from router import route_session
-    from pipeline import handle_query as pipeline_handle_query, get_response_disclaimer, get_confidence_event
+    from pipeline import handle_query as pipeline_handle_query, get_response_disclaimer, get_confidence_event, get_rewrite_event
     from memory.extractor import extract_immediate as _extract_immediate_memory
 
     data = request.get_json(silent=True) or {}
@@ -665,8 +664,11 @@ def api_agent():
             rag_query_override = ctx.rag_query
             disclaimer = get_response_disclaimer(ctx.intent_result)
             confidence_event = get_confidence_event(ctx.intent_result)
+            rewrite_event = get_rewrite_event(ctx)
 
             def generate():
+                if rewrite_event:
+                    yield f"data: {json.dumps(rewrite_event, ensure_ascii=False)}\n\n"
                 if confidence_event:
                     yield f"data: {json.dumps(confidence_event, ensure_ascii=False)}\n\n"
                 _prefetch_tools = {"commit_summary", "jira_report"}
@@ -1565,9 +1567,7 @@ app.register_blueprint(daily_fetch_bp)
 
 
 # Stock routes (Blueprint)
-from routes.donor import donor_bp
 from routes.stock import stock_bp
-app.register_blueprint(donor_bp)
 app.register_blueprint(stock_bp)
 
 

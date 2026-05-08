@@ -38,8 +38,7 @@ docs/implementation/
 │   ├── stock-prediction-impl.md     # Stock prediction engine (ML pipeline)
 │   ├── technical-fundamental-impl.md # Technical & fundamental analysis
 │   ├── market-scanner-impl.md       # Market scanner (short + long term)
-│   ├── market-sentiment-risk-impl.md # Sentiment, risk & China A-share
-│   └── donor-analysis-impl.md      # Donor analysis
+│   └── market-sentiment-risk-impl.md # Sentiment, risk & China A-share
 │
 ├── personal/                        # PERSONAL — Daily briefing & content
 │   ├── daily-fetch-impl.md          # Daily fetch pipeline
@@ -121,7 +120,6 @@ docs/implementation/
 | 12 | [technical-fundamental-impl.md](./data-analysis/technical-fundamental-impl.md) | Technical & fundamental analysis — indicators, patterns, scoring, news sentiment, LLM narrative synthesis. |
 | 13 | [market-scanner-impl.md](./data-analysis/market-scanner-impl.md) | Market scanner — 3-layer short-term AI scanner + long-horizon theme scanner with RAG indexing. |
 | 14 | [market-sentiment-risk-impl.md](./data-analysis/market-sentiment-risk-impl.md) | Market sentiment & risk — Fear/Greed, VIX, black swan detection, China A-share flows, national team monitoring. |
-| 15 | [donor-analysis-impl.md](./data-analysis/donor-analysis-impl.md) | Donor analysis — clinical scoring algorithm, LLM reasoning narrative, PDF report generation. |
 
 ### PERSONAL — Daily Briefing & Content (5 functions)
 

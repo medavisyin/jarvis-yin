@@ -49,7 +49,7 @@ flowchart TB
 
 **Daily pipeline (`commit_report` step):**
 
-- Runs `scripts/tools/commit-report.ps1` with `-Hours 48 -OutputDir REPORTS_ROOT` (300s timeout).
+- Runs `scripts/tools/commit-report.ps1` with `-Hours 48 -OutputDir REPORTS_ROOT` (600s timeout; increased from 300s to accommodate slow `git fetch --all --prune` over VPN).
 - Parses stdout between `---DATA_START---` / `---DATA_END---` for job summary; if script missing, falls back to `tool_commit_summary(hours=48)`.
 
 **PowerShell report (`commit-report.ps1`):**

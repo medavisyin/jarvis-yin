@@ -130,7 +130,6 @@ Jarvis dynamically adjusts `num_ctx` based on conversation history length and se
 | `index_confluence.py` | Team Confluence space | Wiki pages |
 | `index_confluence_user.py` | Per-user Confluence pages | Personal wiki contributions |
 | `index_custom.py` | Custom sources (books, PDFs) | Any text content |
-| `parse-cryos-donors.py` | Donor profiles | Structured profile data |
 
 All indexers write to a **single Qdrant collection** (`ai_briefings`) with an `item_type` payload field for filtering.
 

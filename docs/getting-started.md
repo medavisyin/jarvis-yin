@@ -593,9 +593,11 @@ set BRIEFING_PROXY=socks5://localhost:10808
 export BRIEFING_PROXY=socks5://localhost:10808
 ```
 
-Jarvis uses a **smart proxy strategy**: for each domain, it first tries a direct connection. If that fails (timeout, blocked), it tries the proxy. The winning method is cached per domain for 7 days in `.proxy-strategy.json`, so subsequent runs are fast.
+Jarvis uses a **smart proxy strategy**: for each domain, it first tries a direct connection. If that fails (timeout, blocked), it tries the proxy. The winning method — including the proxy URL that worked — is cached per domain for 7 days in `.proxy-strategy.json`, so subsequent runs are fast. If `BRIEFING_PROXY` is not set but the memory file has a stored proxy URL for a domain, that stored URL is used as a fallback.
 
 **If you do NOT need a proxy** (home network, no VPN), leave `BRIEFING_PROXY` unset. Jarvis will connect directly to all sources.
+
+> **Note:** The startup scripts (`bin/jarvis-start.bat`, `bin/jarvis-restart.bat`) default `BRIEFING_PROXY` to `socks5://localhost:10808` if it is not already set in the environment.
 
 ### AI Models
 
@@ -722,6 +724,19 @@ Now that Jarvis is running, explore further:
 | Learn how each script works | [Implementation Index](implementation/README.md) |
 | Customize the briefing depth | Edit [`references/knowledge-scope.md`](../references/knowledge-scope.md) |
 | See the full documentation map | [Documentation Index](docs-index.md) |
+
+### Built-in Learning Features
+
+Jarvis includes interactive learning modes accessible from the toolbar:
+
+| Feature | What It Teaches | How to Start |
+|---------|-----------------|--------------|
+| **AI Learning** | LLMs, RAG, fine-tuning, AI engineering (8 domains, 100+ topics from 5 books + daily news) | Click "AI Learning" in the toolbar |
+| **AWS AIF-C01** | AWS Certified AI Practitioner exam prep (teach + quiz modes, progress tracking) | Click "AWS AIF-C01" in the toolbar |
+| **Tech English** | IT vocabulary and reading comprehension from real AI articles | Click "Tech English" in the toolbar |
+| **Casual English** | Everyday English phrases and idioms from world news | Click "Casual English" in the toolbar |
+
+See [Learning Features Implementation](implementation/rag/learning-features-impl.md) for technical details.
 
 **Reading order for beginners:**
 

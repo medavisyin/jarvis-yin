@@ -238,3 +238,38 @@
 - **Threat Model**: Prompt injection, data poisoning, model extraction, PII leakage
 - **Data Privacy**: Training data filtering, local inference, retention policies, encryption
 - **Content Safety**: Input classifiers → safety-tuned models → output classifiers → application rules
+
+---
+
+## Domain 8: AI Industry & Recent Developments
+
+### Category: LLM Releases & Model Updates
+- **New Model Releases**: Latest LLMs, benchmarks, capabilities, and comparisons
+- **Open-Source Milestones**: Community-driven models, quantization breakthroughs
+- **Model Architecture Trends**: Emerging architectures and training innovations
+
+### Category: AI Agents & Coding Tools
+- **Coding Assistants**: Copilot, Cursor, Claude Code, Devin — capabilities and workflows
+- **Agent Frameworks**: MCP, tool calling, managed agents, SDKs
+- **Autonomous Agents**: Long-running tasks, multi-step reasoning, permission models
+
+### Category: RAG, Search & Information Retrieval
+- **RAG Advances**: New retrieval techniques, embedding models, evaluation methods
+- **Search Infrastructure**: Vector DB improvements, hybrid search, production patterns
+
+### Category: AI Safety, Ethics & Regulation
+- **Policy & Governance**: EU AI Act, industry standards, responsible AI initiatives
+- **Safety Research**: Red teaming results, alignment breakthroughs, guardrail techniques
+
+### Category: AI Infrastructure & Deployment
+- **Hardware & Compute**: GPU trends, inference acceleration, cost optimization
+- **Serving Frameworks**: New engines, optimization techniques, cloud offerings
+
+### Category: AI Products & Applications
+- **Industry Launches**: Major product releases, API updates, platform changes
+- **Enterprise AI**: Adoption trends, integration patterns, ROI case studies
+- **Startups & Funding**: Notable AI startups, acquisitions, partnerships
+
+### Category: Research & Papers
+- **Key Papers**: Significant publications, novel methods, benchmark results
+- **Training Advances**: Pre-training, fine-tuning, and alignment breakthroughs

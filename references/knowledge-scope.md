@@ -54,7 +54,7 @@ Use this file so the briefing and agent features stay aligned with **what you al
 
 - Strong interest in both **making money** and **AI knowledge** — Jarvis was built to serve both goals.
 - Future feature: Chinese A-share individual stock prediction (data fetching, technical analysis, fundamental analysis, AI model prediction).
-- Donor analysis (Cryos) is a personal tool already integrated into Jarvis.
+
 
 ## Daily routine & workflow
 

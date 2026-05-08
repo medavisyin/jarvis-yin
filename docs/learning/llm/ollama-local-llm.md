@@ -25,7 +25,7 @@ Trade-offs: smaller local models may be **less capable** than frontier cloud mod
 
 ## How Jarvis uses Ollama
 
-- **Three model tiers:** **`qwen3.5:4b`** for the **main chat** agent, **`qwen3:1.7b`** for **fast tasks** (query rewriting, categorization, trend analysis, KB summaries, donor-analysis blurbs, etc.), and **`qwen3:1.7b`** as the **narration model** for Daily Fetch segmented audio generation. The fast model is the constant **`OLLAMA_MODEL_FAST`** in `agent.py`; the narration model is **`OLLAMA_MODEL_NARRATION`** (overridable via **`RAG_NARRATION_MODEL`** env var); the main chat model is **`OLLAMA_MODEL`** and is often overridden by **`RAG_AGENT_MODEL`** from the environment.
+- **Three model tiers:** **`qwen3.5:4b`** for the **main chat** agent, **`qwen3:1.7b`** for **fast tasks** (query rewriting, categorization, trend analysis, KB summaries, etc.), and **`qwen3:1.7b`** as the **narration model** for Daily Fetch segmented audio generation. The fast model is the constant **`OLLAMA_MODEL_FAST`** in `agent.py`; the narration model is **`OLLAMA_MODEL_NARRATION`** (overridable via **`RAG_NARRATION_MODEL`** env var); the main chat model is **`OLLAMA_MODEL`** and is often overridden by **`RAG_AGENT_MODEL`** from the environment.
 - **Default main model:** `qwen3.5:4b` (about **4B** parameters—often reasonable on CPU for interactive use).
 - **`think: false`:** On **all fast-response paths**, Jarvis calls **`/api/chat`** with **`think: false`** so “thinking” models skip hidden reasoning tokens and stay fast (see [Think Mode vs Non-Think Mode](#think-mode-vs-non-think-mode-critical-for-performance) below).
 - **Endpoints:** **`POST /api/chat`** is **primary** (supports `messages`, streaming, and the `think` flag). **`POST /api/generate`** is still used in **legacy** spots but is **being phased out** in favor of `/api/chat` where possible.
@@ -202,7 +202,6 @@ resp = requests.post("http://localhost:11434/api/chat", json={
 | AI News KB summary | `/api/chat` | `false` | `qwen3:1.7b` | Streaming output |
 | Audio narration (Knowledge) | `/api/chat` | `true` | `qwen3:1.7b` | Educational long-form narration (~10 min) |
 | Audio narration (Daily Fetch) | `/api/chat` | `true` | `qwen3:1.7b` | Segmented per-source podcast narration (~15 min total, `OLLAMA_MODEL_NARRATION`) |
-| Donor analysis reasoning | `/api/chat` | `false` | `qwen3:1.7b` | Quick explanation |
 | Image analysis | `/api/chat` | `true` (default) | `qwen3-vl:8b` | Vision model, complex analysis |
 
 ### Streaming vs Non-Streaming

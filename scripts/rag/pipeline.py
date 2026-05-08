@@ -23,6 +23,7 @@ from intent import (
     RetrievalConfidence,
     process_query,
 )
+from query_rewrite import SmartRewriteResult
 from memory.retriever import query_memories_for_context, get_tool_suggestions_from_memory
 from prompts import (
     SYSTEM_PROMPT_COMPACT,
@@ -48,6 +49,7 @@ class PipelineContext:
     image_b64: Optional[str] = None
     history: list[dict] = field(default_factory=list)
     memory_tools: list[str] = field(default_factory=list)
+    rewrite_result: Optional[SmartRewriteResult] = None
 
     @property
     def is_decomposed(self) -> bool:
@@ -150,6 +152,7 @@ def handle_query(query: str, session_id: str = "",
         image_b64=image_b64,
         history=history,
         memory_tools=memory_tools,
+        rewrite_result=intent_result.rewrite_result,
     )
 
     logger.info(
@@ -323,3 +326,14 @@ def get_confidence_event(intent_result: IntentResult) -> Optional[dict]:
         "intent": intent_result.intent.value,
         "suggest_web_search": strategy.suggest_web_search,
     }
+
+
+def get_rewrite_event(ctx: "PipelineContext") -> Optional[dict]:
+    """Generate an SSE query_rewrite event for the UI pipeline box.
+
+    Returns a dict ready to be JSON-serialized and sent as an SSE event,
+    or None if no rewrite occurred.
+    """
+    if ctx.rewrite_result is None:
+        return None
+    return ctx.rewrite_result.to_sse_event()

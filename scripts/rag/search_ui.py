@@ -107,6 +107,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <button onclick="showTab('search')" id="tab-search" style="padding:8px 20px;border:2px solid #4a90d9;background:#4a90d9;color:white;border-radius:6px;cursor:pointer;font-size:0.95em">Search</button>
     <button onclick="showTab('library')" id="tab-library" style="padding:8px 20px;border:2px solid #4a90d9;background:white;color:#4a90d9;border-radius:6px;cursor:pointer;font-size:0.95em">Library</button>
     <button onclick="showTab('analysis')" id="tab-analysis" style="padding:8px 20px;border:2px solid #4a90d9;background:white;color:#4a90d9;border-radius:6px;cursor:pointer;font-size:0.95em">Knowledge Explorer</button>
+    <button onclick="showTab('eval')" id="tab-eval" style="padding:8px 20px;border:2px solid #4a90d9;background:white;color:#4a90d9;border-radius:6px;cursor:pointer;font-size:0.95em">RAG Eval</button>
   </div>
 
   <div id="search-tab">
@@ -229,6 +230,125 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   </div>
 </div>
 
+  <div id="eval-tab" style="display:none">
+    <div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+      <button onclick="evalSeed()" id="btn-seed" style="padding:10px 22px;background:#7b1fa2;color:white;border:none;border-radius:8px;font-size:0.95em;cursor:pointer;transition:background 0.2s">
+        Seed Eval Dataset
+      </button>
+      <button onclick="evalRun()" id="btn-eval-run" style="padding:10px 22px;background:#2e7d32;color:white;border:none;border-radius:8px;font-size:0.95em;cursor:pointer;transition:background 0.2s">
+        Run Evaluation
+      </button>
+      <select id="eval-k" style="padding:8px 12px;border:1px solid #ddd;border-radius:6px;font-size:0.95em">
+        <option value="3">k=3</option>
+        <option value="5" selected>k=5</option>
+        <option value="10">k=10</option>
+      </select>
+      <span id="eval-action-status" style="color:#666;font-size:0.9em"></span>
+    </div>
+
+    <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px;background:white;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);text-align:center">
+        <div style="font-size:0.85em;color:#666;margin-bottom:4px">Total Chunks</div>
+        <div id="eval-total" style="font-size:1.8em;font-weight:700;color:#1a1a2e">—</div>
+      </div>
+      <div style="flex:1;min-width:200px;background:white;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);text-align:center">
+        <div style="font-size:0.85em;color:#666;margin-bottom:4px">Eval Queries</div>
+        <div id="eval-queries" style="font-size:1.8em;font-weight:700;color:#7b1fa2">—</div>
+      </div>
+      <div style="flex:1;min-width:200px;background:white;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);text-align:center">
+        <div style="font-size:0.85em;color:#666;margin-bottom:4px">Date Range</div>
+        <div id="eval-date-range" style="font-size:1em;font-weight:600;color:#1565c0">—</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap">
+      <div style="flex:1;min-width:300px;background:white;padding:16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08)">
+        <h3 style="font-size:0.95em;color:#555;margin-bottom:12px">Source Distribution</h3>
+        <div id="eval-sources"></div>
+      </div>
+      <div style="flex:1;min-width:300px;background:white;padding:16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08)">
+        <h3 style="font-size:0.95em;color:#555;margin-bottom:12px">Content Type Distribution</h3>
+        <div id="eval-types"></div>
+      </div>
+    </div>
+
+    <div id="eval-results-panel" style="display:none;background:white;padding:20px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:20px;border-left:4px solid #2e7d32">
+      <h3 style="font-size:1.05em;color:#2e7d32;margin-bottom:16px">Evaluation Results</h3>
+      <div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px;background:#e8f5e9;padding:14px;border-radius:8px;text-align:center">
+          <div style="font-size:0.8em;color:#2e7d32;margin-bottom:4px">Precision@k</div>
+          <div id="eval-precision" style="font-size:1.5em;font-weight:700;color:#2e7d32">—</div>
+          <div style="font-size:0.7em;color:#666;margin-top:6px" title="Of the top-k results returned, how many are actually relevant">How accurate are the results (less noise)</div>
+        </div>
+        <div style="flex:1;min-width:140px;background:#e3f2fd;padding:14px;border-radius:8px;text-align:center">
+          <div style="font-size:0.8em;color:#1565c0;margin-bottom:4px">Recall@k</div>
+          <div id="eval-recall" style="font-size:1.5em;font-weight:700;color:#1565c0">—</div>
+          <div style="font-size:0.7em;color:#666;margin-top:6px" title="Of all relevant documents, how many were found in top-k">How complete are the results (less missed)</div>
+        </div>
+        <div style="flex:1;min-width:140px;background:#f3e5f5;padding:14px;border-radius:8px;text-align:center">
+          <div style="font-size:0.8em;color:#7b1fa2;margin-bottom:4px">MRR</div>
+          <div id="eval-mrr" style="font-size:1.5em;font-weight:700;color:#7b1fa2">—</div>
+          <div style="font-size:0.7em;color:#666;margin-top:6px" title="1/position of the first relevant result (1.0 = first result is relevant)">How fast the best result appears</div>
+        </div>
+      </div>
+      <div style="margin-bottom:16px;padding:14px 16px;background:#fafafa;border-radius:8px;border:1px solid #e8e8e8">
+        <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="this.parentElement.querySelector('.guide-body').style.display=this.parentElement.querySelector('.guide-body').style.display==='none'?'block':'none'; this.querySelector('.chevron').textContent=this.parentElement.querySelector('.guide-body').style.display==='none'?'\u25b6':'\u25bc'">
+          <span style="font-size:0.9em;font-weight:600;color:#555">How to Read These Results</span>
+          <span class="chevron" style="color:#999;font-size:0.8em">\u25bc</span>
+        </div>
+        <div class="guide-body" style="margin-top:12px">
+          <table style="width:100%;border-collapse:collapse;font-size:0.85em">
+            <thead><tr style="border-bottom:2px solid #e0e0e0">
+              <th style="text-align:left;padding:8px;color:#555">What you see</th>
+              <th style="text-align:left;padding:8px;color:#555">What it means</th>
+            </tr></thead>
+            <tbody>
+              <tr style="border-bottom:1px solid #f0f0f0">
+                <td style="padding:8px"><strong>k=1, P=1.0</strong></td>
+                <td style="padding:8px;color:#444">RAG search is <strong>stable</strong> \u2014 the top result is always relevant</td>
+              </tr>
+              <tr style="border-bottom:1px solid #f0f0f0">
+                <td style="padding:8px"><strong>k=5, P&lt;1.0</strong></td>
+                <td style="padding:8px;color:#444">Lower-ranked results include <strong>irrelevant content</strong> (noise increases with k)</td>
+              </tr>
+              <tr style="border-bottom:1px solid #f0f0f0">
+                <td style="padding:8px"><strong>Recall goes up with k</strong></td>
+                <td style="padding:8px;color:#444">Relevant content is <strong>spread across rankings</strong> \u2014 need more results to find everything</td>
+              </tr>
+              <tr style="border-bottom:1px solid #f0f0f0">
+                <td style="padding:8px"><strong>MRR \u2248 1.0</strong></td>
+                <td style="padding:8px;color:#444">The <strong>best result always comes first</strong> \u2014 great ranking quality</td>
+              </tr>
+              <tr>
+                <td style="padding:8px"><strong>Query row is <span style="color:#c62828">red</span></strong></td>
+                <td style="padding:8px;color:#444">That query <strong>found no relevant results</strong> \u2014 check if the content is indexed</td>
+              </tr>
+            </tbody>
+          </table>
+          <div style="margin-top:10px;padding:10px 12px;background:#fff3e0;border-radius:6px;font-size:0.82em;color:#e65100;border:1px solid #ffcc80">
+            <strong>Note:</strong> The eval dataset was auto-generated by the Seed command \u2014 it uses RAG\u2019s own search results as \u201ccorrect answers.\u201d This measures <strong>result stability</strong>, not true accuracy. For real accuracy testing, manually review and edit the relevant_ids in the eval dataset.
+          </div>
+        </div>
+      </div>
+      <div id="eval-per-query" style="max-height:400px;overflow-y:auto"></div>
+    </div>
+
+    <div style="background:white;padding:16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h3 style="font-size:0.95em;color:#555;margin:0">Sample Data (first 50 chunks)</h3>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="text" id="eval-view-filter" placeholder="Filter by text or title..."
+                 style="padding:6px 12px;border:1px solid #ddd;border-radius:4px;font-size:0.9em;width:200px">
+          <select id="eval-view-source" style="padding:6px 10px;border:1px solid #ddd;border-radius:4px;font-size:0.9em">
+            <option value="">All Sources</option>
+          </select>
+          <button onclick="loadEvalView()" style="padding:6px 16px;background:#4a90d9;color:white;border:none;border-radius:4px;font-size:0.9em;cursor:pointer">Refresh</button>
+        </div>
+      </div>
+      <div id="eval-view-table" style="max-height:500px;overflow-y:auto"></div>
+    </div>
+  </div>
+
 <script>
 function toggleFilters() {
   document.getElementById('filters').classList.toggle('open');
@@ -280,7 +400,13 @@ async function doSearch() {
       const stages = (p.stages || []).map(s => `${s.name}: ${s.count} hits (${s.ms}ms)`).join(' &#8594; ');
       let rewriteHtml = '';
       if (p.rewritten_query) {
-        rewriteHtml = `<div style="margin-bottom:4px"><b>Query Rewrite:</b> <span style="color:#888;text-decoration:line-through">${escHtml(p.original_query)}</span> &#8594; <span style="color:#1a73e8;font-weight:500">${escHtml(p.rewritten_query)}</span></div>`;
+        let aliasHtml = '';
+        if (p.aliases && p.aliases.length > 0) {
+          aliasHtml = '<div style="margin-bottom:2px"><b>Aliases:</b> ' +
+            p.aliases.map(a => `<span style="display:inline-block;padding:1px 6px;margin:1px 2px;background:#e3f2fd;border-radius:4px;font-family:monospace;font-size:0.9em;color:#1565c0${a.fuzzy ? ';border:1px dashed #90caf9' : ''}">${escHtml(a.original)} &#8594; ${escHtml(a.expanded)}</span>`).join(' ') +
+            '</div>';
+        }
+        rewriteHtml = `<div style="margin-bottom:4px">${aliasHtml}<b>Query Rewrite:</b> <span style="color:#888;text-decoration:line-through">${escHtml(p.original_query)}</span> &#8594; <span style="color:#1a73e8;font-weight:500">${escHtml(p.rewritten_query)}</span></div>`;
       }
       pipeHtml = `<div style="margin-bottom:10px;padding:8px 12px;background:#eef6ff;border:1px solid #c8ddf0;border-radius:6px;font-size:0.82em;color:#456">
         ${rewriteHtml}
@@ -409,13 +535,15 @@ function showTab(tab) {
   document.getElementById('search-tab').style.display = tab === 'search' ? 'block' : 'none';
   document.getElementById('library-tab').style.display = tab === 'library' ? 'block' : 'none';
   document.getElementById('analysis-tab').style.display = tab === 'analysis' ? 'block' : 'none';
-  ['search','library','analysis'].forEach(function(t) {
+  document.getElementById('eval-tab').style.display = tab === 'eval' ? 'block' : 'none';
+  ['search','library','analysis','eval'].forEach(function(t) {
     var btn = document.getElementById('tab-' + t);
     btn.style.background = t === tab ? '#4a90d9' : 'white';
     btn.style.color = t === tab ? 'white' : '#4a90d9';
   });
   if (tab === 'library') loadLibrary();
   if (tab === 'analysis') { loadAnalysis(); loadExplorer(); }
+  if (tab === 'eval') loadEvalStats();
 }
 
 function loadAnalysis() {}
@@ -793,6 +921,181 @@ async function loadExplorer() {
     totalEl.textContent = 'Error loading explorer: ' + err.message;
   }
 }
+
+var _evalStatsLoaded = false;
+async function loadEvalStats() {
+  if (_evalStatsLoaded) return;
+  try {
+    const resp = await fetch('/api/eval/stats');
+    const data = await resp.json();
+    document.getElementById('eval-total').textContent = data.total_chunks.toLocaleString();
+    document.getElementById('eval-queries').textContent = data.eval_queries;
+    document.getElementById('eval-date-range').textContent = data.date_range || '—';
+
+    const barColors = ['#4a90d9','#2e7d32','#7b1fa2','#e65100','#c62828','#1565c0','#00838f','#4527a0'];
+    const srcEl = document.getElementById('eval-sources');
+    const srcEntries = Object.entries(data.by_source).sort((a,b) => b[1] - a[1]).slice(0, 12);
+    const maxSrc = srcEntries[0] ? srcEntries[0][1] : 1;
+    srcEl.innerHTML = srcEntries.map((e, i) => {
+      const pct = Math.round(e[1] / data.total_chunks * 100);
+      const w = Math.max(Math.round(e[1] / maxSrc * 100), 2);
+      return '<div style="margin-bottom:6px"><div style="display:flex;justify-content:space-between;font-size:0.85em;margin-bottom:2px"><span>' + escHtml(e[0]) + '</span><span style="color:#666">' + e[1] + ' (' + pct + '%)</span></div><div style="height:6px;background:#eee;border-radius:3px;overflow:hidden"><div style="height:100%;width:' + w + '%;background:' + barColors[i % barColors.length] + ';border-radius:3px"></div></div></div>';
+    }).join('');
+
+    const typeEl = document.getElementById('eval-types');
+    const typeEntries = Object.entries(data.by_type).sort((a,b) => b[1] - a[1]);
+    const maxType = typeEntries[0] ? typeEntries[0][1] : 1;
+    typeEl.innerHTML = typeEntries.map((e, i) => {
+      const pct = Math.round(e[1] / data.total_chunks * 100);
+      const w = Math.max(Math.round(e[1] / maxType * 100), 2);
+      return '<div style="margin-bottom:6px"><div style="display:flex;justify-content:space-between;font-size:0.85em;margin-bottom:2px"><span>' + escHtml(e[0]) + '</span><span style="color:#666">' + e[1] + ' (' + pct + '%)</span></div><div style="height:6px;background:#eee;border-radius:3px;overflow:hidden"><div style="height:100%;width:' + w + '%;background:' + barColors[(i+3) % barColors.length] + ';border-radius:3px"></div></div></div>';
+    }).join('');
+
+    var sel = document.getElementById('eval-view-source');
+    srcEntries.forEach(function(e) {
+      var o = document.createElement('option');
+      o.value = e[0]; o.textContent = e[0] + ' (' + e[1] + ')';
+      sel.appendChild(o);
+    });
+
+    if (data.last_eval) {
+      showEvalResults(data.last_eval);
+    }
+
+    loadEvalView();
+    _evalStatsLoaded = true;
+  } catch (err) {
+    document.getElementById('eval-total').textContent = 'Error: ' + err.message;
+  }
+}
+
+function showEvalResults(evalData) {
+  var panel = document.getElementById('eval-results-panel');
+  panel.style.display = 'block';
+  var m = evalData.metrics || {};
+  var k = evalData.k || 5;
+  document.getElementById('eval-precision').textContent = (m['precision@' + k] !== undefined) ? m['precision@' + k].toFixed(3) : '—';
+  document.getElementById('eval-recall').textContent = (m['recall@' + k] !== undefined) ? m['recall@' + k].toFixed(3) : '—';
+  document.getElementById('eval-mrr').textContent = (m.mrr !== undefined) ? m.mrr.toFixed(3) : '—';
+
+  var pq = evalData.per_query || [];
+  if (pq.length > 0) {
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:0.85em"><thead><tr style="border-bottom:2px solid #e0e0e0"><th style="text-align:left;padding:6px 8px">Query</th><th style="text-align:left;padding:6px 8px">Category</th><th style="text-align:right;padding:6px 8px">P</th><th style="text-align:right;padding:6px 8px">R</th><th style="text-align:right;padding:6px 8px">MRR</th></tr></thead><tbody>';
+    pq.forEach(function(q) {
+      var color = q.recall > 0 ? '#2e7d32' : '#c62828';
+      html += '<tr style="border-bottom:1px solid #f0f0f0"><td style="padding:6px 8px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:' + color + '">' + escHtml(q.query.substring(0, 60)) + '</td>';
+      html += '<td style="padding:6px 8px;color:#666">' + escHtml(q.category || '') + '</td>';
+      html += '<td style="text-align:right;padding:6px 8px">' + q.precision.toFixed(2) + '</td>';
+      html += '<td style="text-align:right;padding:6px 8px">' + q.recall.toFixed(2) + '</td>';
+      html += '<td style="text-align:right;padding:6px 8px">' + q.mrr.toFixed(2) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    document.getElementById('eval-per-query').innerHTML = html;
+  }
+}
+
+async function evalSeed() {
+  var btn = document.getElementById('btn-seed');
+  var st = document.getElementById('eval-action-status');
+  btn.disabled = true; btn.style.opacity = '0.6';
+  st.textContent = 'Seeding eval dataset...';
+  try {
+    const resp = await fetch('/api/eval/seed', {method: 'POST'});
+    const data = await resp.json();
+    if (data.job_id) {
+      pollEvalJob(data.job_id, 'seed', btn, st);
+    } else {
+      st.textContent = data.error || 'Seed failed';
+      btn.disabled = false; btn.style.opacity = '1';
+    }
+  } catch (err) {
+    st.textContent = 'Error: ' + err.message;
+    btn.disabled = false; btn.style.opacity = '1';
+  }
+}
+
+async function evalRun() {
+  var btn = document.getElementById('btn-eval-run');
+  var st = document.getElementById('eval-action-status');
+  var k = document.getElementById('eval-k').value;
+  btn.disabled = true; btn.style.opacity = '0.6';
+  st.textContent = 'Running evaluation (k=' + k + ')...';
+  try {
+    const resp = await fetch('/api/eval/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({k: parseInt(k)})
+    });
+    const data = await resp.json();
+    if (data.job_id) {
+      pollEvalJob(data.job_id, 'eval', btn, st);
+    } else {
+      st.textContent = data.error || 'Eval failed';
+      btn.disabled = false; btn.style.opacity = '1';
+    }
+  } catch (err) {
+    st.textContent = 'Error: ' + err.message;
+    btn.disabled = false; btn.style.opacity = '1';
+  }
+}
+
+function pollEvalJob(jobId, kind, btn, statusEl) {
+  var interval = setInterval(async function() {
+    try {
+      const resp = await fetch('/api/eval/job/' + jobId);
+      const data = await resp.json();
+      if (data.status === 'done') {
+        clearInterval(interval);
+        statusEl.textContent = data.message || 'Done';
+        btn.disabled = false; btn.style.opacity = '1';
+        if (kind === 'eval' && data.report) {
+          showEvalResults(data.report);
+        }
+        _evalStatsLoaded = false;
+        loadEvalStats();
+      } else if (data.status === 'error') {
+        clearInterval(interval);
+        statusEl.textContent = 'Error: ' + (data.message || 'Unknown error');
+        btn.disabled = false; btn.style.opacity = '1';
+      } else {
+        statusEl.textContent = data.message || 'Running...';
+      }
+    } catch (err) {
+      clearInterval(interval);
+      statusEl.textContent = 'Poll error: ' + err.message;
+      btn.disabled = false; btn.style.opacity = '1';
+    }
+  }, 2000);
+}
+
+async function loadEvalView() {
+  var filter = (document.getElementById('eval-view-filter').value || '').trim();
+  var source = document.getElementById('eval-view-source').value;
+  var params = new URLSearchParams({limit: '50'});
+  if (filter) params.set('query', filter);
+  if (source) params.set('source', source);
+  try {
+    const resp = await fetch('/api/eval/view?' + params);
+    const data = await resp.json();
+    var chunks = data.chunks || [];
+    var html = '<table style="width:100%;border-collapse:collapse;font-size:0.85em"><thead><tr style="border-bottom:2px solid #e0e0e0"><th style="text-align:left;padding:6px 8px">#</th><th style="text-align:left;padding:6px 8px">Title</th><th style="text-align:left;padding:6px 8px">Source</th><th style="text-align:left;padding:6px 8px">Type</th><th style="text-align:left;padding:6px 8px">Date</th><th style="text-align:left;padding:6px 8px">Preview</th></tr></thead><tbody>';
+    chunks.forEach(function(c, i) {
+      html += '<tr style="border-bottom:1px solid #f0f0f0">';
+      html += '<td style="padding:6px 8px;color:#999">' + (i+1) + '</td>';
+      html += '<td style="padding:6px 8px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml((c.title || '').substring(0, 50)) + '</td>';
+      html += '<td style="padding:6px 8px;color:#666;font-size:0.9em">' + escHtml(c.source || '') + '</td>';
+      html += '<td style="padding:6px 8px"><span style="display:inline-block;padding:1px 6px;border-radius:8px;background:#e3f2fd;color:#1565c0;font-size:0.8em">' + escHtml(c.item_type || '') + '</span></td>';
+      html += '<td style="padding:6px 8px;color:#666;font-size:0.9em;white-space:nowrap">' + escHtml(c.date || '') + '</td>';
+      html += '<td style="padding:6px 8px;color:#888;font-size:0.85em;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + escHtml((c.text || '').substring(0, 100)) + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    if (chunks.length === 0) html = '<div style="padding:20px;text-align:center;color:#999">No chunks found</div>';
+    document.getElementById('eval-view-table').innerHTML = html;
+  } catch (err) {
+    document.getElementById('eval-view-table').innerHTML = '<div style="color:#c62828">Error: ' + err.message + '</div>';
+  }
+}
 </script>
 </body>
 </html>"""
@@ -860,41 +1163,12 @@ def api_search():
     original_query = query
     rewritten_query = None
 
-    vague_signals = ["that thing", "the stuff", "what's", "something about",
-                     "you know", "the other", "last time", "earlier", "before"]
-    q_lower = query.lower()
-    should_rewrite = len(query.split()) < 5 or any(v in q_lower for v in vague_signals)
-
-    if should_rewrite:
-        try:
-            import requests as _rq
-            rw_resp = _rq.post(
-                "http://localhost:11434/api/chat",
-                json={
-                    "model": "qwen3:1.7b",
-                    "messages": [
-                        {"role": "user", "content": (
-                            "Rewrite this vague search query into a clear, specific search phrase. "
-                            "Reply with ONLY the improved query, nothing else.\n\n"
-                            f"Original: {query}\nImproved:"
-                        )},
-                    ],
-                    "stream": False,
-                    "options": {"num_predict": 30, "num_ctx": 128},
-                    "think": False,
-                },
-                timeout=10,
-            )
-            if rw_resp.ok:
-                rw_text = rw_resp.json().get("message", {}).get("content", "").strip().strip('"').strip("'")
-                rw_text = rw_text.split("\n")[0].strip()[:500]
-                if (rw_text and len(rw_text) > 5
-                        and rw_text.lower() != query.lower()
-                        and "/" not in rw_text):
-                    rewritten_query = rw_text
-                    query = rw_text
-        except Exception:
-            pass
+    from query_rewrite import smart_rewrite
+    rewrite_result = smart_rewrite(query)
+    effective = rewrite_result.effective_query
+    if effective != query:
+        rewritten_query = effective
+        query = effective
 
     model = _get_model()
     client = _get_client()
@@ -931,10 +1205,15 @@ def api_search():
     query_filter = Filter(must=conditions) if conditions else None
 
     import time as _time
+    aliases_info = [
+        {"original": a.original, "expanded": a.expanded, "type": a.alias_type, "fuzzy": a.fuzzy}
+        for a in rewrite_result.aliases
+    ] if rewrite_result.aliases else []
     pipeline_info = {"stages": [], "vector_count": 0, "bm25_count": 0,
                      "reranked": False, "feedback_applied": False,
                      "original_query": original_query,
-                     "rewritten_query": rewritten_query}
+                     "rewritten_query": rewritten_query,
+                     "aliases": aliases_info}
     t0 = _time.time()
 
     vector_limit = max(top_k * 3, 20)
@@ -1673,6 +1952,240 @@ def api_project_config():
         return jsonify({"config": cfg, "path": PROJECT_DIRS_PATH})
     except Exception as e:
         return jsonify({"error": str(e), "path": PROJECT_DIRS_PATH})
+
+
+# ---------------------------------------------------------------------------
+# RAG Evaluation API endpoints
+# ---------------------------------------------------------------------------
+
+_eval_jobs: dict[str, dict] = {}
+_eval_jobs_lock = threading.Lock()
+
+EVAL_SAVE_PATH = os.path.join(REPORTS_ROOT, "eval-dataset")
+EVAL_REPORT_PATH = os.path.join(REPORTS_ROOT, "eval-report.json")
+
+
+@app.route("/api/eval/stats")
+def api_eval_stats():
+    """Return RAG store stats plus eval dataset info for the eval tab."""
+    client = _get_client()
+    by_source: dict[str, int] = {}
+    by_type: dict[str, int] = {}
+    total = 0
+    dates: list[str] = []
+    offset = None
+    while True:
+        result = client.scroll(
+            collection_name=COLLECTION, limit=500, offset=offset,
+            with_payload=True, with_vectors=False,
+        )
+        points, next_offset = result
+        for p in points:
+            total += 1
+            pl = p.payload or {}
+            src = str(pl.get("source") or "(unknown)")
+            it = str(pl.get("item_type") or "(unknown)")
+            dt = str(pl.get("date") or "")
+            by_source[src] = by_source.get(src, 0) + 1
+            by_type[it] = by_type.get(it, 0) + 1
+            if dt:
+                dates.append(dt[:10])
+        if next_offset is None:
+            break
+        offset = next_offset
+
+    date_range = ""
+    if dates:
+        date_range = f"{min(dates)} — {max(dates)}"
+
+    eval_queries = 0
+    try:
+        if os.path.isdir(EVAL_SAVE_PATH):
+            from datasets import Dataset as _HFDataset
+            ds = _HFDataset.load_from_disk(EVAL_SAVE_PATH)
+            eval_queries = len(ds)
+    except Exception:
+        pass
+
+    last_eval = None
+    if os.path.isfile(EVAL_REPORT_PATH):
+        try:
+            with open(EVAL_REPORT_PATH, "r", encoding="utf-8") as f:
+                last_eval = json.load(f)
+        except Exception:
+            pass
+
+    return jsonify({
+        "total_chunks": total,
+        "by_source": by_source,
+        "by_type": by_type,
+        "date_range": date_range,
+        "eval_queries": eval_queries,
+        "last_eval": last_eval,
+    })
+
+
+@app.route("/api/eval/view")
+def api_eval_view():
+    """Return a sample of chunks for browsing in the eval tab."""
+    source_filter = request.args.get("source", "").strip()
+    query_filter = request.args.get("query", "").strip().lower()
+    try:
+        limit = int(request.args.get("limit", "50"))
+    except (TypeError, ValueError):
+        limit = 50
+
+    client = _get_client()
+    chunks = []
+    offset = None
+
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+    conditions = []
+    if source_filter:
+        conditions.append(FieldCondition(key="source", match=MatchValue(value=source_filter)))
+    q_filter = Filter(must=conditions) if conditions else None
+
+    while len(chunks) < limit:
+        result = client.scroll(
+            collection_name=COLLECTION, limit=200, offset=offset,
+            with_payload=True, with_vectors=False,
+            scroll_filter=q_filter,
+        )
+        points, next_offset = result
+        for p in points:
+            if len(chunks) >= limit:
+                break
+            pl = p.payload or {}
+            if query_filter:
+                text = (str(pl.get("text") or "") + " " + str(pl.get("title") or "")).lower()
+                if query_filter not in text:
+                    continue
+            chunks.append({
+                "id": str(p.id),
+                "title": str(pl.get("title") or ""),
+                "source": str(pl.get("source") or ""),
+                "item_type": str(pl.get("item_type") or ""),
+                "date": str(pl.get("date") or ""),
+                "text": str(pl.get("text") or "")[:200],
+            })
+        if next_offset is None:
+            break
+        offset = next_offset
+
+    return jsonify({"chunks": chunks, "count": len(chunks)})
+
+
+def _run_eval_seed(job_id: str) -> None:
+    """Background: seed evaluation dataset."""
+    status = "error"
+    message = ""
+    try:
+        sys.path.insert(0, SCRIPT_DIR)
+        from rag_engine import get_qdrant, vector_search
+        get_qdrant()
+
+        seed_path = os.path.join(
+            os.path.dirname(os.path.dirname(SCRIPT_DIR)),
+            "data", "eval", "eval-seed.json",
+        )
+        if not os.path.isfile(seed_path):
+            status = "error"
+            message = f"Seed file not found: {seed_path}"
+        else:
+            from eval_dataset import create_eval_dataset, add_eval_example, EvalExample
+            with open(seed_path, "r", encoding="utf-8") as f:
+                seeds = json.load(f)
+            ds = create_eval_dataset()
+            for seed in seeds:
+                results = vector_search(seed["query"], top_k=3)
+                candidate_ids = [r["id"] for r in results] if results else []
+                ids = seed["relevant_ids"] if seed.get("relevant_ids") else candidate_ids
+                ds = add_eval_example(ds, EvalExample(
+                    query=seed["query"],
+                    relevant_ids=ids,
+                    answer=seed.get("answer", ""),
+                    category=seed.get("category", ""),
+                    difficulty=seed.get("difficulty", "medium"),
+                    notes=seed.get("notes", ""),
+                ))
+            ds.save_to_disk(EVAL_SAVE_PATH)
+            status = "done"
+            message = f"Seeded {len(ds)} eval queries from {len(seeds)} seeds"
+    except Exception as e:
+        message = f"Error: {e}"
+    with _eval_jobs_lock:
+        j = _eval_jobs.get(job_id)
+        if j:
+            j["status"] = status
+            j["message"] = message
+
+
+def _run_eval(job_id: str, k: int = 5) -> None:
+    """Background: run evaluation and save report."""
+    status = "error"
+    message = ""
+    report = None
+    try:
+        if not os.path.isdir(EVAL_SAVE_PATH):
+            status = "error"
+            message = "No eval dataset. Run 'Seed' first."
+        else:
+            from datasets import Dataset as _HFDataset
+            from eval_runner import run_evaluation
+            from rag_engine import get_qdrant, vector_search
+
+            get_qdrant()
+            eval_ds = _HFDataset.load_from_disk(EVAL_SAVE_PATH)
+
+            def search_fn(query, top_k=5):
+                return vector_search(query, top_k=top_k)
+
+            eval_report = run_evaluation(eval_ds, search_fn, k=k)
+            report = eval_report.to_dict()
+            eval_report.save(EVAL_REPORT_PATH)
+            pk = report["metrics"].get(f"precision@{k}", 0)
+            rk = report["metrics"].get(f"recall@{k}", 0)
+            m = report["metrics"].get("mrr", 0)
+            status = "done"
+            message = f"Evaluated {len(eval_ds)} queries: P@{k}={pk:.3f}, R@{k}={rk:.3f}, MRR={m:.3f}"
+    except Exception as e:
+        message = f"Error: {e}"
+    with _eval_jobs_lock:
+        j = _eval_jobs.get(job_id)
+        if j:
+            j["status"] = status
+            j["message"] = message
+            if report:
+                j["report"] = report
+
+
+@app.route("/api/eval/seed", methods=["POST"])
+def api_eval_seed():
+    job_id = str(uuid.uuid4())[:8]
+    with _eval_jobs_lock:
+        _eval_jobs[job_id] = {"status": "running", "message": "Seeding..."}
+    threading.Thread(target=_run_eval_seed, args=(job_id,), daemon=True).start()
+    return jsonify({"job_id": job_id, "status": "started"})
+
+
+@app.route("/api/eval/run", methods=["POST"])
+def api_eval_run():
+    data = request.get_json(silent=True) or {}
+    k = data.get("k", 5)
+    job_id = str(uuid.uuid4())[:8]
+    with _eval_jobs_lock:
+        _eval_jobs[job_id] = {"status": "running", "message": f"Running eval (k={k})..."}
+    threading.Thread(target=_run_eval, args=(job_id, k), daemon=True).start()
+    return jsonify({"job_id": job_id, "status": "started"})
+
+
+@app.route("/api/eval/job/<job_id>")
+def api_eval_job_status(job_id: str):
+    with _eval_jobs_lock:
+        j = _eval_jobs.get(job_id)
+    if not j:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify(j)
 
 
 if __name__ == "__main__":

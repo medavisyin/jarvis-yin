@@ -2,6 +2,9 @@
 title Restarting Jarvis Servers...
 set SCRIPT_DIR=%~dp0
 
+:: Set proxy for news fetchers (BBC, Reuters, DW, Guardian need SOCKS proxy)
+if not defined BRIEFING_PROXY set BRIEFING_PROXY=socks5://localhost:10808
+
 :: Resolve the real Python executable path (handles Windows Store alias)
 set PYTHON=
 for /f "delims=" %%P in ('python -c "import sys; print(sys.executable)" 2^>nul') do set "PYTHON=%%P"

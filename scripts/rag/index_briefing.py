@@ -116,6 +116,67 @@ def _chunk_text(text: str, max_chars: int = 500, overlap: int = 100) -> List[str
     return chunks if chunks else [text[:max_chars]]
 
 
+def _extract_json_items(date_folder: str) -> List[dict]:
+    """Extract news items from briefing-data JSON when PDF/raw files are absent.
+
+    Prefers ``briefing-data-filtered.json``; falls back to ``briefing-data.json``.
+    Each news item becomes one chunk with its title, summary, source, and URL.
+    """
+    data_file = os.path.join(date_folder, "briefing-data-filtered.json")
+    if not os.path.isfile(data_file):
+        data_file = os.path.join(date_folder, "briefing-data.json")
+    if not os.path.isfile(data_file):
+        return []
+
+    try:
+        with open(data_file, "r", encoding="utf-8") as f:
+            bdata = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+
+    folder_date = os.path.basename(date_folder)
+    items: List[dict] = []
+
+    for src_block in bdata.get("per_source_data", []):
+        src_name = src_block.get("source_name") or src_block.get("name") or "Unknown"
+        for it in src_block.get("items", []):
+            title = (it.get("title") or "").strip()
+            if not title:
+                continue
+
+            summary = (it.get("summary") or it.get("description") or "").strip()
+            url = (it.get("url") or it.get("link") or "").strip()
+            commentary = (it.get("commentary") or "").strip()
+            prediction = (it.get("prediction") or "").strip()
+            points = it.get("points") or []
+
+            text_parts = [title]
+            if summary:
+                text_parts.append(summary)
+            if points:
+                text_parts.append(" | ".join(str(p) for p in points[:10]))
+            if commentary:
+                text_parts.append(f"Commentary: {commentary}")
+            if prediction:
+                text_parts.append(f"Prediction: {prediction}")
+            text = "\n\n".join(text_parts)
+
+            for chunk in _chunk_text(text):
+                items.append({
+                    "text": chunk,
+                    "metadata": {
+                        "date": folder_date,
+                        "source": src_name,
+                        "title": title,
+                        "item_type": "news_item",
+                        "difficulty": "intermediate",
+                        "url": url,
+                    },
+                })
+
+    return items
+
+
 def _extract_pdf_items(date_folder: str) -> List[dict]:
     pdf_path = os.path.join(date_folder, "ai-briefing.pdf")
     if not os.path.exists(pdf_path):
@@ -236,6 +297,8 @@ def index_date_folder(date_folder: str, client, model):
     all_items.extend(_extract_pdf_items(date_folder))
     all_items.extend(_extract_raw_files(date_folder))
     all_items.extend(_extract_learning_guide(date_folder))
+    if not all_items:
+        all_items.extend(_extract_json_items(date_folder))
 
     if not all_items:
         print(f"  No content found in {date_folder}")

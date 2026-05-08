@@ -237,7 +237,6 @@ The agent toolbar is organized into five categories:
 **Personal**:
 | Button | Action |
 |--------|--------|
-| Donor Analysis | Cryos donor scoring and AI reasoning |
 | Daily Fetch | Full pipeline: AI sources + world news + Chinese news + commits + Jira |
 
 **Learning**:
@@ -398,7 +397,6 @@ jarvis/
     ├── tools/                        # Standalone utility scripts
     │   ├── atlassian-report.ps1      # Jira + Confluence daily report generator
     │   ├── commit-report.ps1         # Multi-repo git commit report
-    │   ├── parse-cryos-donors.py     # Cryos donor parser
     │   └── generate_learning_guide.py # Generates difficulty-rated reading list
     ├── fetchers/                     # Data source scrapers
     │   ├── ai/                       # AI industry sources (10 scripts, 9 used by pipeline)

@@ -71,7 +71,8 @@ last-updated: 2026-05-07
 │ ① Daily Fetch Pipeline (daily-fetch-impl.md)                            │
 │    Toolbar "Daily Fetch" → background thread                            │
 │    → fetch_sources → topic_dedup → commit_report → jira_daily           │
-│    → wiki_fetch → ai_audio → world_audio → china_audio                  │
+│    → wiki_fetch → refetch_world → world_news_translate                  │
+│    → ai_audio → world_audio → china_audio                               │
 │    → daily summary + audio MP3s                                         │
 │    UI: "Recreate" (audio only) / "Refetch & Recreate" (full pipeline)   │
 ├─────────────────────────────────────────────────────────────────────────┤
@@ -144,8 +145,9 @@ last-updated: 2026-05-07
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │ ① AI Learning Mode (ai-learning-impl.md)                                │
-│    Sidebar "AI Learning" → persistent session → roadmap context         │
-│    → SYSTEM_PROMPT_AI_LEARNING → Ollama tutor + DuckDuckGo refs         │
+│    Sidebar "AI Learning" → persistent session → 8-domain roadmap        │
+│    → notes/ai_learning/01-08.md → SYSTEM_PROMPT_AI_LEARNING → Ollama    │
+│    + daily news auto-ingested to Domain 8 (08-ai-news-digest.md)        │
 ├─────────────────────────────────────────────────────────────────────────┤
 │ ② Tech English (tech-english-impl.md)                                   │
 │    Sidebar "Tech English" → AI news titles → intent classify            │
@@ -195,10 +197,6 @@ last-updated: 2026-05-07
 │ ④ Market Sentiment & Risk (market-sentiment-risk-impl.md)               │
 │    Fear/Greed index + VIX + black swan scan                             │
 │    → China A-share flows + national team monitor → risk signals         │
-├─────────────────────────────────────────────────────────────────────────┤
-│ ⑤ Donor Analysis (donor-analysis-impl.md)                               │
-│    CSV upload → clinical scoring algorithm → LLM reasoning narrative    │
-│    → Top-10 ranking → PDF report                                        │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -208,7 +206,6 @@ last-updated: 2026-05-07
 | 2 | Technical & Fundamental Analysis | [technical-fundamental-impl.md](./data-analysis/technical-fundamental-impl.md) |
 | 3 | Market Scanner | [market-scanner-impl.md](./data-analysis/market-scanner-impl.md) |
 | 4 | Market Sentiment & Risk | [market-sentiment-risk-impl.md](./data-analysis/market-sentiment-risk-impl.md) |
-| 5 | Donor Analysis | [donor-analysis-impl.md](./data-analysis/donor-analysis-impl.md) |
 
 ---
 

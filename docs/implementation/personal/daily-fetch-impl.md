@@ -5,7 +5,7 @@ tags:
   - daily-fetch
 category: personal
 status: current
-last-updated: 2026-05-07b
+last-updated: 2026-05-08
 ---
 
 # Daily Fetch Pipeline
@@ -51,16 +51,20 @@ flowchart TD
 1. **Start job**: `api_daily_fetch` allocates `job_id`, initializes `_daily_fetch_jobs[job_id]`, starts `_run_daily_fetch` in a thread (`4930–4937:scripts/rag/agent.py`).
 2. **Fetch phase**: `python pipeline/run-all-sources.py --output-dir <REPORTS_ROOT/YYYY-MM-DD>`. Individual fetchers use `proxy_strategy.py` for per-domain direct vs. SOCKS5 proxy selection with persistent caching (`scripts/fetchers/proxy_strategy.py`). Per-script timeout: 180s. That script runs preflight, parallel AI fetches, merge, learning guide, optional briefing RAG + Confluence indexing, then world news under `world-news/` (`89–257:scripts/pipeline/run-all-sources.py`).
 3. **Topic dedup**: If `briefing-data.json` exists, `filter_topics.py` writes `briefing-data-filtered.json` in aggressive mode (`4429–4441`).
-4. **Commit report**: PowerShell `tools/commit-report.ps1` or `tool_commit_summary` fallback (`4446–4467`).
+4. **Commit report**: PowerShell `tools/commit-report.ps1` or `tool_commit_summary` fallback; timeout 600s (increased from 300s to accommodate slow `git fetch --all` over VPN).
 5. **Jira daily**: PowerShell script from `JIRA_SCRIPT`; may read back `atlassian-daily-report-*.md` (`4470–4489`).
 6. **Wiki fetch**: Sequential `index_confluence_user.py` per hard-coded team user with `--date-from yesterday --report-json`; optional Ollama summaries; writes `wiki-fetch-<date>.md` (`4492–4649`).
 7. **Summary**: Reads filtered or raw briefing JSON and `world-news-data.json` for key bullets; concatenates commit/Jira excerpts into `job["daily_summary"]` (`4651–4713`).
-8. **Audio**: Per-source segments from briefing JSON → `_generate_segmented_narrations` (model: `qwen3.5:4b`) → English segments get `_enrich_vocabulary` (2nd LLM pass to add vocabulary annotations) → `_tts_segments_to_mp3` → `ai-briefing.mp3` with `audio_lang_ai`. World/China segments similar. Narration model upgraded from `qwen3:1.7b` to `qwen3.5:4b` for richer content. Merged world news JSON, split by source tag `中国新闻`, drives world/China MP3s with `audio_lang_world` / `audio_lang_china` (`4715–4758`, `4808–4910`). Optional `world_news_merge` recovery merges raw world-news JSONs via `run-world-news.py --no-fetch` or `merge_news()` (`4760–4806`).
-9. **Completion**: `job["status"] = "done"`, `steps` and `files` populated (`4912–4921`). Errors set `status: "error"` (`4923–4926`).
+8. **Refetch world news** (optional, Refetch & Recreate): Runs `run-world-news.py --no-translate` with 900s timeout (fetch + merge only; translation decoupled). Formerly ran full pipeline including translation in one subprocess with 600s timeout — caused timeout failures when slow network fetchers + translation exceeded the limit.
+9. **World news translation** (separate step): Loads `world-news-data.json`, calls `translate_news_to_chinese()` in-process (no subprocess timeout risk). Skips if already translated. This step runs independently so slow fetchers do not consume the translation time budget.
+10. **Audio**: Per-source segments from briefing JSON → `_generate_segmented_narrations` (model: `qwen3.5:4b`) → English segments get `_enrich_vocabulary` (2nd LLM pass to add vocabulary annotations) → `_tts_segments_to_mp3` → `ai-briefing.mp3` with `audio_lang_ai`. World/China segments similar. Narration model upgraded from `qwen3:1.7b` to `qwen3.5:4b` for richer content. Merged world news JSON, split by source tag `中国新闻`, drives world/China MP3s with `audio_lang_world` / `audio_lang_china`. Optional `world_news_merge` recovery merges raw world-news JSONs via `run-world-news.py --no-fetch` or `merge_news()`.
+11. **AI Learning Knowledge**: `_ingest_ai_news_to_learning` extracts today's AI news from `briefing-data.json`, categorizes each item by topic (LLM releases, agents, RAG, safety, infrastructure, products, research), deduplicates by MD5 hash of lowercase title, and appends to `C:\reports\ai\knowledge\notes\ai_learning\08-ai-news-digest.md`. This auto-populates Domain 8 of the AI Learning curriculum.
+12. **Completion**: `job["status"] = "done"`, `steps` and `files` populated. Errors set `status: "error"`.
 
 ### Key Design Decisions
 
-- **Subprocess isolation**: Fetch and merge run in separate Python processes with timeouts (e.g. 600s for `run-all-sources`) so a hung fetcher does not kill the Flask process.
+- **Subprocess isolation**: Fetch and merge run in separate Python processes with timeouts (e.g. 600s for `run-all-sources`, 900s for world news fetch, 600s for commit report) so a hung fetcher does not kill the Flask process.
+- **Decoupled translation**: World news translation runs as a separate in-process step (`world_news_translate`) rather than inside the `refetch_world` subprocess. This prevents timeout failures when slow network fetches (BBC/Reuters/DW/Guardian timing out at 120s each) consume most of the time budget, leaving no room for translation.
 - **Filtered vs raw JSON**: Audio and summaries prefer `briefing-data-filtered.json` when present (`4719–4721`, `4655–4657`).
 - **Segmented narration**: Long briefings are split per source/category to avoid single huge LLM calls; uses `OLLAMA_MODEL_NARRATION` via `_ollama_narration_call` (`4107–4214`, `4047–4073`).
 - **Fault tolerance**: Each step appends to `steps` with exit code and truncated output; failures in one step do not always abort later steps (exceptions are caught per block).
@@ -96,7 +100,7 @@ flowchart TD
 ### Configuration
 
 - Output root: `REPORTS_ROOT` / `today` subdirectory (`4407–4408`).
-- Proxy: Per-domain strategy via `proxy_strategy.py`; default SOCKS5 at `socks5://localhost:10808` from `BRIEFING_PROXY` env or fallback. Cache persisted at `REPORTS_ROOT/.proxy-strategy.json`.
+- Proxy: Per-domain strategy via `proxy_strategy.py`; resolves proxy URL from `BRIEFING_PROXY` env var first, falls back to the stored `proxy_url` in the memory file. Cache persisted at `REPORTS_ROOT/.proxy-strategy.json`. Startup scripts (`bin/jarvis-start.bat`, `bin/jarvis-restart.bat`) default `BRIEFING_PROXY` to `socks5://localhost:10808` if not already set.
 - Audio languages: `_GLOBAL_SETTINGS["audio_lang_ai" | "audio_lang_world" | "audio_lang_china"]` default `"zh"`; `"en"` selects `en-US-AndrewNeural` (`4741–4742`, `4851–4852`, `4886–4887`).
 - Narration model: `RAG_NARRATION_MODEL` default `qwen3.5:4b` (upgraded from `qwen3:1.7b`); English mode uses 2-pass enrichment for vocabulary teaching.
 - `briefing-template.py` / `generate-audio.py`: use `REPORTS_ROOT` from `scripts/config.py`; schema aligned with `merge-sources` output—not called by `_run_daily_fetch`.
@@ -122,6 +126,7 @@ flowchart TD
 ### Short-term
 
 - ~~Make proxy URL configurable~~ — **DONE (2026-05-06)**: Implemented smart per-domain proxy strategy with persistent caching; reads `BRIEFING_PROXY` env.
+- ~~Proxy fallback when env var unset~~ — **DONE (2026-05-08)**: `proxy_strategy.py` now falls back to the stored `proxy_url` from memory when `BRIEFING_PROXY` is not set, preventing silent degradation to direct connection for proxy-dependent domains.
 - Surface `preflight-results.json` and `timing-log.json` in the daily-fetch status JSON for quicker debugging.
 
 ### Medium-term

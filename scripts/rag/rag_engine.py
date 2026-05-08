@@ -200,39 +200,9 @@ def vector_search(query: str, top_k: int = 5, min_score: float = 0.3,
 
 
 # ---------------------------------------------------------------------------
-# Query rewriting
+# Query rewriting (delegated to query_rewrite module)
 # ---------------------------------------------------------------------------
-def should_rewrite_query(query: str) -> bool:
-    vague_signals = ["that thing", "the stuff", "what's", "something about",
-                     "you know", "the other", "last time", "earlier", "before"]
-    q = query.lower()
-    return len(query.split()) < 5 or any(v in q for v in vague_signals)
-
-
-def rewrite_query(user_query: str) -> str:
-    """Use the fast model to rewrite vague queries into searchable terms."""
-    try:
-        import requests as _req
-        resp = _req.post(
-            f"{OLLAMA_HOST}/api/chat",
-            json={
-                "model": OLLAMA_MODEL_FAST,
-                "messages": [
-                    {"role": "system", "content": "Rewrite the search query to be specific. Output ONLY the rewritten query, nothing else."},
-                    {"role": "user", "content": f"Rewrite for a knowledge base containing AI briefings, Java code docs, Confluence wiki, DICOM/FHIR docs:\n\nOriginal: {user_query}\nRewritten:"},
-                ],
-                "stream": False,
-                "think": False,
-                "options": {"num_predict": 50, "num_ctx": 256},
-            },
-            timeout=15,
-        )
-        rewritten = resp.json().get("message", {}).get("content", "").strip().split("\n")[0]
-        if len(rewritten) > 8:
-            return rewritten
-    except Exception:
-        pass
-    return user_query
+from query_rewrite import smart_rewrite as _smart_rewrite, expand_domain_aliases
 
 
 # ---------------------------------------------------------------------------
@@ -332,13 +302,14 @@ def auto_rag_search(user_query: str, q_lower: str) -> tuple[str, list[dict]]:
             seen_titles.add(r["title"])
             all_results.append(r)
 
-    # If results are poor and query looks vague, try rewriting
+    # If results are poor, try smart rewrite (alias expansion + LLM) for retry
     top_score = all_results[0]["score"] if all_results else 0
-    if (not all_results or top_score < 0.35) and should_rewrite_query(user_query):
-        rewritten = rewrite_query(user_query)
-        if rewritten != user_query:
-            rewritten_emb = get_embed_model().encode(rewritten).tolist()
-            retry_results = vector_search(rewritten, top_k=5, min_score=0.2, embedding=rewritten_emb)
+    if not all_results or top_score < 0.35:
+        retry_rewrite = _smart_rewrite(user_query)
+        retry_query = retry_rewrite.effective_query
+        if retry_query != user_query:
+            retry_emb = get_embed_model().encode(retry_query).tolist()
+            retry_results = vector_search(retry_query, top_k=5, min_score=0.2, embedding=retry_emb)
             for r in retry_results:
                 if r["title"] not in seen_titles:
                     seen_titles.add(r["title"])

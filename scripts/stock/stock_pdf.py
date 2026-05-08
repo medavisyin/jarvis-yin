@@ -56,7 +56,7 @@ REPORT_TITLES = {
     "national_team": "国家队监控报告",
 }
 
-# Register Chinese font (STSong-Light CID) — same pattern as donor PDF
+# Register Chinese font (STSong-Light CID)
 def _register_chinese_font() -> str:
     try:
         from reportlab.pdfbase import pdfmetrics

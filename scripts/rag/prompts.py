@@ -72,6 +72,7 @@ The learning curriculum covers 7 domains:
   Domain 5 — Fine-Tuning & Alignment (Advanced)
   Domain 6 — AI Engineering & Production Systems (Advanced)
   Domain 7 — Evaluation, Safety & Responsible AI (Cross-Cutting)
+  Domain 8 — AI Industry & Recent Developments (Auto-Updated from daily news)
 
 You have comprehensive study notes organized by domain and category, synthesized \
 from 5 authoritative sources: "Hands-On Large Language Models" (Alammar & \

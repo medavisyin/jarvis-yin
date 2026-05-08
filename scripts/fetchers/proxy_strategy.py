@@ -87,14 +87,35 @@ def get_remembered(url: str) -> str | None:
     return None
 
 
-def remember(url: str, method: str) -> None:
+def _get_remembered_proxy_url(url: str) -> str:
+    """Return the proxy URL stored in memory for *url*'s domain, or ''."""
+    domain = _domain(url)
+    mem = _load_memory()
+    entry = mem.get(domain)
+    if entry:
+        return entry.get("proxy_url") or ""
+    return ""
+
+
+def _effective_proxy(url: str) -> str:
+    """Resolve the proxy URL to use: env var first, then memory fallback."""
+    if PROXY_URL:
+        return PROXY_URL
+    stored = _get_remembered_proxy_url(url)
+    if stored:
+        _log.info("BRIEFING_PROXY not set; using stored proxy for %s: %s",
+                   _domain(url), stored)
+    return stored
+
+
+def remember(url: str, method: str, proxy_used: str = "") -> None:
     """Persist the winning strategy for a domain."""
     domain = _domain(url)
     mem = _load_memory()
     mem[domain] = {
         "method": method,
         "last_tested": time.time(),
-        "proxy_url": PROXY_URL if method == "proxy" else None,
+        "proxy_url": (proxy_used or PROXY_URL) if method == "proxy" else None,
     }
     _save_memory(mem)
     _log.info("Proxy strategy for %s: %s", domain, method)
@@ -102,19 +123,21 @@ def remember(url: str, method: str) -> None:
 
 # ── Playwright helpers ────────────────────────────────────────────────
 
-def _pw_proxy_arg(method: str) -> dict:
-    if method == "proxy" and PROXY_URL:
-        return {"proxy": {"server": PROXY_URL}}
+def _pw_proxy_arg(method: str, proxy_url: str = "") -> dict:
+    effective = proxy_url or PROXY_URL
+    if method == "proxy" and effective:
+        return {"proxy": {"server": effective}}
     return {}
 
 
 async def _pw_probe(playwright, url: str) -> str:
     """Try direct, then proxy.  Return the winning method."""
+    proxy = _effective_proxy(url)
     methods = ["direct"]
-    if PROXY_URL:
+    if proxy:
         methods.append("proxy")
     for method in methods:
-        proxy_arg = _pw_proxy_arg(method)
+        proxy_arg = _pw_proxy_arg(method, proxy)
         browser = None
         try:
             browser = await playwright.chromium.launch(headless=True, **proxy_arg)
@@ -152,14 +175,15 @@ async def get_proxy_for_playwright(playwright, url: str) -> dict:
         proxy_arg = await get_proxy_for_playwright(p, SOURCE_URL)
         browser = await p.chromium.launch(headless=True, **proxy_arg)
     """
+    proxy = _effective_proxy(url)
     remembered = get_remembered(url)
     if remembered:
         _log.info("Using remembered strategy for %s: %s", _domain(url), remembered)
-        return _pw_proxy_arg(remembered)
+        return _pw_proxy_arg(remembered, proxy)
 
     method = await _pw_probe(playwright, url)
-    remember(url, method)
-    return _pw_proxy_arg(method)
+    remember(url, method, proxy)
+    return _pw_proxy_arg(method, proxy)
 
 
 # ── httpx helpers ─────────────────────────────────────────────────────
@@ -168,14 +192,15 @@ def _httpx_probe(url: str) -> str:
     """Try direct, then proxy.  Return the winning method."""
     import httpx
 
+    proxy = _effective_proxy(url)
     methods = ["direct"]
-    if PROXY_URL:
+    if proxy:
         methods.append("proxy")
     for method in methods:
         try:
             kwargs: dict = {"timeout": 15}
             if method == "proxy":
-                kwargs["proxy"] = PROXY_URL
+                kwargs["proxy"] = proxy
             r = httpx.get(url, **kwargs)
             if r.status_code in (403, 503):
                 _log.info("httpx probe %s via %s: status %d", _domain(url), method, r.status_code)
@@ -196,15 +221,16 @@ def get_proxy_for_httpx(url: str) -> dict:
         proxy_kwarg = get_proxy_for_httpx(rss_url)
         r = httpx.get(rss_url, timeout=15, **proxy_kwarg)
     """
+    proxy = _effective_proxy(url)
     remembered = get_remembered(url)
     if remembered is None:
         remembered = _httpx_probe(url)
-        remember(url, remembered)
+        remember(url, remembered, proxy)
     else:
         _log.info("Using remembered strategy for %s: %s", _domain(url), remembered)
 
-    if remembered == "proxy" and PROXY_URL:
-        return {"proxy": PROXY_URL}
+    if remembered == "proxy" and proxy:
+        return {"proxy": proxy}
     return {}
 
 
@@ -214,8 +240,9 @@ def _requests_probe(url: str) -> str:
     """Try direct, then proxy.  Return the winning method."""
     import requests
 
+    proxy = _effective_proxy(url)
     methods = ["direct"]
-    if PROXY_URL:
+    if proxy:
         methods.append("proxy")
     for method in methods:
         try:
@@ -223,7 +250,7 @@ def _requests_probe(url: str) -> str:
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
             }}
             if method == "proxy":
-                kwargs["proxies"] = {"http": PROXY_URL, "https": PROXY_URL}
+                kwargs["proxies"] = {"http": proxy, "https": proxy}
             r = requests.get(url, **kwargs)
             if r.status_code in (403, 503):
                 _log.info("requests probe %s via %s: status %d", _domain(url), method, r.status_code)
@@ -244,13 +271,14 @@ def get_proxies_for_requests(url: str) -> dict:
         proxies = get_proxies_for_requests(api_url)
         r = requests.get(api_url, proxies=proxies, ...)
     """
+    proxy = _effective_proxy(url)
     remembered = get_remembered(url)
     if remembered is None:
         remembered = _requests_probe(url)
-        remember(url, remembered)
+        remember(url, remembered, proxy)
     else:
         _log.info("Using remembered strategy for %s: %s", _domain(url), remembered)
 
-    if remembered == "proxy" and PROXY_URL:
-        return {"http": PROXY_URL, "https": PROXY_URL}
+    if remembered == "proxy" and proxy:
+        return {"http": proxy, "https": proxy}
     return {}

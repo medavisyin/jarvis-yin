@@ -372,7 +372,7 @@ All six roadmap phases were implemented (2026-04-30). The sections above remain 
 
 - `rag_engine.py`, `tools/` package, `prompts.py`, `learning/` package, `agent_loop.py`, `router.py` extracted from the monolithic agent.
 - `agent.py` reduced from ~11K lines to ~1,559 lines (still materially slimmer than the original baseline; the original ~200-line “thin Flask app” goal was not fully met—the file retains substantial route and orchestration logic).
-- HTTP routes extracted to `routes/` (`stock`, `toolbar`, `ai_news`, `daily_fetch`, `donor`).
+- HTTP routes extracted to `routes/` (`stock`, `toolbar`, `ai_news`, `daily_fetch`).
 - UI template extracted to `templates/index.html`.
 
 ### Phase 2 — Intent classification (DONE)

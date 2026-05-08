@@ -149,7 +149,6 @@ jarvis/                               # Project root (C:\jarvis or wherever inst
     ├── tools/                        # Standalone utility scripts
     │   ├── atlassian-report.ps1      # Jira + Confluence daily report
     │   ├── commit-report.ps1         # Multi-repo git commit report
-    │   ├── parse-cryos-donors.py     # Cryos donor parser
     │   └── generate_learning_guide.py # Reading list from raw articles
     ├── fetchers/                     # Data source scrapers
     │   ├── ai/                       # AI industry sources (10 scripts)
@@ -208,8 +207,8 @@ Jarvis runs **two independent Flask servers**. They do NOT communicate with each
 | **Delete** | Remove documents and their chunks from the RAG store |
 | **Hybrid Search** | BM25 + vector fusion with Reciprocal Rank Fusion (RRF) |
 | **Cross-Encoder Re-Ranking** | Re-ranks top 20 candidates using ms-marco-MiniLM-L-6-v2 (skips re-ranking if the model cannot load) |
-| **Query Rewriting** | LLM rewrites vague queries for better retrieval (via Ollama `qwen3:1.7b`) |
-| **Pipeline Visibility** | Shows RAG pipeline stages, hit counts, timing, and query rewrite (when applied) per search |
+| **Smart Query Rewriting** | Two-layer rewrite: domain alias expansion (project names, tech terms, team names) + LLM domain-aware rewrite (via Ollama `qwen3:1.7b`); unified in `query_rewrite.py` |
+| **Pipeline Visibility** | Shows RAG pipeline stages, hit counts, timing, alias matches, and query rewrite steps (when applied) per search |
 | **Feedback Collection** | Thumbs up/down buttons + auto-feedback on chunk expansion |
 | **Score Breakdown** | Each result shows vector, rerank, and feedback scores |
 
@@ -220,7 +219,7 @@ $env:PYTHONDONTWRITEBYTECODE = "1"
 python -u -B scripts/rag/search_ui.py 18888
 ```
 
-**Does NOT require:** Ollama for basic search. For **optional** vague-query rewriting, Ollama with `qwen3:1.7b` improves results; if Ollama is absent or the cross-encoder model is unavailable, search still returns results (rewrite and re-ranking degrade gracefully).
+**Does NOT require:** Ollama for basic search. The **domain alias expansion** layer of smart query rewriting works without Ollama. For the **LLM rewrite** layer, Ollama with `qwen3:1.7b` improves results; if Ollama is absent or the cross-encoder model is unavailable, search still returns results (LLM rewrite and re-ranking degrade gracefully).
 
 ### Server 2: Jarvis Chat Agent (`agent.py`) — Port 18889
 
@@ -255,7 +254,7 @@ The agent toolbar is grouped into these categories:
 - **Medavis**: Wiki Fetch, Jira Daily, Commit Summary, Team Activity
 - **Usage Tools**: Audio from Knowledge, Explain This
 - **Data Analysis**: Trend Analysis, AI News KB
-- **Personal**: Donor Analysis, Daily Fetch (includes AI/World/China news fetch, commit report, Jira, Wiki Fetch with diff-based change summaries for existing pages & content summaries for new pages, world news merge recovery, segmented audio with up to 15 items/category for Chinese news, Learning Guide with Deep Dive into source articles)
+- **Personal**: Daily Fetch (includes AI/World/China news fetch, commit report, Jira, Wiki Fetch with diff-based change summaries for existing pages & content summaries for new pages, world news merge recovery, segmented audio with up to 15 items/category for Chinese news, Learning Guide with Deep Dive into source articles)
 - **Learning**: AI Learning, Tech English, Casual English, AWS AIF-C01, My Notes
 - **Stock**: Stock Analysis, Watchlist, AI Scanner, Price Prediction, National Team ETF (国家队)
 
@@ -665,9 +664,6 @@ Output: `world-news-data.json` categorized by politics, economics, technology, s
 | POST | `/api/toolbar/daily-fetch/continue` | Continue missing steps only | `{ steps: [...] }` | `{ job_id, status }` |
 | GET | `/api/toolbar/daily-fetch/<job_id>` | Poll daily fetch job | — | `{ status, ... }` |
 | GET | `/api/toolbar/daily-fetch/history` | Daily Fetch report history | `?date=YYYY-MM-DD` | `{ date, files, stats, missing_steps, ... }` |
-| GET | `/api/donor-analysis` | Load and score donors | `?cmv=negative` | `{ donors: [...] }` |
-| POST | `/api/donor-analysis/ai-reason` | AI reasoning for top donors | `{ donors, top_n }` | SSE stream |
-| POST | `/api/donor-analysis/pdf` | Generate donor PDF report | `{ donors, language }` | `{ pdf_url }` |
 | GET | `/api/settings` | Get global settings | — | `{ audio_lang_*, deepseek_api_key_masked }` |
 | POST | `/api/settings` | Update global settings (partial) | `{ audio_lang_world: "en" }` | `{ ok, settings }` |
 | POST | `/api/settings/deepseek-key` | Set DeepSeek API key | `{ api_key }` | `{ ok, masked }` |

@@ -22,7 +22,7 @@ Improve how Jarvis handles user questions in the chat system. Started as a revie
 5. **Confidence-based response strategy**: Different disclaimers and behaviors per confidence tier, with SSE events to the client
 6. **Conversation memory in Qdrant**: Separate `conversation_memory` collection with JSON snapshot, LLM-based extraction (immediate + batch), pattern learning
 7. **Memory injection on low confidence**: When RAG confidence is LOW/MEDIUM, inject relevant memories and tool suggestions from patterns
-8. **Flask Blueprints for routes**: Extracted stock, toolbar, ai_news, daily_fetch, donor routes into `routes/` package
+8. **Flask Blueprints for routes**: Extracted stock, toolbar, ai_news, daily_fetch routes into `routes/` package
 9. **External template**: HTML/CSS/JS moved to `templates/index.html` (4,333 lines) loaded at startup
 10. **Tools always available**: Removed conditional tool gating; LLM always sees all tool schemas (dynamic reordering instead)
 11. **Rejected: Separate web search fallback service** — kept within the confidence strategy system notes instead
@@ -104,7 +104,7 @@ Improve how Jarvis handles user questions in the chat system. Started as a revie
 - `scripts/rag/prompts.py` — All system prompts
 - `scripts/rag/tools/` — Tool schemas, registry, implementations
 - `scripts/rag/memory/` — Conversation memory (store, extractor, patterns, retriever)
-- `scripts/rag/routes/` — Flask Blueprint route modules (stock, toolbar, ai_news, daily_fetch, donor)
+- `scripts/rag/routes/` — Flask Blueprint route modules (stock, toolbar, ai_news, daily_fetch)
 - `scripts/rag/templates/index.html` — Web UI template
 - `scripts/rag/learning/` — Learning session constants + helpers
 - `docs/plans/archive/2026-04-30-chat-pipeline-improvement-roadmap.md` — Roadmap (COMPLETED, archived)

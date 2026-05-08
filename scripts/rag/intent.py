@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+from query_rewrite import SmartRewriteResult, smart_rewrite
+
 logger = logging.getLogger(__name__)
 
 OLLAMA_HOST = "http://localhost:11434"
@@ -69,6 +71,7 @@ class IntentResult:
     is_ambiguous: bool = False
     rag_confidence: Optional[str] = None  # RetrievalConfidence value or None if not checked
     rag_score: float = 0.0
+    rewrite_result: Optional[SmartRewriteResult] = None
 
 
 # ---------------------------------------------------------------------------
@@ -113,85 +116,14 @@ Things Jarvis CANNOT do:
 # ---------------------------------------------------------------------------
 # Query Enhancement
 # ---------------------------------------------------------------------------
-def enhance_query(query: str, history: list[dict] | None = None) -> str:
-    """Rewrite ambiguous or unclear queries to be more specific and actionable.
+def enhance_query(query: str, history: list[dict] | None = None) -> tuple[str, SmartRewriteResult]:
+    """Smart query rewrite: alias expansion + domain-aware LLM rewrite.
 
-    Uses the fast LLM to:
-    - Resolve pronouns and references ("that thing we discussed")
-    - Expand abbreviations and shorthand
-    - Add context from conversation history
-    - Make vague queries concrete
-
-    Returns the enhanced query, or the original if enhancement isn't needed.
+    Delegates to query_rewrite.smart_rewrite(). Returns both the effective
+    query string and the full SmartRewriteResult for pipeline visibility.
     """
-    if not _needs_enhancement(query):
-        return query
-
-    recent_context = ""
-    if history and len(history) >= 2:
-        last_msgs = history[-4:]
-        ctx_parts = []
-        for msg in last_msgs:
-            role = msg.get("role", "user")
-            content = (msg.get("content", "") or "")[:200]
-            ctx_parts.append(f"{role}: {content}")
-        recent_context = "\nRecent conversation:\n" + "\n".join(ctx_parts)
-
-    try:
-        import requests as _req
-        resp = _req.post(
-            f"{OLLAMA_HOST}/api/chat",
-            json={
-                "model": OLLAMA_MODEL_FAST,
-                "messages": [
-                    {"role": "system", "content": (
-                        "You enhance unclear user queries to be specific and searchable. "
-                        "Resolve pronouns, expand abbreviations, add missing context. "
-                        "Output ONLY the enhanced query, nothing else. "
-                        "If the query is already clear, output it unchanged."
-                    )},
-                    {"role": "user", "content": (
-                        f"Original query: {query}"
-                        f"{recent_context}\n\n"
-                        f"Enhanced query:"
-                    )},
-                ],
-                "stream": False,
-                "think": False,
-                "options": {"num_predict": 80, "num_ctx": 512},
-            },
-            timeout=10,
-        )
-        enhanced = resp.json().get("message", {}).get("content", "").strip()
-        first_line = enhanced.split("\n")[0].strip()
-        if len(first_line) > 8 and len(first_line) < len(query) * 3:
-            return first_line
-    except Exception as e:
-        logger.debug("Query enhancement failed: %s", e)
-
-    return query
-
-
-def _needs_enhancement(query: str) -> bool:
-    """Heuristic: does this query likely need LLM-based enhancement?"""
-    q = query.lower().strip()
-
-    if len(query.split()) <= 2 and not re.match(r"^[\u4e00-\u9fff]+$", query):
-        return True
-
-    vague_signals = [
-        "that thing", "the stuff", "what's", "something about",
-        "you know", "the other", "last time", "earlier", "before",
-        "it", "this", "those", "that", "them",
-        "same as", "like before", "again", "continue",
-    ]
-    if any(v in q for v in vague_signals):
-        return True
-
-    if len(query) < 15 and "?" not in query:
-        return True
-
-    return False
+    rewrite = smart_rewrite(query, history)
+    return rewrite.effective_query, rewrite
 
 
 # ---------------------------------------------------------------------------
@@ -474,7 +406,7 @@ def process_query(query: str, session_type: str | None = None,
     Returns:
         IntentResult with intent, enhanced query, confidence, and suggested tools.
     """
-    enhanced = enhance_query(query, history)
+    enhanced, rewrite_result = enhance_query(query, history)
 
     result = classify_intent(
         query=query,
@@ -486,6 +418,7 @@ def process_query(query: str, session_type: str | None = None,
     if not result.enhanced_query:
         result.enhanced_query = enhanced
     result.original_query = query
+    result.rewrite_result = rewrite_result
 
     # RAG capability check for knowledge-based intents
     rag_intents = {

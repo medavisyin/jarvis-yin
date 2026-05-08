@@ -61,11 +61,59 @@ def _get_global_settings() -> dict:
 # ---------------------------------------------------------------------------
 
 
+_AI_NEWS_CATEGORIES: dict[str, list[str]] = {
+    "LLM Releases & Model Updates": [
+        "gpt", "claude", "gemini", "llama", "mistral", "qwen", "phi",
+        "model release", "new model", "benchmark", "parameter", "weights",
+        "open-source model", "deepseek", "command r", "cohere",
+    ],
+    "AI Agents & Coding Tools": [
+        "agent", "copilot", "cursor", "code", "coding", "claude code",
+        "devin", "aider", "windsurf", "mcp", "tool calling", "function call",
+        "auto mode", "managed agent", "sdk",
+    ],
+    "RAG, Search & Information Retrieval": [
+        "rag", "retrieval", "search", "embedding", "vector", "rerank",
+        "knowledge base", "semantic search", "hybrid search",
+    ],
+    "AI Safety, Ethics & Regulation": [
+        "safety", "regulation", "policy", "bias", "alignment", "guardrail",
+        "responsible", "hallucination", "jailbreak", "red team",
+        "eu ai act", "governance",
+    ],
+    "AI Infrastructure & Deployment": [
+        "inference", "serving", "deploy", "gpu", "tpu", "cloud",
+        "quantiz", "vllm", "tensorrt", "onnx", "optimization",
+        "latency", "throughput", "cost",
+    ],
+    "AI Products & Applications": [
+        "product", "launch", "feature", "api", "app", "platform",
+        "enterprise", "startup", "funding", "acquisition", "partnership",
+        "openai", "anthropic", "google", "meta", "microsoft",
+    ],
+    "Research & Papers": [
+        "paper", "research", "arxiv", "study", "finding", "breakthrough",
+        "technique", "method", "architecture", "training",
+        "fine-tun", "finetun", "pre-train", "pretrain",
+    ],
+}
+
+
+def _categorize_ai_news(title: str, summary: str) -> str:
+    text = (title + " " + summary).lower()
+    scores = {}
+    for cat, keywords in _AI_NEWS_CATEGORIES.items():
+        score = sum(1 for kw in keywords if kw in text)
+        if score > 0:
+            scores[cat] = score
+    return max(scores, key=scores.get) if scores else "AI Products & Applications"
+
+
 def _ingest_ai_news_to_learning(output_dir: str, date_str: str) -> int:
     """Extract AI news items from daily briefing and append to learning notes.
 
     Adds new items to ``ai_learning/08-ai-news-digest.md`` with deduplication
-    based on title similarity.  Returns the number of items added.
+    based on title hash and categorization by AI topic.  Returns item count.
     """
     import json as _json
     import hashlib
@@ -92,6 +140,7 @@ def _ingest_ai_news_to_learning(output_dir: str, date_str: str) -> int:
                     "summary": summary[:500],
                     "source": src_name,
                     "url": url,
+                    "category": _categorize_ai_news(title, summary),
                 })
 
     if not items:
@@ -112,43 +161,53 @@ def _ingest_ai_news_to_learning(output_dir: str, date_str: str) -> int:
                 h = hashlib.md5(title_text.lower().encode()).hexdigest()
                 existing_hashes.add(h)
 
-    new_entries: list[str] = []
+    new_items: list[dict] = []
     for it in items:
         h = hashlib.md5(it["title"].lower().encode()).hexdigest()
         if h in existing_hashes:
             continue
         existing_hashes.add(h)
-        entry = f"\n### {it['title']}\n"
-        entry += f"**Source:** {it['source']} | **Date:** {date_str}"
-        if it["url"]:
-            entry += f" | [Link]({it['url']})"
-        entry += "\n\n"
-        if it["summary"]:
-            entry += f"{it['summary']}\n"
-        new_entries.append(entry)
+        new_items.append(it)
 
-    if not new_entries:
+    if not new_items:
         return 0
 
+    from collections import defaultdict
+    by_cat: dict[str, list[dict]] = defaultdict(list)
+    for it in new_items:
+        by_cat[it["category"]].append(it)
+
+    new_sections: list[str] = [f"\n## {date_str}\n"]
+    for cat_name in _AI_NEWS_CATEGORIES:
+        cat_items = by_cat.get(cat_name, [])
+        if not cat_items:
+            continue
+        new_sections.append(f"\n**{cat_name}**\n")
+        for it in cat_items:
+            entry = f"### {it['title']}\n"
+            entry += f"**Source:** {it['source']} | **Date:** {date_str}"
+            if it["url"]:
+                entry += f" | [Link]({it['url']})"
+            entry += "\n\n"
+            if it["summary"]:
+                clean = it["summary"].replace("\n", " ").strip()
+                entry += f"{clean}\n"
+            new_sections.append(entry)
+
     if not existing_content:
-        header = (
-            "# AI News Digest — Daily Learning Updates\n\n"
+        existing_content = (
+            "# Domain 8: AI Industry & Recent Developments\n\n"
             "Auto-populated from daily AI briefings. Each entry represents a "
-            "notable development in AI/ML that supplements the structured "
-            "learning notes.\n\n---\n"
+            "notable development in AI/ML, categorized by topic to supplement "
+            "the structured learning notes.\n\n---\n"
         )
-        existing_content = header
 
-    date_section = f"\n## {date_str}\n"
-    if date_section.strip() not in existing_content:
-        existing_content += date_section
-
-    existing_content += "\n".join(new_entries) + "\n"
+    existing_content += "\n".join(new_sections) + "\n"
 
     with open(digest_path, "w", encoding="utf-8") as f:
         f.write(existing_content)
 
-    return len(new_entries)
+    return len(new_items)
 
 
 # ---------------------------------------------------------------------------
@@ -220,14 +279,14 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
 
         commit_text = ""
         if _should_run("commit_report"):
-            job["step"] = "Running commit report (48h)..."
+            job["step"] = "Running commit report (24h)..."
             try:
                 commit_script = os.path.join(scripts_dir, "tools", "commit-report.ps1")
                 if os.path.exists(commit_script):
                     rc = sp.run(
                         ["powershell", "-ExecutionPolicy", "Bypass", "-File", commit_script,
-                         "-Hours", "48", "-OutputDir", REPORTS_ROOT],
-                        capture_output=True, text=False, timeout=300, cwd=scripts_dir
+                         "-Hours", "24", "-OutputDir", REPORTS_ROOT],
+                        capture_output=True, text=False, timeout=600, cwd=scripts_dir
                     )
                     raw_out = rc.stdout.decode("utf-8", errors="replace") if rc.stdout else ""
                     if "---DATA_START---" in raw_out:
@@ -237,7 +296,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                     steps.append({"step": "commit_report", "exit_code": rc.returncode,
                                   "output": raw_out[:raw_out.find("---DATA_START---")][-500:] if "---DATA_START---" in raw_out else raw_out[-500:]})
                 else:
-                    commit_text = tool_commit_summary(hours=48)
+                    commit_text = tool_commit_summary(hours=24)
                     steps.append({"step": "commit_report", "exit_code": 0, "output": commit_text[:500]})
             except Exception as e:
                 steps.append({"step": "commit_report", "exit_code": 1, "output": str(e)[:200]})
@@ -486,7 +545,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
         summary_parts.append(world_key_points or "No data")
         summary_parts.append("")
 
-        summary_parts.append("## Git Commits (Last 48h)")
+        summary_parts.append("## Git Commits (Last 24h)")
         summary_parts.append(commit_text[:4000] if commit_text else "No commits found")
         summary_parts.append("")
 
@@ -584,13 +643,44 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                 os.makedirs(wn_dir, exist_ok=True)
                 wn_script = os.path.join(scripts_dir, "pipeline", "run-world-news.py")
                 r_wn = sp.run(
-                    ["python", wn_script, "--output-dir", wn_dir],
-                    capture_output=True, text=False, timeout=600, cwd=scripts_dir
+                    ["python", wn_script, "--output-dir", wn_dir, "--no-translate"],
+                    capture_output=True, text=False, timeout=900, cwd=scripts_dir
                 )
                 stdout_wn = r_wn.stdout.decode("utf-8", errors="replace") if r_wn.stdout else ""
                 steps.append({"step": "refetch_world", "exit_code": r_wn.returncode, "output": stdout_wn[-500:]})
             except Exception as e:
                 steps.append({"step": "refetch_world", "exit_code": 1, "output": str(e)[:300]})
+
+        # --- Translate world news to Chinese (separate step to avoid timeout) ---
+        if _should_run("world_news_translate"):
+            wn_dir = os.path.join(output_dir, "world-news")
+            wn_merged_path = os.path.join(wn_dir, "world-news-data.json")
+            if os.path.isfile(wn_merged_path):
+                job["step"] = "Translating world news to Chinese..."
+                try:
+                    with open(wn_merged_path, "r", encoding="utf-8") as f:
+                        wn_data = json.load(f)
+                    if not wn_data.get("translated"):
+                        import importlib.util
+                        _wn_spec = importlib.util.spec_from_file_location(
+                            "run_world_news",
+                            os.path.join(scripts_dir, "pipeline", "run-world-news.py"))
+                        _wn_mod = importlib.util.module_from_spec(_wn_spec)
+                        _wn_spec.loader.exec_module(_wn_mod)
+                        wn_data = _wn_mod.translate_news_to_chinese(wn_data)
+                        with open(wn_merged_path, "w", encoding="utf-8") as f:
+                            json.dump(wn_data, f, ensure_ascii=False, indent=2)
+                        steps.append({"step": "world_news_translate", "exit_code": 0,
+                                      "output": "Translation complete"})
+                    else:
+                        steps.append({"step": "world_news_translate", "exit_code": 0,
+                                      "output": "Already translated"})
+                except Exception as e:
+                    steps.append({"step": "world_news_translate", "exit_code": 1,
+                                  "output": str(e)[:300]})
+            else:
+                steps.append({"step": "world_news_translate", "exit_code": -1,
+                              "output": "No world-news-data.json to translate"})
 
         # --- Ensure world-news-data.json exists (merge recovery) ---
         if _should_run("world_news_merge"):
@@ -936,6 +1026,14 @@ def api_daily_fetch_history():
         missing_steps.append("wiki_fetch")
     if has_wn_source_jsons and not has_wn_data:
         missing_steps.append("world_news_merge")
+    if has_wn_data:
+        try:
+            with open(wn_file, "r", encoding="utf-8") as _wf:
+                _wn_check = json.load(_wf)
+            if not _wn_check.get("translated"):
+                missing_steps.append("world_news_translate")
+        except Exception:
+            pass
     if (has_sources or has_filtered) and not has_audio:
         missing_steps.append("ai_audio")
     if has_wn_data and not has_wn_audio and wn_count > 0:
