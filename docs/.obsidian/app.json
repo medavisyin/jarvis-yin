@@ -3,5 +3,7 @@
   "newLinkFormat": "relative",
   "showFrontmatter": true,
   "strictLineBreaks": true,
-  "readableLineLength": true
+  "readableLineLength": true,
+  "showLineNumber": false,
+  "promptDelete": false
 }

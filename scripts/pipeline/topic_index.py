@@ -32,6 +32,7 @@ from config import TOPIC_INDEX_PATH
 INDEX_PATH = TOPIC_INDEX_PATH
 SIMILARITY_THRESHOLD = 0.55
 STALE_DAYS = 1
+GRACE_PERIOD_DAYS = 3
 
 
 def _normalize(text: str) -> str:
@@ -210,6 +211,16 @@ class TopicIndex:
                 "days_since_first": days,
                 "mention_count": count,
                 "tag": f"[UPDATED \u2014 day {days + 1}]",
+            }
+
+        if days < GRACE_PERIOD_DAYS:
+            return {
+                "topic_id": topic_id,
+                "is_new": False,
+                "classification": "updated",
+                "days_since_first": days,
+                "mention_count": count,
+                "tag": f"[Continuing \u2014 day {days + 1}]",
             }
 
         return {

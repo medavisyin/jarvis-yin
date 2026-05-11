@@ -112,22 +112,44 @@ async def fetch():
             if idx < DRILL_DOWN_COUNT and post.get("url"):
                 t = time.monotonic()
                 try:
-                    await page.goto(post["url"], wait_until="domcontentloaded", timeout=20000)
-                    await page.wait_for_timeout(3000)
+                    drill_page = await context.new_page()
+                    resp = await drill_page.goto(post["url"], wait_until="domcontentloaded", timeout=15000)
+                    await drill_page.wait_for_timeout(4000)
 
-                    paragraphs = await page.query_selector_all("article p, main p, [class*='content'] p")
-                    text_parts = []
-                    for pel in paragraphs[:5]:
-                        text_parts.append((await pel.inner_text()).strip())
-                    if text_parts:
-                        save_raw_content(
-                            OUTPUT_DIR, SOURCE_NAME, idx, item["title"],
-                            item.get("url", post.get("url", "")), item.get("date"),
-                            text_parts,
-                            difficulty="intermediate",
-                            extra_notes=item.get("points"),
-                        )
-                        item["summary"] = " ".join(text_parts)[:800]
+                    drill_title = await drill_page.title()
+                    is_cf = "just a moment" in drill_title.lower() or (resp and resp.status == 403)
+                    if is_cf:
+                        page_text = await drill_page.text_content("body") or ""
+                        is_cf = "cf_chl" in page_text or "challenge" in page_text.lower()
+
+                    if not is_cf:
+                        text_parts = await drill_page.evaluate("""
+                            () => {
+                                const sels = ['[data-page-content] p', '[class*="rich-text"] p',
+                                              'article p', 'main p', 'section p'];
+                                for (const sel of sels) {
+                                    const els = document.querySelectorAll(sel);
+                                    const parts = [];
+                                    for (const el of els) {
+                                        const t = el.textContent.trim();
+                                        if (t.length > 50) parts.push(t);
+                                        if (parts.length >= 6) break;
+                                    }
+                                    if (parts.length > 0) return parts;
+                                }
+                                return [];
+                            }
+                        """)
+                        if text_parts:
+                            save_raw_content(
+                                OUTPUT_DIR, SOURCE_NAME, idx, item["title"],
+                                item.get("url", post.get("url", "")), item.get("date"),
+                                text_parts,
+                                difficulty="intermediate",
+                                extra_notes=item.get("points"),
+                            )
+                            item["summary"] = " ".join(text_parts)[:800]
+                    await drill_page.close()
                 except Exception:
                     pass
                 _step(timing, f"drill_down_{idx + 1}", t)

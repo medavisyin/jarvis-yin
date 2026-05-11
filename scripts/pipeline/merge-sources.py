@@ -23,6 +23,8 @@ SOURCE_META = {
     "rundown":          {"display": "The Rundown AI",               "category": "Industry News"},
     "github-trending":  {"display": "GitHub Trending",              "category": "Developer Tools"},
     "mit-review":       {"display": "MIT Technology Review",        "category": "Industry News"},
+    "venturebeat":      {"display": "VentureBeat AI",              "category": "Industry News"},
+    "theverge":         {"display": "The Verge AI",                "category": "Industry News"},
 }
 
 GITHUB_SOURCE = "github-trending"

@@ -18,6 +18,13 @@ echo Stopping existing servers...
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":18889.*LISTEN"') do taskkill /PID %%a /F >nul 2>&1
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr ":18888.*LISTEN"') do taskkill /PID %%a /F >nul 2>&1
 
+:: Stop Telegram bot via PID file
+set "BOT_PID_FILE=%SCRIPT_DIR%..\scripts\bot_telegram.pid"
+if exist "%BOT_PID_FILE%" (
+    for /f %%p in ('type "%BOT_PID_FILE%"') do taskkill /PID %%p /F >nul 2>&1
+    del "%BOT_PID_FILE%" >nul 2>&1
+)
+
 timeout /t 3 /nobreak >nul
 
 echo Starting Search UI (port 18888)...
@@ -28,8 +35,14 @@ timeout /t 2 /nobreak >nul
 echo Starting Agent (port 18889)...
 start "Jarvis Agent" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\rag\agent.py"
 
+timeout /t 2 /nobreak >nul
+
+echo Starting Telegram Bot...
+start "Jarvis Telegram" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\bot_telegram.py"
+
 echo.
 echo Restarted. Wait ~15 seconds for model loading.
-echo   Search UI: http://localhost:18888
-echo   Agent:     http://localhost:18889
+echo   Search UI:    http://localhost:18888
+echo   Agent:        http://localhost:18889
+echo   Telegram Bot: running
 timeout /t 5

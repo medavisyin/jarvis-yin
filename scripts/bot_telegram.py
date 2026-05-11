@@ -15,9 +15,10 @@ import json
 import logging
 import os
 import time
+from datetime import datetime
 
 import httpx
-from telegram import Update
+from telegram import InputFile, Update
 from telegram.error import Conflict
 from telegram.ext import (
     Application,
@@ -62,6 +63,13 @@ OWNER_ID: int = int(os.environ.get("TELEGRAM_OWNER_ID", _env.get("TELEGRAM_OWNER
 SOCKS_PROXY: str = os.environ.get("SOCKS_PROXY", _env.get("SOCKS_PROXY", ""))
 AGENT_URL: str = os.environ.get("AGENT_URL", _env.get("AGENT_URL", "http://127.0.0.1:18889"))
 SEARCH_URL: str = os.environ.get("SEARCH_URL", _env.get("SEARCH_URL", "http://127.0.0.1:18888"))
+REPORTS_ROOT: str = os.environ.get("JARVIS_REPORTS_ROOT", "C:/reports/ai")
+
+AUDIO_FILES = [
+    ("ai-briefing.mp3", "AI Briefing"),
+    ("world-news.mp3", "World News"),
+    ("china-news.mp3", "China News"),
+]
 
 if not BOT_TOKEN:
     raise SystemExit("TELEGRAM_BOT_TOKEN is required. Set it in bot_telegram.env or as an env var.")
@@ -132,6 +140,78 @@ def _truncate(text: str, limit: int = 4000) -> str:
     if len(text) <= limit:
         return text
     return text[:limit - 20] + "\n\n... (truncated)"
+
+
+async def _send_long_text(update: Update, text: str, limit: int = 4000) -> None:
+    """Split long text into multiple Telegram messages respecting the 4096 char limit.
+
+    Splits at paragraph boundaries (double newline), falling back to single newlines,
+    then hard-cuts if no suitable boundary is found.
+    """
+    if len(text) <= limit:
+        await update.message.reply_text(text)
+        return
+
+    remaining = text
+    while remaining:
+        if len(remaining) <= limit:
+            await update.message.reply_text(remaining)
+            break
+
+        # Try splitting at paragraph boundary
+        chunk = remaining[:limit]
+        split_idx = chunk.rfind("\n\n")
+        if split_idx < limit // 4:
+            # Paragraph boundary too early — try single newline
+            split_idx = chunk.rfind("\n")
+        if split_idx < limit // 4:
+            # No good boundary — hard cut
+            split_idx = limit
+
+        await update.message.reply_text(remaining[:split_idx].rstrip())
+        remaining = remaining[split_idx:].lstrip("\n")
+        await asyncio.sleep(0.3)  # avoid flood limit
+
+
+# ---------------------------------------------------------------------------
+# Audio delivery helpers
+# ---------------------------------------------------------------------------
+
+async def _send_audio_files(update: Update, target_date: str = "") -> int:
+    """Send today's (or specified date's) audio files to the Telegram chat.
+
+    Returns the number of files successfully sent.
+    """
+    if not target_date:
+        target_date = datetime.now().strftime("%Y-%m-%d")
+
+    date_dir = os.path.join(REPORTS_ROOT, target_date)
+    if not os.path.isdir(date_dir):
+        await update.message.reply_text(f"No reports found for {target_date}")
+        return 0
+
+    sent = 0
+    for filename, label in AUDIO_FILES:
+        fpath = os.path.join(date_dir, filename)
+        if not os.path.isfile(fpath):
+            continue
+        size_mb = os.path.getsize(fpath) / (1024 * 1024)
+        if size_mb > 50:
+            await update.message.reply_text(f"{label}: file too large ({size_mb:.1f}MB, Telegram limit 50MB)")
+            continue
+        try:
+            with open(fpath, "rb") as f:
+                await update.message.reply_audio(
+                    audio=InputFile(f, filename=filename),
+                    title=f"{label} ({target_date})",
+                    performer="Jarvis",
+                )
+            sent += 1
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            log.error("Failed to send %s: %s", filename, e)
+            await update.message.reply_text(f"Failed to send {label}: {e}")
+    return sent
 
 
 # ---------------------------------------------------------------------------
@@ -274,9 +354,10 @@ def owner_only(func):
 HELP_TEXT = """Jarvis Bot Commands:
 
 /status  — Server health check
-/fetch   — Run daily pipeline (5-30 min)
+/fetch   — Run daily pipeline (5-30 min, sends audio when done)
 /fetch_step <name> — Run one step
   (fetch_sources, ai_audio, commit_report, jira_daily, wiki_fetch, world_audio, china_audio)
+/audio [date] — Send today's audio (or /audio 2026-05-10)
 /search <query> — RAG search
 /ask <question> — Ask Jarvis (LLM)
 /index — Index new briefings
@@ -284,7 +365,17 @@ HELP_TEXT = """Jarvis Bot Commands:
 /stock <code> — Stock analysis
 /train — Train stock models
 /scan — Run short-term stock scanner
-/longscan — Run long-term stock scanner"""
+/longscan — Run long-term stock scanner
+/english — Tech English (AI news topics)
+/english <topic> — Analyze a topic
+/casual — Casual English (world news topics)
+/casual <topic> — Analyze a topic
+/stop — Exit learning session
+
+After /english or /casual, just type normally:
+  "15" → pick topic 15
+  "more topics" → refresh list
+  "tell me more" → follow up"""
 
 
 @owner_only
@@ -335,8 +426,25 @@ async def cmd_fetch(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if msg:
             text += f"\n\n{msg[:3000]}"
         await update.message.reply_text(_truncate(text))
+
+        if status == "done":
+            sent = await _send_audio_files(update)
+            if sent:
+                await update.message.reply_text(f"Sent {sent} audio file(s)")
     except Exception as e:
         await update.message.reply_text(f"Fetch error: {e}")
+
+
+@owner_only
+async def cmd_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send audio files for today or a specified date. Usage: /audio [YYYY-MM-DD]"""
+    target_date = context.args[0] if context.args else ""
+    sent = await _send_audio_files(update, target_date)
+    if not sent:
+        await update.message.reply_text(
+            f"No audio files found for {target_date or 'today'}.\n"
+            "Run /fetch or /fetch_step ai_audio first."
+        )
 
 
 @owner_only
@@ -363,6 +471,9 @@ async def cmd_fetch_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if msg:
             text += f"\n{msg[:2000]}"
         await update.message.reply_text(_truncate(text))
+
+        if status == "done" and step in ("ai_audio", "world_audio", "china_audio"):
+            await _send_audio_files(update)
     except Exception as e:
         await update.message.reply_text(f"Error: {e}")
 
@@ -615,9 +726,190 @@ async def cmd_longscan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Long-term scan error: {e}")
 
 
+# ---------------------------------------------------------------------------
+# English Learning — shared helpers and per-session history
+# ---------------------------------------------------------------------------
+
+_ENGLISH_SESSION_ID = "00000000-0000-0000-0000-000000000002"
+_CASUAL_SESSION_ID = "00000000-0000-0000-0000-000000000003"
+
+_learning_history: dict[str, list[dict]] = {
+    "english": [],
+    "casual": [],
+}
+_MAX_HISTORY = 10
+
+# Active learning session — plain text messages route here
+_active_learning_mode: str | None = None  # "english" or "casual" or None
+
+
+def _push_history(mode: str, role: str, content: str) -> None:
+    hist = _learning_history[mode]
+    hist.append({"role": role, "content": content})
+    if len(hist) > _MAX_HISTORY:
+        _learning_history[mode] = hist[-_MAX_HISTORY:]
+
+
+async def _stream_agent_response(session_id: str, query: str, history: list[dict]) -> str | None:
+    """Call /api/agent with SSE and collect the full streamed answer.
+
+    Returns the answer text on success, or None on HTTP/transport errors.
+    """
+    r = await _get_http().post(
+        f"{AGENT_URL}/api/agent",
+        json={"query": query, "session_id": session_id, "history": history},
+        timeout=httpx.Timeout(connect=10, read=300, write=30, pool=10),
+    )
+    if r.status_code != 200:
+        log.warning("Agent returned HTTP %d for session %s", r.status_code, session_id)
+        return None
+
+    parts = []
+    for line in r.text.splitlines():
+        if not line.startswith("data: ") or line.strip() == "data: [DONE]":
+            continue
+        try:
+            event = json.loads(line[6:])
+            etype = event.get("type", "")
+            content = event.get("content", event.get("token", ""))
+            if etype in ("answer_chunk", "token") and content:
+                parts.append(content)
+        except json.JSONDecodeError:
+            pass
+    return "".join(parts).strip() or None
+
+
+async def _fetch_topics(mode: str) -> str:
+    """Fetch available topics from the learning-context API."""
+    ltype = "english_learning" if mode == "english" else "casual_english"
+    try:
+        data = await _agent_get("/api/toolbar/learning-context", type=ltype)
+    except Exception as e:
+        log.warning("Failed to fetch %s topics: %s", ltype, e)
+        return "(Could not load topics — API unreachable. Try again later.)"
+
+    if mode == "english":
+        titles = data.get("news_titles", [])
+        if not titles:
+            return "(No tech topics available today)"
+        lines = ["Today's Tech English topics — pick a topic:\n"]
+        for i, t in enumerate(titles[:15], 1):
+            lines.append(f"{i}. {t}")
+        lines.append("\nJust type a number, title, or \"more topics\"")
+        return "\n".join(lines)
+    else:
+        items = data.get("news_items", [])
+        if not items:
+            return "(No world news topics available today)"
+        lines = ["Today's Casual English topics — pick a topic:\n"]
+        for i, item in enumerate(items[:15], 1):
+            title = item.get("title", "?")
+            lines.append(f"{i}. {title}")
+        lines.append("\nJust type a number, title, or \"more topics\"")
+        return "\n".join(lines)
+
+
+@owner_only
+async def cmd_english(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Tech English learning — select a topic from today's AI news."""
+    global _active_learning_mode
+    _active_learning_mode = "english"
+    query = " ".join(context.args) if context.args else ""
+    if not query:
+        topics = await _fetch_topics("english")
+        await _send_long_text(update, topics)
+        _push_history("english", "user", "show me topics")
+        _push_history("english", "assistant", topics)
+        return
+
+    await update.message.reply_text("Generating Tech English analysis... (30-60s)")
+    history = list(_learning_history["english"])
+    try:
+        answer = await _stream_agent_response(_ENGLISH_SESSION_ID, query, history)
+        if answer is None:
+            await update.message.reply_text("Agent unavailable. Try again later.")
+            return
+        _push_history("english", "user", query)
+        _push_history("english", "assistant", answer[:1500])
+        await _send_long_text(update, answer)
+    except httpx.ReadTimeout:
+        await update.message.reply_text("Timed out. Try again or pick a different topic.")
+    except Exception as e:
+        await update.message.reply_text(f"English error: {e}")
+
+
+@owner_only
+async def cmd_casual(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Casual English learning — select a topic from today's world news."""
+    global _active_learning_mode
+    _active_learning_mode = "casual"
+    query = " ".join(context.args) if context.args else ""
+    if not query:
+        topics = await _fetch_topics("casual")
+        await _send_long_text(update, topics)
+        _push_history("casual", "user", "show me topics")
+        _push_history("casual", "assistant", topics)
+        return
+
+    await update.message.reply_text("Generating Casual English analysis... (30-60s)")
+    history = list(_learning_history["casual"])
+    try:
+        answer = await _stream_agent_response(_CASUAL_SESSION_ID, query, history)
+        if answer is None:
+            await update.message.reply_text("Agent unavailable. Try again later.")
+            return
+        _push_history("casual", "user", query)
+        _push_history("casual", "assistant", answer[:1500])
+        await _send_long_text(update, answer)
+    except httpx.ReadTimeout:
+        await update.message.reply_text("Timed out. Try again or pick a different topic.")
+    except Exception as e:
+        await update.message.reply_text(f"Casual English error: {e}")
+
+
+@owner_only
+async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Exit active learning session mode."""
+    global _active_learning_mode
+    if _active_learning_mode:
+        await update.message.reply_text(f"Exited {_active_learning_mode} session.")
+        _active_learning_mode = None
+    else:
+        await update.message.reply_text("No active session.")
+
+
 @owner_only
 async def cmd_unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Unknown command. /help for list.")
+
+
+async def _handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Route plain text to active learning session (conversational mode)."""
+    if update.effective_user.id != OWNER_ID:
+        return
+    if not _active_learning_mode:
+        return
+
+    mode = _active_learning_mode
+    session_id = _ENGLISH_SESSION_ID if mode == "english" else _CASUAL_SESSION_ID
+    query = (update.message.text or "").strip()
+    if not query:
+        return
+
+    await update.message.reply_text("Thinking...")
+    history = list(_learning_history[mode])
+    try:
+        answer = await _stream_agent_response(session_id, query, history)
+        if answer is None:
+            await update.message.reply_text("Agent unavailable. Try again later.")
+            return
+        _push_history(mode, "user", query)
+        _push_history(mode, "assistant", answer[:1500])
+        await _send_long_text(update, answer)
+    except httpx.ReadTimeout:
+        await update.message.reply_text("Timed out. Try again.")
+    except Exception as e:
+        await update.message.reply_text(f"Error: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -648,6 +940,7 @@ async def _run_bot():
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("fetch", cmd_fetch))
+    app.add_handler(CommandHandler("audio", cmd_audio))
     app.add_handler(CommandHandler("fetch_step", cmd_fetch_step))
     app.add_handler(CommandHandler("search", cmd_search))
     app.add_handler(CommandHandler("ask", cmd_ask))
@@ -657,7 +950,11 @@ async def _run_bot():
     app.add_handler(CommandHandler("train", cmd_train))
     app.add_handler(CommandHandler("scan", cmd_scan))
     app.add_handler(CommandHandler("longscan", cmd_longscan))
+    app.add_handler(CommandHandler("english", cmd_english))
+    app.add_handler(CommandHandler("casual", cmd_casual))
+    app.add_handler(CommandHandler("stop", cmd_stop))
     app.add_handler(MessageHandler(filters.COMMAND, cmd_unknown))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, _handle_text))
 
     async def _error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
         if isinstance(context.error, Conflict):

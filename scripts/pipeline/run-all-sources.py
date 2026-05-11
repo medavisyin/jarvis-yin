@@ -25,15 +25,17 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, ".."))
 
 FETCH_SCRIPTS = [
-    # "fetchers/ai/fetch-arxiv-ml.py",
-    # "fetchers/ai/fetch-arxiv.py",
-     "fetchers/ai/fetch-openai-blog.py",
+    "fetchers/ai/fetch-arxiv-ml.py",
+    "fetchers/ai/fetch-arxiv.py",
+    "fetchers/ai/fetch-openai-blog.py",
     "fetchers/ai/fetch-anthropic.py",
-    # "fetchers/ai/fetch-deepmind.py",
-     "fetchers/ai/fetch-techcrunch.py",
+    "fetchers/ai/fetch-deepmind.py",
+    "fetchers/ai/fetch-techcrunch.py",
     "fetchers/ai/fetch-rundown.py",
     "fetchers/ai/fetch-github-trending.py",
-    # "fetchers/ai/fetch-mit-review.py",
+    "fetchers/ai/fetch-mit-review.py",
+    "fetchers/ai/fetch-venturebeat.py",
+    "fetchers/ai/fetch-theverge.py",
 ]
 
 PER_SCRIPT_TIMEOUT = 180

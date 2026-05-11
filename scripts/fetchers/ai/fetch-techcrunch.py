@@ -99,12 +99,35 @@ async def fetch():
                 t = time.monotonic()
                 try:
                     await page.goto(post["url"], wait_until="domcontentloaded", timeout=20000)
-                    await page.wait_for_timeout(1500)
+                    await page.wait_for_timeout(2000)
 
-                    paragraphs = await page.query_selector_all("article p, .article-content p, [class*='content'] p")
+                    NAV_KEYWORDS = {"latest", "amazon", "apps", "biotech", "climate",
+                                    "crypto", "fintech", "hardware", "security", "startups",
+                                    "venture", "events", "techcrunch", "newsletter", "sign up",
+                                    "subscribe", "advertisement", "cookie"}
+                    selectors = [
+                        ".article-content p",
+                        ".entry-content p",
+                        "[class*='article__body'] p",
+                        "article .content p",
+                        "article p",
+                    ]
                     text_parts = []
-                    for pel in paragraphs[:6]:
-                        text_parts.append((await pel.inner_text()).strip())
+                    for sel in selectors:
+                        paragraphs = await page.query_selector_all(sel)
+                        for pel in paragraphs[:8]:
+                            txt = (await pel.inner_text()).strip()
+                            if not txt or len(txt) < 40:
+                                continue
+                            words = set(txt.lower().split())
+                            if len(words & NAV_KEYWORDS) >= 3:
+                                continue
+                            text_parts.append(txt)
+                            if len(text_parts) >= 6:
+                                break
+                        if text_parts:
+                            break
+
                     if text_parts:
                         save_raw_content(
                             OUTPUT_DIR, SOURCE_NAME, idx, item["title"],

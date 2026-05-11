@@ -1,11 +1,11 @@
 """
-Fetch recent posts from the Google DeepMind Blog.
+Fetch recent AI articles from The Verge.
 
-Blog is visually rich with interactive charts — text extraction notes
-"[See visual data in original post]" when content references figures.
+The Verge covers consumer-oriented AI news with accessible, engaging writing.
+Good for product launches, AI in everyday life, and tech industry context.
 
-Usage: python fetch-deepmind.py [output-dir]
-Output: <output-dir>/deepmind.json
+Usage: python fetch-theverge.py [output-dir]
+Output: <output-dir>/theverge.json
 """
 import asyncio
 import json
@@ -17,12 +17,11 @@ from playwright.async_api import async_playwright
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(SCRIPT_DIR, "..", ".."))
 sys.path.insert(0, os.path.join(SCRIPT_DIR, ".."))
+from raw_saver import save_raw_content, should_save_raw
 from proxy_strategy import get_proxy_for_playwright
 
-from raw_saver import save_raw_content, should_save_raw
-
-SOURCE_NAME = "deepmind"
-SOURCE_URL = "https://deepmind.google/blog/"
+SOURCE_NAME = "theverge"
+SOURCE_URL = "https://www.theverge.com/ai-artificial-intelligence"
 MAX_ITEMS = 5
 DRILL_DOWN_COUNT = 3
 OUTPUT_DIR = sys.argv[1] if len(sys.argv) > 1 else "."
@@ -46,45 +45,41 @@ async def fetch():
         page = await context.new_page()
 
         t = time.monotonic()
-        await page.goto(SOURCE_URL, wait_until="domcontentloaded", timeout=60000)
+        await page.goto(SOURCE_URL, wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(2000)
         _step(timing, "navigate", t)
 
         t = time.monotonic()
         posts = []
 
-        card_els = await page.query_selector_all("a[href*='/blog/']")
-        if not card_els:
-            card_els = await page.query_selector_all("[class*='card'] a, article a")
+        link_els = await page.query_selector_all("a[data-analytics-link='article']")
+        if not link_els:
+            link_els = await page.query_selector_all("h2 a, [class*='duet--content-cards'] a")
+        if not link_els:
+            link_els = await page.query_selector_all("article a, [class*='river'] a")
 
         seen_urls = set()
-        for el in card_els:
+        for el in link_els:
             if len(posts) >= MAX_ITEMS:
                 break
             try:
                 href = await el.get_attribute("href")
-                if not href:
+                if not href or href in seen_urls:
                     continue
-                href = href.strip().replace("\n", "").replace(" ", "")
-                if href in seen_urls or href.rstrip("/") == "/blog":
+
+                url = href if href.startswith("http") else f"https://www.theverge.com{href}"
+                if "/ai-artificial-intelligence" in url and url.count("/") < 5:
                     continue
+
                 seen_urls.add(href)
-
-                url = href if href.startswith("http") else f"https://deepmind.google{href}"
-
-                title_el = await el.query_selector("h3, h2, [class*='title']")
-                raw_text = (await title_el.inner_text()).strip() if title_el else (await el.inner_text()).strip()
-                # DeepMind cards concatenate title + subtitle; take first line
-                title = raw_text.split("\n")[0].strip() if "\n" in raw_text else raw_text
-                if not title or len(title) < 5:
+                title = (await el.inner_text()).strip()
+                title_el = await el.query_selector("h2, h3, [class*='title']")
+                if title_el:
+                    title = (await title_el.inner_text()).strip()
+                if not title or len(title) < 10:
                     continue
 
-                date_el = await el.query_selector("time, [class*='date'], span[class*='date']")
-                date_text = None
-                if date_el:
-                    date_text = (await date_el.get_attribute("datetime")) or (await date_el.inner_text()).strip()
-
-                posts.append({"title": title, "url": url, "date": date_text})
+                posts.append({"title": title, "url": url})
             except Exception:
                 continue
 
@@ -95,7 +90,7 @@ async def fetch():
             item = {
                 "title": post["title"],
                 "url": post.get("url", ""),
-                "date": post.get("date"),
+                "date": None,
                 "summary": None,
                 "points": [],
             }
@@ -104,28 +99,37 @@ async def fetch():
                 t = time.monotonic()
                 try:
                     await page.goto(post["url"], wait_until="domcontentloaded", timeout=20000)
-                    await page.wait_for_timeout(1500)
+                    await page.wait_for_timeout(2000)
 
-                    paragraphs = await page.query_selector_all("article p, main p, [class*='content'] p")
+                    selectors = [
+                        "[class*='article-body'] p",
+                        ".entry-content p",
+                        "article p",
+                        "main p",
+                    ]
                     text_parts = []
-                    for pel in paragraphs[:6]:
-                        text_parts.append((await pel.inner_text()).strip())
+                    for sel in selectors:
+                        paragraphs = await page.query_selector_all(sel)
+                        for pel in paragraphs[:6]:
+                            txt = (await pel.inner_text()).strip()
+                            if txt and len(txt) > 40:
+                                text_parts.append(txt)
+                        if text_parts:
+                            break
+
                     if text_parts:
-                        figures = await page.query_selector_all("figure, [class*='chart'], [class*='interactive']")
-                        extra_notes = (
-                            ["[See visual data in original post]"] if figures else None
-                        )
                         save_raw_content(
                             OUTPUT_DIR, SOURCE_NAME, idx, item["title"],
                             item.get("url", post.get("url", "")), item.get("date"),
                             text_parts,
-                            difficulty="intermediate",
-                            extra_notes=extra_notes,
+                            difficulty="beginner",
+                            extra_notes=item.get("points"),
                         )
-                        summary = " ".join(text_parts)[:800]
-                        item["summary"] = summary
-                        if figures:
-                            item["points"].append("[See visual data in original post]")
+                        item["summary"] = " ".join(text_parts)[:800]
+
+                    date_el = await page.query_selector("time, [class*='date']")
+                    if date_el:
+                        item["date"] = (await date_el.get_attribute("datetime")) or (await date_el.inner_text()).strip()
                 except Exception:
                     pass
                 _step(timing, f"drill_down_{idx + 1}", t)
@@ -145,7 +149,6 @@ async def fetch():
 
 
 async def safe_fetch():
-    """Wrapper that catches all errors and writes an empty result file."""
     try:
         await fetch()
     except Exception as exc:

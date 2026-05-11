@@ -45,14 +45,17 @@ async def fetch():
         page = await context.new_page()
 
         t = time.monotonic()
-        resp = await page.goto(SOURCE_URL, wait_until="domcontentloaded", timeout=60000)
+        resp = await page.goto(SOURCE_URL, wait_until="networkidle", timeout=60000)
         await page.wait_for_timeout(5000)
-        _step(timing, "navigate", t)
 
-        # Detect Cloudflare challenge
         page_title = await page.title()
         if "just a moment" in page_title.lower() or "security" in page_title.lower():
-            print(f"[{SOURCE_NAME}] Cloudflare challenge detected (title={page_title})")
+            print(f"[{SOURCE_NAME}] Cloudflare challenge, waiting for auto-resolve...")
+            await page.wait_for_timeout(8000)
+            page_title = await page.title()
+
+        if "just a moment" in page_title.lower() or "security" in page_title.lower():
+            print(f"[{SOURCE_NAME}] Cloudflare still blocking (title={page_title})")
             await browser.close()
             timing["total_seconds"] = round(time.monotonic() - t0, 2)
             timing["steps"].append({"step": "cloudflare_blocked", "seconds": 0})
@@ -63,6 +66,7 @@ async def fetch():
                 json.dump(result, f, ensure_ascii=False, indent=2)
             print(f"[{SOURCE_NAME}] 0 items (blocked), {timing['total_seconds']}s -> {out_path}")
             return
+        _step(timing, "navigate", t)
 
         t = time.monotonic()
         posts = []

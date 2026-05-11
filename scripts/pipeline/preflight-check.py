@@ -30,6 +30,8 @@ SOURCES = [
     {"name": "rundown",         "url": "https://www.therundown.ai/"},
     {"name": "github-trending", "url": "https://github.com/trending?since=daily"},
     {"name": "mit-review",      "url": "https://www.technologyreview.com/topic/artificial-intelligence/"},
+    {"name": "venturebeat",    "url": "https://venturebeat.com/category/ai/"},
+    {"name": "theverge",       "url": "https://www.theverge.com/ai-artificial-intelligence"},
 ]
 
 TIMEOUT_MS = 25000
