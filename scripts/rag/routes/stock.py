@@ -527,6 +527,9 @@ def api_stock_train_daily():
     global _train_thread
     import threading
 
+    req_data = request.get_json(silent=True) or {}
+    use_deepseek = req_data.get("use_deepseek", False)
+
     with _train_lock:
         if _train_thread is not None and _train_thread.is_alive():
             return jsonify({"ok": False, "error": "训练正在进行中"})
@@ -548,7 +551,7 @@ def api_stock_train_daily():
                 del sys.modules[mod_name]
 
         from watchlist import list_stocks
-        from model_price_predictor import train_price_prediction
+        from model_price_predictor import train_price_prediction, generate_price_prediction_deepseek
         from prediction_tracker import record_prediction, backfill_actuals, get_latest_verification, get_accuracy_stats, get_aggregate_stats
         from fetch_market_data import update_stock_data
 
@@ -562,6 +565,7 @@ def api_stock_train_daily():
             "results": [],
             "verifications": [],
             "started_at": __import__("datetime").datetime.now().isoformat(),
+            "use_deepseek": use_deepseek,
         }
 
         def _save_prog():
@@ -589,6 +593,12 @@ def api_stock_train_daily():
 
                 result = train_price_prediction(sym)
                 if "error" not in result:
+                    if use_deepseek:
+                        try:
+                            generate_price_prediction_deepseek(sym, result)
+                        except Exception as dse:
+                            log.error("DeepSeek calibration failed for %s: %s", sym, dse)
+
                     record_prediction(sym, result)
                     stats = get_accuracy_stats(sym)
                     progress["results"].append({
@@ -598,6 +608,7 @@ def api_stock_train_daily():
                         "change_pct": result.get("change_pct"),
                         "current_close": result.get("current_close"),
                         "health": stats.get("health"),
+                        "deepseek": result.get("deepseek"),
                     })
                 else:
                     progress["results"].append({

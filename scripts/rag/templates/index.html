@@ -952,6 +952,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
     <div class="modal-content" style="padding:14px 18px;background:#0f1117">
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
         <button type="button" class="send-btn" id="btnTrainStart" onclick="startDailyTraining()" style="padding:8px 18px;font-size:0.86em">&#128640; 开始训练</button>
+        <label style="font-size:0.8em;color:#c4c8f0;display:flex;align-items:center;gap:4px;cursor:pointer;margin-left:8px">
+          <input type="checkbox" id="chkUseDeepseek" style="cursor:pointer"> 🔬 启用 DeepSeek 专家校准与深度推理
+        </label>
         <button type="button" class="toolbar-btn" id="btnTrainPdf" onclick="exportStockPdf('price_prediction','train')" style="font-size:0.78em">&#128196; 导出PDF</button>
         <span id="trainStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
       </div>
@@ -968,6 +971,19 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <p style="color:#6b7280">训练内容: 预测明日收盘价、最高价、最低价</p>
         <p style="color:#6b7280;font-size:0.9em;margin-top:8px">训练完成后可查看每只股票的预测价格和历史准确率。</p>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- DeepSeek Reasoning Modal -->
+<div id="dsReasoningModal" class="modal-overlay" role="dialog" aria-modal="true">
+  <div class="modal-panel" style="max-width:90vw;max-height:85vh;width:750px;background:#0f1117;border:1px solid #2a2d3e">
+    <div class="modal-head" style="border-bottom:1px solid #2a2d3e">
+      <h2 style="color:#38bdf8">&#128300; DeepSeek 专家校准推理报告</h2>
+      <button type="button" class="modal-close" onclick="closeDsReasoningModal()" title="Close">&times;</button>
+    </div>
+    <div class="modal-content" style="padding:14px 18px;background:#0f1117;max-height:70vh;overflow-y:auto;color:#e2e8f0;font-size:0.88em;line-height:1.6">
+      <div id="dsReasoningContent" style="white-space:pre-wrap"></div>
     </div>
   </div>
 </div>
@@ -4228,8 +4244,13 @@ async function startDailyTraining() {
   const st = document.getElementById('trainStatus');
   st.textContent = '启动中...';
   document.getElementById('btnTrainStart').disabled = true;
+  const useDeepseek = document.getElementById('chkUseDeepseek') ? document.getElementById('chkUseDeepseek').checked : false;
   try {
-    const r = await fetch('/api/stock/train/daily', {method:'POST'});
+    const r = await fetch('/api/stock/train/daily', {
+      method:'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ use_deepseek: useDeepseek })
+    });
     const d = await r.json();
     if (!d.ok) { st.textContent = d.error || '启动失败'; document.getElementById('btnTrainStart').disabled = false; return; }
     st.textContent = '训练已启动';
@@ -4480,6 +4501,45 @@ function renderFullTrainReport(verifications, results, sentiment, blackSwan, agg
       h += '<td style="text-align:center;padding:6px;color:' + chgColor + ';font-weight:600">' + chgSign + chgVal.toFixed(2) + '%</td>';
       h += '<td style="text-align:center;padding:6px"><span style="color:' + (hl.color||'#8b8fa4') + ';font-weight:700">' + (hl.grade||'-') + '</span></td>';
       h += '</tr>';
+
+      if (r.deepseek) {
+        window._dsReasoning = window._dsReasoning || {};
+        window._dsReasoning[r.symbol] = r.deepseek.reasoning_report || '';
+        const status = r.deepseek.calibration_status || 'applied';
+
+        if (status === 'applied') {
+          const dsp = r.deepseek.calibrated_predictions || {};
+          const dsc = r.deepseek.calibrated_change_pct || {};
+          const dschgVal = dsc.close || 0;
+          const dschgColor = dschgVal > 0 ? '#ef4444' : dschgVal < 0 ? '#10b981' : '#8b8fa4';
+          const dschgSign = dschgVal > 0 ? '+' : '';
+          h += '<tr style="background:#0c1d24;font-size:0.92em;border-bottom:1px solid #1a1d2e">';
+          h += '<td style="padding:4px 6px;color:#38bdf8" colspan="2">🔬 <b>DeepSeek 专家校准</b></td>';
+          h += '<td style="text-align:center;padding:4px 6px;color:#38bdf8;font-weight:600">&yen;' + (dsp.close||0).toFixed(2) + '</td>';
+          h += '<td style="text-align:center;padding:4px 6px;color:#ef4444">&yen;' + (dsp.high||0).toFixed(2) + '</td>';
+          h += '<td style="text-align:center;padding:4px 6px;color:#10b981">&yen;' + (dsp.low||0).toFixed(2) + '</td>';
+          h += '<td style="text-align:center;padding:4px 6px;color:' + dschgColor + ';font-weight:600">' + dschgSign + dschgVal.toFixed(2) + '%</td>';
+          h += '<td style="text-align:center;padding:4px 6px"><button class="toolbar-btn" style="padding:1px 6px;font-size:0.8em;background:#0369a1;color:#fff;border:none;border-radius:3px;cursor:pointer" onclick="showDsReasoningModal(\'' + r.symbol + '\')">查看推理</button></td>';
+          h += '</tr>';
+        } else {
+          let statusText = '专家校准未成功';
+          let statusColor = '#fbbf24';
+          if (status === 'skipped_no_key') {
+            statusText = '🔬 <b>DeepSeek: 未配置 Key (已跳过)</b>';
+            statusColor = '#8b8fa4';
+          } else if (status === 'api_error') {
+            statusText = '🔬 <b>DeepSeek: API 调试失败 (已跳过)</b>';
+            statusColor = '#ef4444';
+          } else if (status === 'parse_failed') {
+            statusText = '🔬 <b>DeepSeek: 格式解析失败 (仅保留推理)</b>';
+            statusColor = '#fbbf24';
+          }
+          h += '<tr style="background:#1b1515;font-size:0.92em;border-bottom:1px solid #1a1d2e">';
+          h += '<td style="padding:4px 6px;color:' + statusColor + '" colspan="6">' + statusText + '</td>';
+          h += '<td style="text-align:center;padding:4px 6px"><button class="toolbar-btn" style="padding:1px 6px;font-size:0.8em;background:#451a1a;color:#fbbf24;border:1px solid #7f1d1d;border-radius:3px;cursor:pointer" onclick="showDsReasoningModal(\'' + r.symbol + '\')">查看推理</button></td>';
+          h += '</tr>';
+        }
+      }
     });
     h += '</table>';
   }
@@ -4741,6 +4801,15 @@ function _ntTable(etfs, perEtfMap) {
 initSessions();
 checkHealth();
 setInterval(checkHealth, 30000);
+
+function showDsReasoningModal(symbol) {
+  const text = (window._dsReasoning && window._dsReasoning[symbol]) || '暂无报告';
+  document.getElementById('dsReasoningContent').innerHTML = renderMarkdown(text);
+  document.getElementById('dsReasoningModal').classList.add('open');
+}
+function closeDsReasoningModal() {
+  document.getElementById('dsReasoningModal').classList.remove('open');
+}
 </script>
 </body>
 </html>
