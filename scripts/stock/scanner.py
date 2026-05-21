@@ -507,17 +507,21 @@ def _layer3_deepseek_judge(stocks: list[dict]) -> list[dict]:
     from config import call_deepseek
 
     system_prompt = (
-        "你是一位顶级A股量化分析师，专注于判断股票是否值得**现在**买入。\n\n"
+        "你是一位顶级A股量化分析师，专注于进行短期（2周到2、3个月内持有且预期盈利10%以上）的选股与买入判断。\n\n"
         "判断标准（必须全部考量）：\n"
         "1. 聪明钱信号：资金持续流入但股价未大涨=主力吸筹期（最佳买点）\n"
         "2. 追高惩罚：连续大涨、接近涨停板不追买（A股T+1，买入后当日无法卖出）\n"
         "3. 估值安全边际：PE在行业合理区间，PB不过高\n"
         "4. 技术面确认：不在超买区（RSI<70），有支撑位保护\n"
         "5. 基本面底线：盈利能力和财务健康至少中等\n"
-        "6. 资金-价格背离：资金进但价格不涨 = 吸筹（好），资金出但价格涨 = 出货（危险）\n\n"
-        "如果不确定或风险 > 收益，必须判定'不买入'。宁可错过，不可追高。\n\n"
+        "6. 资金-价格背离：资金进但价格不涨 = 吸筹（好），资金出但价格涨 = 出货（危险）\n"
+        "7. 短期持有与盈利预期：评估该股在 2周到2、3个月 内，是否有足够强劲的行业/板块/政策催化剂或量价资金支撑，以较高概率实现 10%以上 的涨幅。\n\n"
+        "在启用 DeepSeek 的情况下，请展现出顶级量化分析深度：\n"
+        "- 结合主力筹码特征、日K线量价配合、背离度以及智能技术特征，深度探讨其短期的爆发潜力与安全边际。\n"
+        "- 提供多达 3-5 条的极度详尽买入原因，并给出清晰、可执行的仓位比例、止损价与目标盈利路径操作策略，切忌笼统空话。\n\n"
+        "如果不确定，或者评估在 2周到3个月 内盈利 10% 以上的置信度不高，或者风险 > 收益，必须判定'不买入'。宁可错过，不可追高。\n\n"
         "输出要求：只输出一个JSON对象，格式如下（不要输出任何其他文字）：\n"
-        '{"verdict":"买入","score":75,"reason":"核心理由3-5条","risk":"主要风险","buy_low":9.50,"buy_high":10.00,"strategy":"建议仓位和策略"}\n'
+        '{"verdict":"买入","score":75,"reason":"核心理由3-5条（必须包含对2周到2、3个月内盈利10%以上潜力的深度剖析和核心逻辑论证）","risk":"主要风险","buy_low":9.50,"buy_high":10.00,"strategy":"建议仓位以及针对2周到3个月持有周期的具体买卖/持有操作路径与止损点"}\n'
         "verdict 只能是 \"买入\" 或 \"不买入\"。score 0-100。buy_low/buy_high 是建议买入价区间。"
     )
 
@@ -733,14 +737,15 @@ def _build_scoring_prompt(stock: dict) -> str:
     else:
         ff_text = "  (无资金流向数据)"
 
-    return f"""判断这只A股股票**现在是否值得买入**。
+    return f"""判断这只A股股票**是否符合短期（2周到2、3个月内持有且预期盈利10%以上）买入要求**。
 
 核心原则(A股特色):
-1. 跟随"聪明钱"吸筹：资金持续流入但股价未大涨=主力吸筹(最佳信号)
-2. 追高是最大敌人：连续大涨、涨停板后不追买(A股T+1,买入后当日无法卖出)
-3. 估值合理+基本面良好是安全底线
-4. A股T+1风险：买入即锁仓一天,所以不能追高,要有足够安全边际
-5. 如果不确定或风险大于收益,必须判定"不买入"
+1. 持有期与预期：目标是在短期 2周到2、3个月 内，大概率能实现 10% 以上 的盈利空间。
+2. 跟随"聪明钱"吸筹：资金持续流入但股价未大涨=主力吸筹(最佳信号)
+3. 追高是最大敌人：连续大涨、涨停板后不追买(A股T+1,买入后当日无法卖出)
+4. 估值合理+基本面良好是安全底线
+5. A股T+1风险：买入即锁仓一天,所以不能追高,要有足够安全边际
+6. 如果不确定或短期盈利10%的概率不高或风险大于收益,必须判定"不买入"
 
 数据:
 - 股票: {stock['name']} ({stock['symbol']})
@@ -762,9 +767,9 @@ def _build_scoring_prompt(stock: dict) -> str:
 {signals_text}
 
 要求: 直接输出一个JSON对象，不要输出任何其他文字。
-verdict 字段必须是 "买入" 或 "不买入"。只有你确信值得买入时才填"买入"。
+verdict 字段必须是 "买入" 或 "不买入"。只有你确信值得买入且2周至3个月内有10%+盈利潜力时才填"买入"。
 格式(buy_low和buy_high是数字):
-{{"verdict":"买入","score":75,"reason":"资金持续流入且股价回调充分,估值合理,T+1安全边际足够","risk":"行业竞争加剧","buy_low":{price_f * 0.95:.2f},"buy_high":{price_f * 1.0:.2f}}}
+{{"verdict":"买入","score":75,"reason":"资金持续流入且主力明显吸筹，回调充分，预期2周至2个月内有10%以上盈利潜力","risk":"行业竞争加剧","buy_low":{price_f * 0.95:.2f},"buy_high":{price_f * 1.0:.2f}}}
 
 你的回复(只输出JSON):"""
 
@@ -1120,6 +1125,8 @@ def _generate_report(top_picks: list[dict], scan_meta: dict) -> str:
         f"# AI股票推荐报告(短期) — {date_str}",
         "",
         f"**扫描时间**: {scan_meta.get('started_at', 'N/A')}",
+        "**目标周期**: 短期 (2周到2、3个月内持有)",
+        "**盈利预期**: 10% 以上",
         f"**全市场股票数**: {scan_meta.get('market_total', 'N/A')}",
         f"**Layer1候选**: {scan_meta.get('layer1_count', 'N/A')}",
         f"**Layer2分析**: {scan_meta.get('layer2_count', 'N/A')}",
@@ -1613,25 +1620,42 @@ def stop_scan() -> dict:
 # ---------------------------------------------------------------------------
 
 def _fetch_market_eastmoney() -> pd.DataFrame:
-    """Fallback: fetch full A-share market data from Sina Market Center API."""
-    log.info("Layer 1: 尝试新浪市场中心备用API...")
+    """Fallback: fetch full A-share market data from Sina Market Center API with pagination retry."""
+    log.info("Layer 1: 尝试新浪市场中心分页备用API...")
     url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Referer": "https://finance.sina.com.cn",
     }
 
     all_rows = []
     page = 1
+    max_retries = 3
     while True:
         params = {
             "page": str(page), "num": "80",
             "sort": "changepercent", "asc": "0",
             "node": "hs_a", "symbol": "",
         }
-        resp = requests.get(url, params=params, headers=headers, timeout=20, proxies=_PROXIES)
-        resp.raise_for_status()
-        items = resp.json()
+        
+        items = None
+        for attempt in range(max_retries):
+            try:
+                resp = requests.get(url, params=params, headers=headers, timeout=12, proxies=_PROXIES)
+                if resp.status_code == 200:
+                    items = resp.json()
+                    break
+                elif resp.status_code in (456, 403, 503):
+                    log.warning("新浪API遇到 %d 频控，正在进行第 %d 次重试延迟...", resp.status_code, attempt + 1)
+                    time.sleep(1.5 + attempt * 2.0)
+            except Exception as e:
+                log.warning("新浪API页抓取网络异常: %s, 正在重试...", e)
+                time.sleep(1.5)
+                
+        if items is None:
+            log.warning("新浪分页API在第 %d 页完全失败，停止抓取，合并已采集数据", page)
+            break
+            
         if not items:
             break
 
@@ -1660,13 +1684,14 @@ def _fetch_market_eastmoney() -> pd.DataFrame:
         time.sleep(0.3)
 
     if not all_rows:
-        raise ValueError("新浪市场中心返回空数据")
+        raise ValueError("新浪分页API未成功采集到任何行情数据")
 
     df = pd.DataFrame(all_rows)
     for col in ["最新价", "涨跌幅", "换手率", "成交额", "市盈率-动态", "总市值"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-    log.info("新浪市场中心API: 获取 %d 只股票", len(df))
+    log.info("新浪备用API: 成功采集 %d 只股票", len(df))
     return df
+
 
 
 def _num(val) -> float | None:

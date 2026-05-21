@@ -56,6 +56,24 @@ def _get_global_settings() -> dict:
     return {}
 
 
+_AUDIO_STEP_LANG_KEYS = {
+    "ai_audio": "audio_lang_ai",
+    "world_audio": "audio_lang_world",
+    "china_audio": "audio_lang_china",
+    "wiki_audio": "audio_lang_wiki",
+}
+
+
+def _resolve_audio_lang(step: str, gs: dict, lang_overrides: dict | None) -> str:
+    """Resolve narration language for a daily-fetch audio step."""
+    if lang_overrides and step in lang_overrides:
+        lang = lang_overrides[step]
+        if lang in ("zh", "en"):
+            return lang
+    setting_key = _AUDIO_STEP_LANG_KEYS.get(step, "audio_lang_ai")
+    return gs.get(setting_key, "zh")
+
+
 # ---------------------------------------------------------------------------
 # AI Learning — ingest daily AI news into learning knowledge base
 # ---------------------------------------------------------------------------
@@ -217,14 +235,33 @@ def _ingest_ai_news_to_learning(output_dir: str, date_str: str) -> int:
 _daily_fetch_jobs: dict[str, dict] = {}
 
 
-def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date: str | None = None):
+def _check_wn_translated(output_dir: str) -> bool:
+    wn_path = os.path.join(output_dir, "world-news", "world-news-data.json")
+    if not os.path.isfile(wn_path):
+        return False
+    try:
+        with open(wn_path, "r", encoding="utf-8") as f:
+            return json.load(f).get("translated", False)
+    except Exception:
+        return False
+
+
+def _run_daily_fetch(
+    job_id: str,
+    *,
+    only_steps: list | None = None,
+    target_date: str | None = None,
+    lang_overrides: dict | None = None,
+):
     """Background worker: run full briefing pipeline, then commit report + Jira daily.
 
     If *only_steps* is provided (non-empty list), only those pipeline steps are
     executed — used by the "Continue" button to finish an incomplete run.
+    *lang_overrides* maps audio step names (e.g. ``ai_audio``) to ``zh`` or ``en``.
     """
     import subprocess as sp
     job = _daily_fetch_jobs[job_id]
+    job["lang_overrides"] = lang_overrides or {}
     today = target_date or datetime.now().strftime("%Y-%m-%d")
     output_dir = os.path.join(REPORTS_ROOT, today)
     _should_run = lambda step_name: not only_steps or step_name in only_steps  # noqa: E731
@@ -232,9 +269,45 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
     scripts_dir = _SCRIPTS_DIR
     steps = []
 
+    def _already_done(step_name: str) -> bool:
+        """Check whether a step's output files already exist for today.
+        Returns True (and appends a 'skipped' entry to *steps*) when the step
+        can safely be skipped because its artefacts are already on disk.
+        Only applies to full runs (not partial/only_steps runs where the user
+        explicitly requested a step).
+        """
+        if only_steps:
+            return False
+        checks = {
+            "fetch_sources": lambda: os.path.isfile(os.path.join(output_dir, "briefing-data.json")),
+            "topic_dedup": lambda: os.path.isfile(os.path.join(output_dir, "briefing-data-filtered.json")),
+            "ai_audio": lambda: os.path.isfile(os.path.join(output_dir, "ai-briefing.mp3")),
+            "world_audio": lambda: os.path.isfile(os.path.join(output_dir, "world-news.mp3")),
+            "china_audio": lambda: os.path.isfile(os.path.join(output_dir, "china-news.mp3")),
+            "wiki_audio": lambda: os.path.isfile(os.path.join(output_dir, "wiki-report.mp3")),
+            "commit_report": lambda: any(
+                f.startswith("commit-report-") and f.endswith(".md")
+                for f in os.listdir(output_dir)
+            ) if os.path.isdir(output_dir) else False,
+            "jira_daily": lambda: os.path.isfile(
+                os.path.join(output_dir, f"atlassian-daily-report-{today.replace('-', '')}.md")
+            ),
+            "wiki_fetch": lambda: any(
+                f.startswith("wiki-fetch-") and f.endswith(".md")
+                for f in os.listdir(output_dir)
+            ) if os.path.isdir(output_dir) else False,
+            "world_news_translate": lambda: _check_wn_translated(output_dir),
+        }
+        check_fn = checks.get(step_name)
+        if check_fn and check_fn():
+            steps.append({"step": step_name, "exit_code": 0,
+                          "output": f"Skipped — already completed for {today}"})
+            return True
+        return False
+
     try:
         job["status"] = "fetching"
-        if _should_run("fetch_sources"):
+        if _should_run("fetch_sources") and not _already_done("fetch_sources"):
             job["step"] = "Running AI + world news fetchers..."
             try:
                 run_all = os.path.join(scripts_dir, "pipeline", "run-all-sources.py")
@@ -251,7 +324,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
             except Exception as e:
                 steps.append({"step": "fetch_sources", "exit_code": 1, "output": str(e)[:300]})
 
-        if _should_run("topic_dedup"):
+        if _should_run("topic_dedup") and not _already_done("topic_dedup"):
             job["step"] = "Running topic deduplication..."
             try:
                 filter_script = os.path.join(scripts_dir, "pipeline", "filter_topics.py")
@@ -278,7 +351,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                               "output": str(e)[:300]})
 
         commit_text = ""
-        if _should_run("commit_report"):
+        if _should_run("commit_report") and not _already_done("commit_report"):
             job["step"] = "Running commit report (24h)..."
             try:
                 commit_script = os.path.join(scripts_dir, "tools", "commit-report.ps1")
@@ -302,7 +375,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                 steps.append({"step": "commit_report", "exit_code": 1, "output": str(e)[:200]})
 
         jira_text = ""
-        if _should_run("jira_daily"):
+        if _should_run("jira_daily") and not _already_done("jira_daily"):
             job["step"] = "Running Jira daily report..."
             try:
                 if os.path.exists(JIRA_SCRIPT):
@@ -324,12 +397,20 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                 steps.append({"step": "jira_daily", "exit_code": 1, "output": str(e)[:200]})
 
         wiki_text = ""
-        if _should_run("wiki_fetch"):
+        all_user_pages_detail = {}
+        if _should_run("wiki_fetch") and not _already_done("wiki_fetch"):
             job["step"] = "Running Wiki Fetch for all team members..."
             _WIKI_USERS = [
                 "Rong Yin", "Raymond Shen", "Charlotte Jiang",
                 "Christoph Scheben", "Tobias Troesch",
                 "Belen Liu", "Eason Li", "Johnny Yang",
+                "Bin Si", "Deniz Erginos", "Djilija Vranic",
+                "Dominik Kowalski", "Eatin Yang", "Ehsan Esmaili",
+                "Emrys MacInally", "Erik Zweier", "Holger Pflüger",
+                "Jan Loeffler", "Martin Leim", "Mathias Stümpert",
+                "Michael Mauer", "Patrick Höhle", "Quan Cheng",
+                "Samer Abdalla", "Steffen Eitelmann", "Tamino Fischer",
+                "Thomas Freier", "Thomas Simon",
             ]
             try:
                 script = os.path.join(_RAG_DIR, "index_confluence_user.py")
@@ -441,6 +522,11 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                             ai_sum = _wiki_ai_summary(pg)
                             if ai_sum:
                                 pg["ai_summary"] = ai_sum
+
+                wiki_details_json = os.path.join(output_dir, f"wiki-details-{today}.json")
+                if all_user_pages_detail:
+                    with open(wiki_details_json, "w", encoding="utf-8") as wdj:
+                        json.dump(all_user_pages_detail, wdj, ensure_ascii=False, indent=2)
 
                 wiki_report_path = os.path.join(output_dir, f"wiki-fetch-{today}.md")
                 with open(wiki_report_path, "w", encoding="utf-8") as wf:
@@ -579,7 +665,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                 steps.append({"step": "refetch_ai", "exit_code": 1, "output": str(e)[:300]})
 
         # --- Audio generation: AI Briefing (segmented per-source) ---
-        if _should_run("ai_audio"):
+        if _should_run("ai_audio") and not _already_done("ai_audio"):
             job["step"] = "Generating AI briefing audio (segmented)..."
             try:
                 data_file = os.path.join(output_dir, "briefing-data.json")
@@ -593,7 +679,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                     for src_block in (bdata.get("per_source_data") or []):
                         src_name = src_block.get("source_name") or src_block.get("name") or ""
                         items_text_parts = []
-                        for it in src_block.get("items", [])[:5]:
+                        for it in src_block.get("items", [])[:3]:
                             title = it.get("title", "")
                             summary_text = it.get("summary") or it.get("description") or ""
                             url = it.get("url") or ""
@@ -616,7 +702,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                             })
                     if ai_segments:
                         gs = _get_global_settings()
-                        ai_lang = gs.get("audio_lang_ai", "zh")
+                        ai_lang = _resolve_audio_lang("ai_audio", gs, job.get("lang_overrides"))
                         ai_voice = "en-US-AndrewNeural" if ai_lang == "en" else "zh-CN-YunxiNeural"
                         job["step"] = f"Generating AI narration ({len(ai_segments)} segments, lang={ai_lang})..."
                         narrations_ai = _generate_segmented_narrations(ai_segments, "ai", lang=ai_lang)
@@ -652,7 +738,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                 steps.append({"step": "refetch_world", "exit_code": 1, "output": str(e)[:300]})
 
         # --- Translate world news to Chinese (separate step to avoid timeout) ---
-        if _should_run("world_news_translate"):
+        if _should_run("world_news_translate") and not _already_done("world_news_translate"):
             wn_dir = os.path.join(output_dir, "world-news")
             wn_merged_path = os.path.join(wn_dir, "world-news-data.json")
             if os.path.isfile(wn_merged_path):
@@ -762,7 +848,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                     segs.append({"name": cat_name or "News", "content": "\n\n".join(parts)})
             return segs
 
-        if _should_run("world_audio"):
+        if _should_run("world_audio") and not _already_done("world_audio"):
             job["step"] = "Generating world news audio..."
             try:
                 wn_file = os.path.join(output_dir, "world-news", "world-news-data.json")
@@ -773,7 +859,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                     categories = wdata.get("categories") or []
 
                     gs = _get_global_settings()
-                    wn_lang = gs.get("audio_lang_world", "zh")
+                    wn_lang = _resolve_audio_lang("world_audio", gs, job.get("lang_overrides"))
                     wn_voice = "en-US-AndrewNeural" if wn_lang == "en" else "zh-CN-YunxiNeural"
                     wn_segments = _build_audio_segments(
                         categories,
@@ -798,7 +884,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
             except Exception as e:
                 steps.append({"step": "world_audio", "exit_code": 1, "output": str(e)[:300]})
 
-        if _should_run("china_audio"):
+        if _should_run("china_audio") and not _already_done("china_audio"):
             job["step"] = "Generating Chinese news audio..."
             try:
                 wn_file = os.path.join(output_dir, "world-news", "world-news-data.json")
@@ -809,7 +895,7 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                     categories = wdata.get("categories") or []
 
                     gs = _get_global_settings()
-                    cn_lang = gs.get("audio_lang_china", "zh")
+                    cn_lang = _resolve_audio_lang("china_audio", gs, job.get("lang_overrides"))
                     cn_voice = "en-US-AndrewNeural" if cn_lang == "en" else "zh-CN-YunxiNeural"
                     cn_segments = _build_audio_segments(
                         categories,
@@ -834,6 +920,85 @@ def _run_daily_fetch(job_id: str, *, only_steps: list | None = None, target_date
                     steps.append({"step": "china_audio", "exit_code": -1, "output": "No world news data file found"})
             except Exception as e:
                 steps.append({"step": "china_audio", "exit_code": 1, "output": str(e)[:300]})
+
+        # --- Audio generation: Wiki Fetch Report (purpose, changes, author per page) ---
+        if _should_run("wiki_audio") and not _already_done("wiki_audio"):
+            job["step"] = "Generating Wiki Fetch Report audio..."
+            try:
+                wiki_details_file = None
+                for fn in os.listdir(output_dir):
+                    if fn.startswith("wiki-details-") and fn.endswith(".json"):
+                        wiki_details_file = os.path.join(output_dir, fn)
+                        break
+
+                wiki_page_details: dict[str, list[dict]] = {}
+                if wiki_details_file and os.path.isfile(wiki_details_file):
+                    with open(wiki_details_file, "r", encoding="utf-8") as wdf:
+                        wiki_page_details = json.load(wdf)
+                elif all_user_pages_detail:
+                    wiki_page_details = all_user_pages_detail
+
+                if wiki_page_details:
+                    wiki_segments: list[dict] = []
+                    for user, pages in wiki_page_details.items():
+                        if not pages:
+                            continue
+                        page_texts: list[str] = []
+                        for pg in pages:
+                            title = pg.get("title", "Untitled")
+                            space = pg.get("space", "")
+                            version = pg.get("version_number", 1)
+                            ai_summary = pg.get("ai_summary", "")
+                            raw_summary = pg.get("summary", "").strip()
+                            headings = pg.get("headings", [])
+
+                            parts = [f"Page: {title}"]
+                            if space:
+                                parts.append(f"Space: {space}")
+                            parts.append(f"Author: {user}")
+                            if version <= 1:
+                                parts.append("This is a newly created page.")
+                            else:
+                                parts.append(f"This page was updated (version {version}).")
+                            if ai_summary:
+                                parts.append(f"Summary: {ai_summary}")
+                            elif raw_summary:
+                                parts.append(f"Content: {raw_summary[:300]}")
+                            if headings:
+                                parts.append(f"Sections: {', '.join(headings[:6])}")
+                            page_texts.append("\n".join(parts))
+
+                        if page_texts:
+                            wiki_segments.append({
+                                "name": f"{user}'s Wiki Updates",
+                                "content": "\n\n".join(page_texts),
+                            })
+
+                    if wiki_segments:
+                        gs = _get_global_settings()
+                        wiki_lang = _resolve_audio_lang("wiki_audio", gs, job.get("lang_overrides"))
+                        wiki_voice = "en-US-AndrewNeural" if wiki_lang == "en" else "zh-CN-YunxiNeural"
+                        job["step"] = f"Generating Wiki narration ({len(wiki_segments)} segments, lang={wiki_lang})..."
+                        narrations_wiki = _generate_segmented_narrations(
+                            wiki_segments, "wiki", lang=wiki_lang,
+                        )
+                        if narrations_wiki:
+                            total_chars = sum(len(n) for n in narrations_wiki)
+                            wiki_mp3 = os.path.join(output_dir, "wiki-report.mp3")
+                            _tts_segments_to_mp3(narrations_wiki, wiki_mp3, voice=wiki_voice)
+                            steps.append({"step": "wiki_audio", "exit_code": 0,
+                                          "output": f"Generated wiki-report.mp3 ({len(narrations_wiki)} segments, {total_chars} chars)"})
+                        else:
+                            steps.append({"step": "wiki_audio", "exit_code": 1,
+                                          "output": "Wiki narration generation failed"})
+                    else:
+                        steps.append({"step": "wiki_audio", "exit_code": -1,
+                                      "output": "No wiki pages with content to narrate"})
+                else:
+                    steps.append({"step": "wiki_audio", "exit_code": -1,
+                                  "output": "No wiki details data found"})
+            except Exception as e:
+                steps.append({"step": "wiki_audio", "exit_code": 1, "output": str(e)[:300]})
 
         job["status"] = "done"
         job["step"] = "Complete"
@@ -868,12 +1033,23 @@ def api_daily_fetch_continue():
     data = request.get_json(silent=True) or {}
     only_steps = data.get("steps") or []
     target_date = data.get("date") or datetime.now().strftime("%Y-%m-%d")
+    lang_overrides = data.get("lang_overrides") or {}
     job_id = str(_uuid.uuid4())[:8]
-    _daily_fetch_jobs[job_id] = {"status": "starting", "step": "Continuing...", "steps": [], "files": []}
+    _daily_fetch_jobs[job_id] = {
+        "status": "starting",
+        "step": "Continuing...",
+        "steps": [],
+        "files": [],
+        "lang_overrides": lang_overrides,
+    }
     t = threading.Thread(
         target=_run_daily_fetch,
         args=(job_id,),
-        kwargs={"only_steps": only_steps, "target_date": target_date},
+        kwargs={
+            "only_steps": only_steps,
+            "target_date": target_date,
+            "lang_overrides": lang_overrides,
+        },
         daemon=True,
     )
     t.start()
@@ -996,6 +1172,7 @@ def api_daily_fetch_history():
     has_audio = os.path.isfile(os.path.join(date_dir, "ai-briefing.mp3"))
     has_wn_audio = os.path.isfile(os.path.join(date_dir, "world-news.mp3"))
     has_cn_audio = os.path.isfile(os.path.join(date_dir, "china-news.mp3"))
+    has_wiki_audio = os.path.isfile(os.path.join(date_dir, "wiki-report.mp3"))
     has_pdf = os.path.isfile(os.path.join(date_dir, "ai-briefing.pdf"))
 
     has_sources = os.path.isfile(os.path.join(date_dir, "briefing-data.json"))
@@ -1044,6 +1221,12 @@ def api_daily_fetch_history():
         missing_steps.append("china_audio")
     elif not has_wn_data and has_wn_source_jsons and not has_cn_audio:
         missing_steps.append("china_audio")
+    has_wiki_details = any(f.startswith("wiki-details-") and f.endswith(".json")
+                          for f in os.listdir(date_dir)) if os.path.isdir(date_dir) else False
+    if not has_wiki_audio and (has_wiki_details or has_wiki):
+        if has_wiki and not has_wiki_details:
+            missing_steps.append("wiki_fetch")
+        missing_steps.append("wiki_audio")
 
     date_dirs = sorted(
         [d for d in os.listdir(REPORTS_ROOT)
@@ -1051,9 +1234,18 @@ def api_daily_fetch_history():
         reverse=True,
     )[:30]
 
+    gs = _get_global_settings()
+    audio_langs = {
+        "audio_lang_ai": gs.get("audio_lang_ai", "zh"),
+        "audio_lang_world": gs.get("audio_lang_world", "zh"),
+        "audio_lang_china": gs.get("audio_lang_china", "zh"),
+        "audio_lang_wiki": gs.get("audio_lang_wiki", "en"),
+    }
+
     return jsonify({
         "date": target_date,
         "files": files,
+        "audio_langs": audio_langs,
         "stats": {
             "ai_items": ai_count,
             "ai_by_source": ai_by_source,
@@ -1068,6 +1260,7 @@ def api_daily_fetch_history():
         "has_audio": has_audio,
         "has_wn_audio": has_wn_audio,
         "has_cn_audio": has_cn_audio,
+        "has_wiki_audio": has_wiki_audio,
         "has_pdf": has_pdf,
         "missing_steps": missing_steps,
         "available_dates": date_dirs,

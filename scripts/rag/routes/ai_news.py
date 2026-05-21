@@ -34,6 +34,36 @@ for _p in (_SCRIPTS_DIR, _RAG_PKG_DIR):
 
 from config import REPORTS_ROOT  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Telegram send config (loaded from bot_telegram.env beside the scripts dir)
+# ---------------------------------------------------------------------------
+_TELEGRAM_ENV_FILE = os.path.join(_SCRIPTS_DIR, "bot_telegram.env")
+
+
+def _load_telegram_config() -> tuple[str, str, str]:
+    """Return (bot_token, owner_id, socks_proxy) from env file or environment."""
+    token, owner, proxy = "", "", ""
+    if os.path.isfile(_TELEGRAM_ENV_FILE):
+        with open(_TELEGRAM_ENV_FILE, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    k, v = k.strip(), v.strip()
+                    if k == "TELEGRAM_BOT_TOKEN":
+                        token = v
+                    elif k == "TELEGRAM_OWNER_ID":
+                        owner = v
+                    elif k == "SOCKS_PROXY":
+                        proxy = v
+    return (
+        os.environ.get("TELEGRAM_BOT_TOKEN", token),
+        os.environ.get("TELEGRAM_OWNER_ID", owner),
+        os.environ.get("SOCKS_PROXY", proxy),
+    )
+
 from rag_engine import (  # noqa: E402
     get_qdrant as _get_qdrant,
     get_qdrant_points,
@@ -578,7 +608,7 @@ def api_article_audio():
     summary = data.get("summary", "")
     url = data.get("url", "")
     source = data.get("source", "")
-    language = data.get("language", "en")
+    language = data.get("language", "both")
     job_id = str(uuid.uuid4())[:8]
     _audio_jobs[job_id] = {"status": "queued", "created": datetime.now().isoformat()}
     threading.Thread(
@@ -637,72 +667,80 @@ def _generate_article_audio(job_id: str, title: str, summary: str,
         part_files = []
 
         try:
-            # --- Part 1: Chinese deep-dive → separate MP3 ---
-            _audio_jobs[job_id]["status"] = "generating_script_zh"
-            zh_system = (
-                "你在写一档AI科技播客的深度解读对话，两个角色：\n"
-                "- [主播]：好奇心强的科技记者，善于提问。\n"
-                "- [嘉宾]：资深AI专家，讲解清晰有见解。\n"
-                "每句必须以[主播]或[嘉宾]开头。不要用markdown。\n"
-                "全部用中文写作，只有专有名词保留英文。\n"
-                "尽可能详细地覆盖文章的所有要点。"
-            )
-            zh_user = (
-                f"写一段关于这篇文章的深度解读播客对话（约2000-3000字）。"
-                f"详细解释它是什么、为什么重要、技术细节和更广泛的影响。"
-                f"覆盖文章中的所有关键信息点。"
-                f"用你的知识补充摘要之外的内容。\n\n{content_block}"
-            )
-            narration_zh = _ollama_narration_call(zh_system, zh_user,
-                                                  max_tokens=6144, timeout=420)
-            if narration_zh and len(narration_zh) > 50:
-                _audio_jobs[job_id]["status"] = "tts_zh"
-                zh_path = os.path.join(tmp_dir, "part_0_zh.mp3")
-                _tts_to_mp3(_clean_narration_for_tts(narration_zh), zh_path,
-                            voice=_DIALOGUE_VOICES["zh"]["host"])
-                if os.path.isfile(zh_path) and os.path.getsize(zh_path) > 0:
-                    part_files.append(zh_path)
-                _log.info("Article audio ZH done: %d chars → %s",
-                          len(narration_zh), "OK" if part_files else "empty")
+            do_zh = language in ("zh", "both")
+            do_en = language in ("en", "both")
 
-            # --- Part 2: English deep-dive with vocabulary → separate MP3 ---
-            _audio_jobs[job_id]["status"] = "generating_script_en"
-            en_system = (
-                "You are writing a deep-dive podcast dialogue about a SINGLE tech article.\n"
-                "Two speakers:\n"
-                "- [Host]: Curious tech journalist, asks sharp questions.\n"
-                "- [Guest]: Expert who explains clearly and provides insights.\n"
-                "Every line starts with [Host] or [Guest]. No markdown.\n\n"
-                "VOCABULARY TEACHING (listener is Chinese at CET-6 level):\n"
-                "When using an advanced word, explain it with a dash:\n"
-                "[Guest] This is a paradigm shift — a fundamental change in approach — for the industry.\n"
-                "Include at least 5 such explanations spread across the dialogue.\n"
-                "Cover ALL key points from the article thoroughly."
-            )
-            en_user = (
-                f"Write a deep-dive podcast dialogue about this article "
-                f"(approximately 1500-2500 words). Cover ALL key points: "
-                f"what it is, why it matters, the technical details, "
-                f"and broader implications. Be thorough — do not skip any "
-                f"important information from the article.\n\n"
-                f"{content_block}"
-            )
-            narration_en = _ollama_narration_call(en_system, en_user,
-                                                  max_tokens=6144, timeout=420)
-            if narration_en and len(narration_en) > 50:
-                narration_en = _enrich_vocabulary(narration_en)
-                _audio_jobs[job_id]["status"] = "tts_en"
-                en_path = os.path.join(tmp_dir, "part_1_en.mp3")
-                _tts_to_mp3(_clean_narration_for_tts(narration_en), en_path,
-                            voice=_DIALOGUE_VOICES["en"]["host"])
-                if os.path.isfile(en_path) and os.path.getsize(en_path) > 0:
-                    part_files.append(en_path)
-                _log.info("Article audio EN done: %d chars → %s",
-                          len(narration_en), "OK" if len(part_files) > (1 if narration_zh else 0) else "empty")
+            narration_zh = ""
+            narration_en = ""
+
+            if do_zh:
+                # --- Part 1: Chinese deep-dive → separate MP3 ---
+                _audio_jobs[job_id]["status"] = "generating_script_zh"
+                zh_system = (
+                    "你在写一档AI科技播客的深度解读对话，两个角色：\n"
+                    "- [主播]：好奇心强的科技记者，善于提问。\n"
+                    "- [嘉宾]：资深AI专家，讲解清晰有见解。\n"
+                    "每句必须以[主播]或[嘉宾]开头。不要用markdown。\n"
+                    "全部用中文写作，只有专有名词保留英文。\n"
+                    "尽可能详细地覆盖文章的所有要点。"
+                )
+                zh_user = (
+                    f"写一段关于这篇文章的深度解读播客对话（约2000-3000字）。"
+                    f"详细解释它是什么、为什么重要、技术细节和更广泛的影响。"
+                    f"覆盖文章中的所有关键信息点。"
+                    f"用你的知识补充摘要之外的内容。\n\n{content_block}"
+                )
+                narration_zh = _ollama_narration_call(zh_system, zh_user,
+                                                      max_tokens=6144, timeout=420)
+                if narration_zh and len(narration_zh) > 50:
+                    _audio_jobs[job_id]["status"] = "tts_zh"
+                    zh_path = os.path.join(tmp_dir, "part_0_zh.mp3")
+                    _tts_to_mp3(_clean_narration_for_tts(narration_zh), zh_path,
+                                voice=_DIALOGUE_VOICES["zh"]["host"])
+                    if os.path.isfile(zh_path) and os.path.getsize(zh_path) > 0:
+                        part_files.append(zh_path)
+                    _log.info("Article audio ZH done: %d chars → %s",
+                              len(narration_zh), "OK" if part_files else "empty")
+
+            if do_en:
+                # --- Part 2: English deep-dive with vocabulary → separate MP3 ---
+                _audio_jobs[job_id]["status"] = "generating_script_en"
+                en_system = (
+                    "You are writing a deep-dive podcast dialogue about a SINGLE tech article.\n"
+                    "Two speakers:\n"
+                    "- [Host]: Curious tech journalist, asks sharp questions.\n"
+                    "- [Guest]: Expert who explains clearly and provides insights.\n"
+                    "Every line starts with [Host] or [Guest]. No markdown.\n\n"
+                    "VOCABULARY TEACHING (listener is Chinese at CET-6 level):\n"
+                    "When using an advanced word, explain it with a dash:\n"
+                    "[Guest] This is a paradigm shift — a fundamental change in approach — for the industry.\n"
+                    "Include at least 5 such explanations spread across the dialogue.\n"
+                    "Cover ALL key points from the article thoroughly."
+                )
+                en_user = (
+                    f"Write a deep-dive podcast dialogue about this article "
+                    f"(approximately 1500-2500 words). Cover ALL key points: "
+                    f"what it is, why it matters, the technical details, "
+                    f"and broader implications. Be thorough — do not skip any "
+                    f"important information from the article.\n\n"
+                    f"{content_block}"
+                )
+                narration_en = _ollama_narration_call(en_system, en_user,
+                                                      max_tokens=6144, timeout=420)
+                if narration_en and len(narration_en) > 50:
+                    narration_en = _enrich_vocabulary(narration_en)
+                    _audio_jobs[job_id]["status"] = "tts_en"
+                    en_path = os.path.join(tmp_dir, "part_1_en.mp3")
+                    _tts_to_mp3(_clean_narration_for_tts(narration_en), en_path,
+                                voice=_DIALOGUE_VOICES["en"]["host"])
+                    if os.path.isfile(en_path) and os.path.getsize(en_path) > 0:
+                        part_files.append(en_path)
+                    _log.info("Article audio EN done: %d chars → %s",
+                              len(narration_en), "OK" if len(part_files) > (1 if narration_zh else 0) else "empty")
 
             if not part_files:
                 _audio_jobs[job_id]["status"] = "done"
-                _audio_jobs[job_id]["error"] = "LLM/TTS produced no usable audio for either language."
+                _audio_jobs[job_id]["error"] = "LLM/TTS produced no usable audio for the requested language."
                 return
 
             # --- Concat all parts into final MP3 ---
@@ -851,6 +889,67 @@ def api_serve_audio_file(date_str, filename):
         mime = "application/pdf"
     return send_file(file_path, mimetype=mime, as_attachment=False,
                      download_name=filename)
+
+
+@ai_news_bp.route("/api/toolbar/ai-news-kb/send-telegram", methods=["POST"])
+def api_send_audio_telegram():
+    """Send an audio file to the Telegram owner via the Bot API."""
+    data = request.get_json(silent=True) or {}
+    audio_url = data.get("audio_url", "").strip()
+    title = data.get("title", "").strip() or "Audio"
+
+    if not audio_url:
+        return jsonify({"error": "audio_url is required"}), 400
+
+    # Resolve the audio_url (e.g. /api/toolbar/audio-file/2026-05-12/article-audio-xxx.mp3) to a local path
+    prefix = "/api/toolbar/audio-file/"
+    if not audio_url.startswith(prefix):
+        return jsonify({"error": "Invalid audio URL format"}), 400
+
+    relative = audio_url[len(prefix):]
+    parts = relative.split("/", 1)
+    if len(parts) != 2:
+        return jsonify({"error": "Invalid audio URL format"}), 400
+
+    date_str, filename = parts
+    file_path = os.path.join(REPORTS_ROOT, date_str, filename)
+    if not os.path.isfile(file_path):
+        return jsonify({"error": "Audio file not found on server"}), 404
+
+    size_mb = os.path.getsize(file_path) / (1024 * 1024)
+    if size_mb > 50:
+        return jsonify({"error": f"File too large ({size_mb:.1f}MB). Telegram limit is 50MB."}), 400
+
+    bot_token, owner_id, socks_proxy = _load_telegram_config()
+    if not bot_token or not owner_id:
+        return jsonify({"error": "Telegram bot not configured (missing token or owner ID)"}), 500
+
+    proxies = None
+    if socks_proxy:
+        proxies = {"http": socks_proxy, "https": socks_proxy}
+
+    try:
+        with open(file_path, "rb") as f:
+            resp = req_mod.post(
+                f"https://api.telegram.org/bot{bot_token}/sendAudio",
+                data={
+                    "chat_id": owner_id,
+                    "title": title,
+                    "performer": "Jarvis",
+                },
+                files={"audio": (filename, f, "audio/mpeg")},
+                proxies=proxies,
+                timeout=120,
+            )
+        result = resp.json()
+        if not result.get("ok"):
+            desc = result.get("description", "Unknown Telegram error")
+            _log.error("Telegram sendAudio failed: %s", desc)
+            return jsonify({"error": f"Telegram: {desc}"}), 502
+        return jsonify({"ok": True, "message": "Audio sent to Telegram"})
+    except Exception as e:
+        _log.exception("Failed to send audio to Telegram")
+        return jsonify({"error": str(e)}), 500
 
 
 @ai_news_bp.route("/api/toolbar/report-content/<date_str>/<filename>")
@@ -1016,8 +1115,8 @@ def _generate_segmented_narrations(
         is_last = idx == total - 1
         seg_name = seg["name"]
         seg_content = seg["content"]
-        min_chars = max(800, len(seg_content))
-        max_chars = max(1500, len(seg_content) * 2)
+        min_chars = max(400, len(seg_content) // 2)
+        max_chars = max(800, len(seg_content))
 
         review_zh = ""
         review_en = ""
@@ -1072,22 +1171,50 @@ def _generate_segmented_narrations(
                     f"{_DIALOGUE_FORMAT_ZH}\n\n"
                     f"以下是素材（请用中文重新组织讲解）：\n\n{seg_content}"
                 )
+        elif content_type == "wiki":
+            brief_chars = max(300, len(seg_content) // 2)
+            if use_en:
+                system_prompt = (
+                    "You are a concise news-style narrator reading a team wiki update report. "
+                    "Single speaker, no dialogue, no commentary, no filler. "
+                    "For each wiki page state: the author, what the page is about, "
+                    "and what was created or changed. Use short, clear sentences. "
+                    "No markdown. No self-introductions."
+                )
+                outro = "End with one sentence summarizing total activity." if is_last else ""
+                user_prompt = (
+                    f"Read out the wiki updates for '{seg_name}' as a brief report "
+                    f"(approximately {brief_chars}-{min_chars} words). "
+                    f"For each page: state the author, purpose, and changes in 1-2 sentences. "
+                    f"No opinions or discussion. {outro}\n\n{seg_content}"
+                )
+            else:
+                system_prompt = (
+                    "你是一位简洁的新闻播报员，正在播报团队Wiki更新报告。"
+                    "单人播报，不要对话，不要评论，不要多余内容。"
+                    "对于每个Wiki页面，说明：作者、页面用途、新增或变更的内容。"
+                    "用简短清晰的句子。不要用markdown。不要自我介绍。"
+                )
+                outro = "最后用一句话总结整体活动。" if is_last else ""
+                user_prompt = (
+                    f"播报「{seg_name}」的Wiki更新（约{brief_chars}-{min_chars}字）。"
+                    f"对于每个页面：用1-2句话说明作者、用途和变更内容。"
+                    f"不要发表评论或讨论。{outro}\n\n{seg_content}"
+                )
         else:
             _content_depth_en = (
                 "\n\nCRITICAL CONTENT RULES:\n"
-                "- You MUST discuss each news item listed below by name. Cover what it is, why it matters, and its implications.\n"
-                "- If only headlines are provided without detailed summaries, use your knowledge to explain the topic substantively.\n"
-                "- Every news item must get meaningful discussion — do NOT skip items or replace them with generic commentary.\n"
-                "- NO filler content: no generic AI philosophy, no vague predictions unrelated to the items, no padding.\n"
-                "- Stay focused on the specific news items provided. Each item should get at least 2-3 exchanges.\n"
+                "- You MUST discuss each news item listed below by name. Cover what it is and why it matters.\n"
+                "- Keep it concise: 1-2 quick exchanges per item. Highlight the key insight, then move on.\n"
+                "- NO filler content: no generic AI philosophy, no vague predictions, no padding.\n"
+                "- Stay focused and brief. The listener wants a quick daily digest, not a deep dive.\n"
             )
             _content_depth_zh = (
                 "\n\n【内容规则——最高优先级】：\n"
-                "- 你必须逐条讨论下面列出的每条新闻，包括它是什么、为什么重要、有什么影响。\n"
-                "- 如果素材只提供了标题没有详细摘要，请根据你的知识对该话题进行实质性讨论和解读。\n"
-                "- 每条新闻都必须得到有意义的讨论——不要跳过，不要用笼统的评论代替。\n"
-                "- 禁止填充内容：不要泛泛而谈AI哲学、不要说与新闻条目无关的空泛预测、不要凑字数。\n"
-                "- 紧扣提供的具体新闻条目，每条至少有2-3轮对话讨论。\n"
+                "- 你必须逐条讨论下面列出的每条新闻，说清它是什么、为什么重要。\n"
+                "- 保持简洁：每条新闻1-2轮快速对话即可，点明核心要点后立即进入下一条。\n"
+                "- 禁止填充内容：不要泛泛而谈AI哲学、不要凑字数、不要过度展开。\n"
+                "- 听众需要的是快速每日速览，不是深度分析。\n"
             )
 
             if use_en:
@@ -1138,7 +1265,7 @@ def _generate_segmented_narrations(
         _log.info("Generating dialogue segment %d/%d: %s (%d chars input)",
                   idx + 1, total, seg_name, len(seg_content))
         try:
-            narration = _ollama_narration_call(system_prompt, user_prompt, max_tokens=4096, timeout=300)
+            narration = _ollama_narration_call(system_prompt, user_prompt, max_tokens=2048, timeout=300)
             if narration and len(narration) > 50:
                 narrations.append(narration)
                 _log.info("Segment %d/%d done: %d chars dialogue", idx + 1, total, len(narration))

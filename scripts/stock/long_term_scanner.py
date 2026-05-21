@@ -619,17 +619,41 @@ def _llm_theme_analysis(signal_summary: str) -> list[dict]:
     """
     log.info("Step 3: LLM 趋势研判...")
 
+    rec_stocks_desc = ""
+    rec_stocks_format = ""
+    if _use_deepseek:
+        rec_stocks_desc = "   - recommended_stocks(代表个股推荐列表，每个个股包含: symbol(6位A股股票代码), name(股票名称), logic(在该主题下的核心逻辑与长达半年到1年的趋势预估))\n"
+        rec_stocks_format = "    \"recommended_stocks\": [\n       {\"symbol\": \"600519\", \"name\": \"贵州茅台\", \"logic\": \"核心受益逻辑及长达半年到1年的远景预估\"}\n    ]\n"
+
     system_prompt = (
         "你是资深A股策略分析师, 擅长从宏观新闻和政策中识别中长期投资机会。\n\n"
-        "任务: 基于提供的近2周新闻和市场信号, 识别未来1-3个月最可能受益的投资主题。\n\n"
+        "任务: 基于提供的近2周新闻和市场信号, 识别未来3个月到1年（含半年到1年的长期预估）最可能受益的投资主题。\n\n"
         "要求:\n"
         "1. 输出3-5个投资主题 (不要凑数, 只输出有高置信度支撑的)\n"
-        "2. 每个主题包含: name(主题名称), logic(受益逻辑), industries(相关A股行业列表), "
-        "catalysts(催化剂事件), time_horizon(1个月/3个月/6个月), risk(风险因素), "
-        "confidence(高/中高/中)\n"
+        "2. 每个主题包含:\n"
+        "   - name(主题名称)\n"
+        "   - logic(受益逻辑)\n"
+        "   - industries(相关A股行业/板块列表，如['有色金属', '半导体'])\n"
+        "   - catalysts(催化剂事件/时间点)\n"
+        "   - time_horizon(长期维度，建议在 '3个月'、'6个月'、'1年' 中选择)\n"
+        "   - risk(风险因素)\n"
+        "   - confidence(高/中高/中)\n"
+        f"{rec_stocks_desc}"
         "3. 同时考虑国际局势和国内政策两条线对A股的传导\n"
         "4. 关注: 政策利好, 技术突破, 行业拐点, 供需变化, 地缘事件传导\n\n"
-        "只输出JSON数组, 不要输出其他文字。"
+        "只输出JSON数组, 不要输出其他文字。格式示例:\n"
+        "[\n"
+        "  {\n"
+        "    \"name\": \"主题名\",\n"
+        "    \"logic\": \"受益逻辑说明\",\n"
+        "    \"industries\": [\"半导体\"],\n"
+        "    \"catalysts\": [\"事件A\"],\n"
+        "    \"time_horizon\": \"6个月\",\n"
+        "    \"risk\": \"风险因素说明\",\n"
+        "    \"confidence\": \"高\",\n"
+        f"{rec_stocks_format}"
+        "  }\n"
+        "]"
     )
 
     user_prompt = f"以下是近{SIGNAL_WINDOW_DAYS}天的市场信号汇总:\n\n{signal_summary}\n\n请识别投资主题, 只输出JSON数组:"
@@ -721,6 +745,14 @@ def _map_themes_to_candidates(themes: list[dict]) -> list[dict]:
     candidates = []
     seen_symbols = set()
 
+    def clean_symbol(sym) -> str:
+        if not sym:
+            return ""
+        digits = "".join(filter(str.isdigit, str(sym)))
+        if len(digits) == 6:
+            return digits
+        return ""
+
     hot_sectors = []
     try:
         from hot_sectors import fetch_hot_sectors
@@ -744,6 +776,22 @@ def _map_themes_to_candidates(themes: list[dict]) -> list[dict]:
         theme_name = theme.get("name", "unknown")
         matched = []
 
+        # 1. 优先加载 LLM 在主题下直接推荐的个股 (尤其在 DeepSeek 启用时质量极高)
+        rec_stocks = theme.get("recommended_stocks", [])
+        if isinstance(rec_stocks, list):
+            for s in rec_stocks:
+                if not isinstance(s, dict):
+                    continue
+                sym = clean_symbol(s.get("symbol"))
+                if sym and sym not in seen_symbols:
+                    matched.append({
+                        "symbol": sym,
+                        "name": s.get("name", ""),
+                        "match_reason": f"主题 [{theme_name}] 直推个股",
+                    })
+                    seen_symbols.add(sym)
+
+        # 2. 板块龙头/成分股映射作为补充
         for ind in industries:
             for sec_name, sec_data in sector_stocks.items():
                 if ind in sec_name or sec_name in ind:
@@ -763,14 +811,14 @@ def _map_themes_to_candidates(themes: list[dict]) -> list[dict]:
                             })
                             seen_symbols.add(sym)
 
-        for stock in matched[:6]:
+        for stock in matched[:8]:
             stock["theme"] = theme_name
             stock["theme_logic"] = theme.get("logic", "")
             stock["time_horizon"] = theme.get("time_horizon", "")
             stock["catalysts"] = theme.get("catalysts", [])
             stock["theme_risk"] = theme.get("risk", "")
             stock["theme_confidence"] = theme.get("confidence", "中")
-        candidates.extend(matched[:6])
+        candidates.extend(matched[:8])
 
     log.info("  共 %d 只候选股 (来自 %d 个主题)", len(candidates), len(themes))
     return candidates
@@ -865,15 +913,15 @@ def _llm_final_selection(
         )
 
     system_prompt = (
-        "你是资深A股长期投资策略师。从候选股票中精选最多5只作为未来1-3个月的长期推荐。\n\n"
+        "你是资深A股中长期投资策略师。从候选股票中精选最多5只作为未来3个月到1年（支持长达半年到1年的趋势预估与投资决策）的长期精选推荐。\n\n"
         "选股标准:\n"
-        "1. 空间评分 ≥ 60 (必须有上涨空间, 过热的不选)\n"
+        "1. 空间评分 ≥ 60 (必须有上涨空间, 过热的不选。若主题直推股的基本面极佳且趋势健康，可放宽至 55分)\n"
         "2. 投资主题逻辑清晰且催化剂明确\n"
-        "3. 基本面有底线支撑\n"
+        "3. 基本面有底线支撑，中长期具有明确增长、复苏或行业拐点预期\n"
         "4. 宁缺毋滥 — 没有好选择时推荐0只\n\n"
         "对每只推荐的股票输出:\n"
-        "symbol, name, theme, reason(推荐理由3-5条), time_horizon, "
-        "catalysts(催化剂), risk, confidence(高/中高/中), "
+        "symbol, name, theme, reason(推荐理由3-5条，包含对半年到1年长期成长潜力/盈利预估的详细论证), time_horizon(建议持有周期，如 '6个月' 或 '1年'), "
+        "catalysts(催化剂列表), risk(主要风险), confidence(高/中高/中), "
         "watch_price(建议关注/建仓价位)\n\n"
         "只输出JSON数组。"
     )
@@ -1040,8 +1088,14 @@ def _generate_report(
             f"- **时间框架**: {t.get('time_horizon', '')}",
             f"- **风险**: {t.get('risk', '')}",
             f"- **置信度**: {t.get('confidence', '')}",
-            "",
         ])
+        rec_stocks = t.get("recommended_stocks", [])
+        if rec_stocks and isinstance(rec_stocks, list):
+            lines.append("- **推荐代表个股及预估 (半年到1年)**:")
+            for s in rec_stocks:
+                if isinstance(s, dict):
+                    lines.append(f"  - **{s.get('name', '')} ({s.get('symbol', '')})**: {s.get('logic', '')}")
+        lines.append("")
 
     lines.extend(["---", ""])
 

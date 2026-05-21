@@ -250,6 +250,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
           </select>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f1117;border-radius:6px;border:1px solid #2a2d3e">
+          <span style="font-size:0.88em;color:#e0e0e0">&#128220; Wiki Report</span>
+          <select id="settAudioWiki" style="background:#1a1d2e;color:#a0a4b8;border:1px solid #3a3d4a;border-radius:4px;padding:4px 8px;font-size:0.85em">
+            <option value="en">English</option><option value="zh">中文</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f1117;border-radius:6px;border:1px solid #2a2d3e">
           <span style="font-size:0.88em;color:#e0e0e0">&#128214; Knowledge Audio</span>
           <select id="settAudioKnowledge" style="background:#1a1d2e;color:#a0a4b8;border:1px solid #3a3d4a;border-radius:4px;padding:4px 8px;font-size:0.85em">
             <option value="zh">中文</option><option value="en">English</option>
@@ -347,6 +353,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" onclick="openStockModal()" title="A股个股分析与AI预测">&#128200; 股票分析</button>
         <button type="button" class="toolbar-btn" onclick="openWatchlistModal()" title="管理自选股列表">&#11088; 自选股</button>
         <button type="button" class="toolbar-btn" onclick="openScannerModal()" title="AI短期买入推荐 (当日行情+技术面+资金流)">&#128293; 短期推荐</button>
+        <button type="button" class="toolbar-btn" onclick="openMiddayModal()" title="AI午盘极速选股 (12:30运行，隔夜T+1套利)">⚡ 午盘推荐</button>
         <button type="button" class="toolbar-btn" onclick="openLongTermModal()" title="AI长期趋势推荐 (新闻+政策+贵金属分析)">&#128302; 长期推荐</button>
         <button type="button" class="toolbar-btn" onclick="openPriceTrainModal()" title="明日价格预测训练 (自选股)">&#127919; 价格预测</button>
         <button type="button" class="toolbar-btn" onclick="openNationalTeamModal()" title="国家队ETF份额监控 (汇金/社保等)">&#127961; 国家队</button>
@@ -408,6 +415,25 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <label class="wiki-user-check"><input type="checkbox" value="Belen Liu"> Belen Liu</label>
         <label class="wiki-user-check"><input type="checkbox" value="Eason Li"> Eason Li</label>
         <label class="wiki-user-check"><input type="checkbox" value="Johnny Yang"> Johnny Yang</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Bin Si"> Bin Si</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Deniz Erginos"> Deniz Erginos</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Djilija Vranic"> Djilija Vranic</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Dominik Kowalski"> Dominik Kowalski</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Eatin Yang"> Eatin Yang</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Ehsan Esmaili"> Ehsan Esmaili</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Emrys MacInally"> Emrys MacInally</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Erik Zweier"> Erik Zweier</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Holger Pflüger"> Holger Pflüger</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Martin Leim"> Martin Leim</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Mathias Stümpert"> Mathias Stümpert</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Michael Mauer"> Michael Mauer</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Patrick Höhle"> Patrick Höhle</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Quan Cheng"> Quan Cheng</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Samer Abdalla"> Samer Abdalla</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Steffen Eitelmann"> Steffen Eitelmann</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Tamino Fischer"> Tamino Fischer</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Thomas Freier"> Thomas Freier</label>
+        <label class="wiki-user-check"><input type="checkbox" value="Thomas Simon"> Thomas Simon</label>
       </div>
       <div style="margin-top:14px;display:flex;gap:12px;align-items:center">
         <label style="font-size:0.82em;color:#8b8fa4">From:</label>
@@ -803,6 +829,42 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
           </thead>
           <tbody id="watchlistBody"></tbody>
         </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- AI Midday Overnight Scanner Modal -->
+<div id="middayModal" class="modal-overlay" role="dialog" aria-modal="true">
+  <div class="modal-panel" style="max-width:96vw;max-height:94vh;width:950px;background:#0f1117;border:1px solid #2a2d3e">
+    <div class="modal-head" style="border-bottom:1px solid #2a2d3e">
+      <h2>⚡ AI 午盘极速隔夜套利 (T+1)</h2>
+      <button type="button" class="modal-close" onclick="closeMiddayModal()" title="Close">&times;</button>
+    </div>
+    <div class="modal-content" style="padding:14px 18px;background:#0f1117">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <button type="button" class="send-btn" id="btnMiddayStart" onclick="startMiddayScan()" style="padding:8px 18px;font-size:0.86em;background:linear-gradient(135deg,#eab308,#f97316);border:none">&#127775; 开始极速选股</button>
+        <button type="button" class="toolbar-btn" id="btnMiddayStop" onclick="stopMiddayScan()" style="font-size:0.78em" disabled>&#9724; 停止</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;cursor:pointer;margin-left:8px" title="使用 DeepSeek 游资决策大模型 (推荐)">
+          <input type="checkbox" id="middayUseDeepseek" style="accent-color:#f59e0b" checked>
+          <span>&#128171; DeepSeek</span>
+        </label>
+        <span id="middayStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
+      </div>
+      <div id="middayProgress" style="display:none;margin-bottom:12px">
+        <div style="background:#1a1d2e;border-radius:8px;overflow:hidden;height:24px;border:1px solid #2a2d3e">
+          <div id="middayProgressBar" style="height:100%;background:linear-gradient(90deg,#eab308,#f97316);transition:width 0.5s;width:0%;display:flex;align-items:center;justify-content:center">
+            <span id="middayProgressText" style="font-size:0.72em;color:#fff;font-weight:600"></span>
+          </div>
+        </div>
+        <div id="middayPhase" style="font-size:0.76em;color:#8b8fa4;margin-top:4px"></div>
+      </div>
+      <div id="middayResult" style="max-height:62vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:14px;background:#1a1d2e;font-size:0.84em;line-height:1.6;color:#c4c8f0">
+        <p style="color:#a0a4b8">⚡ <b>AI 午盘极速选股内参（超短线隔夜 T+1 套利）说明：</b></p>
+        <p style="color:#6b7280;margin-top:6px">1. <b>建议运行时间</b>：每个交易日的 <b>12:30 ~ 12:45</b> (利用上午盘收盘数据分析)。</p>
+        <p style="color:#6b7280">2. <b>策略机制</b>：首层自动执行资金量价强力初筛（剔除ST/高位股，筛选出上午量比大涨、突破前高、大单流入且30亿~500亿主力青睐的弹性票）→ 均线量能多因子技术打分 → DeepSeek游资大模型终极评判。</p>
+        <p style="color:#6b7280">3. <b>操作要领</b>：AI 严格筛选出 1~3 只隔夜金股，给出精确限价买入点（今天下午介入）和止盈/止损价格（明天早盘高开冲高出货）。<b>超短操作，严格止损。</b></p>
+        <p style="color:#6b7280;font-size:0.9em;margin-top:8px">点击上面的“开始极速选股”开始。整个扫描过程只需 <b>1~2分钟</b>，完全适配午间休市的15分钟紧急研判需求！</p>
       </div>
     </div>
   </div>
@@ -1251,6 +1313,7 @@ async function startExplainThis() {
 
 var _dfCurrentDate = '';
 var _dfMissingSteps = [];
+var _dfAudioLangs = {};
 function openDailyFetchModal() {
   document.getElementById('dailyFetchModal').classList.add('open');
   document.getElementById('dfRunProgress').style.display = 'none';
@@ -1276,6 +1339,7 @@ async function loadDailyFetchHistory(date) {
     var data = await resp.json();
     _dfCurrentDate = data.date || '';
     _dfMissingSteps = data.missing_steps || [];
+    _dfAudioLangs = data.audio_langs || {};
     document.getElementById('dfHistoryDate').value = _dfCurrentDate;
     document.getElementById('dfDateLabel').textContent = _dfCurrentDate || 'No data';
     var contBtn = document.getElementById('btnContinueDailyFetch');
@@ -1331,7 +1395,7 @@ async function loadDailyFetchHistory(date) {
     h += '<div style="font-size:1.3em;font-weight:700;color:#38bdf8">' + (s.wiki_pages || 0) + ' <span style="font-size:0.55em;font-weight:400">pages</span></div></div>';
     h += '</div>';
     if (_dfMissingSteps.length > 0) {
-      var stepLabels = {fetch_sources:'Source Fetch',topic_dedup:'Topic Dedup',commit_report:'Commit Report',jira_daily:'Jira Report',wiki_fetch:'Wiki Fetch',world_news_merge:'World News Merge',ai_audio:'AI Audio',world_audio:'World Audio',china_audio:'\u4e2d\u56fd\u65b0\u95fb Audio'};
+      var stepLabels = {fetch_sources:'Source Fetch',topic_dedup:'Topic Dedup',commit_report:'Commit Report',jira_daily:'Jira Report',wiki_fetch:'Wiki Fetch',world_news_merge:'World News Merge',ai_audio:'AI Audio',world_audio:'World Audio',china_audio:'\u4e2d\u56fd\u65b0\u95fb Audio',wiki_audio:'Wiki Report Audio'};
       h += '<div style="background:#2a1a0a;border:1px solid #d97706;border-radius:8px;padding:10px 14px;margin-bottom:14px">';
       h += '<div style="font-size:0.78em;font-weight:600;color:#f59e0b;margin-bottom:6px">Incomplete — missing steps:</div>';
       h += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
@@ -1341,32 +1405,43 @@ async function loadDailyFetchHistory(date) {
       }
       h += '</div></div>';
     }
-    if (data.has_audio || data.has_wn_audio || data.has_cn_audio) {
+    if (data.has_audio || data.has_wn_audio || data.has_cn_audio || data.has_wiki_audio) {
       var _cacheBust = '?t=' + Date.now();
       h += '<div style="margin-bottom:14px">';
       if (data.has_audio) {
-        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">';
         h += '<span style="font-size:0.78em;font-weight:600;color:#60a5fa">AI Briefing Audio</span>';
+        h += _dfTranslateBtnHtml('ai_audio', 'AI Briefing', 'audio_lang_ai', 'background:#1a2a3e;border:1px solid #6366f1;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#a5b4fc;cursor:pointer');
         h += '<button type="button" onclick="recreateAudioOnly(\'ai_audio\',\'AI Briefing\',this)" style="background:#1a2a3e;border:1px solid #3b82f6;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#60a5fa;cursor:pointer" title="Regenerate audio from existing data">&#x21bb; Recreate</button>';
         h += '<button type="button" onclick="recreateAudio(\'ai_audio\',\'AI Briefing\',this)" style="background:#0f1a2e;border:1px solid #2563eb;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#93c5fd;cursor:pointer" title="Re-fetch AI sources then recreate audio">&#x1f504; Refetch &amp; Recreate</button>';
         h += '</div>';
         h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/ai-briefing.mp3' + _cacheBust + '"></audio>';
       }
       if (data.has_wn_audio) {
-        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">';
         h += '<span style="font-size:0.78em;font-weight:600;color:#f59e0b">World News Audio</span>';
+        h += _dfTranslateBtnHtml('world_audio', 'World News', 'audio_lang_world', 'background:#2a2a1a;border:1px solid #ca8a04;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fde047;cursor:pointer');
         h += '<button type="button" onclick="recreateAudioOnly(\'world_audio\',\'World News\',this)" style="background:#2a2a1a;border:1px solid #d97706;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#f59e0b;cursor:pointer" title="Regenerate audio from existing data">&#x21bb; Recreate</button>';
         h += '<button type="button" onclick="recreateAudio(\'world_audio\',\'World News\',this)" style="background:#1a1a0f;border:1px solid #b45309;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fcd34d;cursor:pointer" title="Re-fetch world news then recreate audio">&#x1f504; Refetch &amp; Recreate</button>';
         h += '</div>';
         h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/world-news.mp3' + _cacheBust + '"></audio>';
       }
       if (data.has_cn_audio) {
-        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">';
+        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">';
         h += '<span style="font-size:0.78em;font-weight:600;color:#ef4444">\u4e2d\u56fd\u65b0\u95fb Audio</span>';
+        h += _dfTranslateBtnHtml('china_audio', 'China News', 'audio_lang_china', 'background:#2a1a1a;border:1px solid #f87171;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fecaca;cursor:pointer');
         h += '<button type="button" onclick="recreateAudioOnly(\'china_audio\',\'China News\',this)" style="background:#2a1a1a;border:1px solid #ef4444;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#ef4444;cursor:pointer" title="Regenerate audio from existing data">&#x21bb; Recreate</button>';
         h += '<button type="button" onclick="recreateAudio(\'china_audio\',\'China News\',this)" style="background:#1a0f0f;border:1px solid #b91c1c;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fca5a5;cursor:pointer" title="Re-fetch China news then recreate audio">&#x1f504; Refetch &amp; Recreate</button>';
         h += '</div>';
         h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/china-news.mp3' + _cacheBust + '"></audio>';
+      }
+      if (data.has_wiki_audio) {
+        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">';
+        h += '<span style="font-size:0.78em;font-weight:600;color:#38bdf8">Wiki Fetch Report Audio</span>';
+        h += _dfTranslateBtnHtml('wiki_audio', 'Wiki Report', 'audio_lang_wiki', 'background:#0f2a3a;border:1px solid #0ea5e9;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#7dd3fc;cursor:pointer');
+        h += '<button type="button" onclick="recreateAudioOnly(\'wiki_audio\',\'Wiki Report\',this)" style="background:#0f2a3a;border:1px solid #38bdf8;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#38bdf8;cursor:pointer" title="Regenerate audio from existing wiki data">&#x21bb; Recreate</button>';
+        h += '</div>';
+        h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/wiki-report.mp3' + _cacheBust + '"></audio>';
       }
       h += '</div>';
     }
@@ -1427,6 +1502,8 @@ async function runDailyFetchFromModal() {
             '<audio controls style="width:100%;margin-bottom:6px" src="/api/toolbar/audio-file/' + today + '/world-news.mp3"></audio>' +
             '<div style="font-weight:600;color:#ef4444;margin:12px 0 8px">中国新闻 Audio</div>' +
             '<audio controls style="width:100%;margin-bottom:6px" src="/api/toolbar/audio-file/' + today + '/china-news.mp3"></audio>' +
+            '<div style="font-weight:600;color:#38bdf8;margin:12px 0 8px">Wiki Fetch Report Audio</div>' +
+            '<audio controls style="width:100%;margin-bottom:6px" src="/api/toolbar/audio-file/' + today + '/wiki-report.mp3"></audio>' +
             '</div>';
           var audioMsg = document.createElement('div');
           audioMsg.className = 'system-msg';
@@ -1504,7 +1581,7 @@ async function continueDailyFetchFromModal() {
     runBtn.disabled = false;
   }
 }
-async function _runAudioJob(steps, label, btn, btnResetText) {
+async function _runAudioJob(steps, label, btn, btnResetText, langOverrides) {
   if (!_dfCurrentDate) { showToast('No date selected'); return; }
   btn.disabled = true;
   btn.textContent = '\u23f3 Working...';
@@ -1514,10 +1591,14 @@ async function _runAudioJob(steps, label, btn, btnResetText) {
   progressText.textContent = label + '...';
   progressEl.querySelector('.mini-spin').style.display = 'inline-block';
   try {
+    var payload = {steps: steps, date: _dfCurrentDate};
+    if (langOverrides && Object.keys(langOverrides).length) {
+      payload.lang_overrides = langOverrides;
+    }
     var resp = await fetch('/api/toolbar/daily-fetch/continue', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({steps: steps, date: _dfCurrentDate})
+      body: JSON.stringify(payload)
     });
     var data = await resp.json();
     var jobId = data.job_id;
@@ -1567,6 +1648,32 @@ async function recreateAudio(stepName, label, btn) {
     preSteps = ['refetch_world', 'world_news_merge', stepName];
   }
   _runAudioJob(preSteps, 'Refetching & recreating ' + label + ' audio', btn, '\ud83d\udd04 Refetch & Recreate');
+}
+function _dfTranslateBtnHtml(stepName, label, langKey, style) {
+  var cur = (_dfAudioLangs && _dfAudioLangs[langKey]) || 'zh';
+  var target = cur === 'zh' ? 'en' : 'zh';
+  var btnText = target === 'en' ? '\u2192 EN' : '\u2192 \u4e2d\u6587';
+  var title = 'Regenerate in ' + (target === 'en' ? 'English' : 'Chinese');
+  return '<button type="button" onclick="translateDailyFetchAudio(\'' + stepName + '\',\'' + label.replace(/'/g, "\\'") + '\',\'' + langKey + '\',this)" style="' + style + '" title="' + title + '">' + btnText + '</button>';
+}
+async function translateDailyFetchAudio(stepName, label, langKey, btn) {
+  var cur = (_dfAudioLangs && _dfAudioLangs[langKey]) || 'zh';
+  var target = cur === 'zh' ? 'en' : 'zh';
+  var targetLabel = target === 'en' ? 'English' : 'Chinese';
+  var overrides = {};
+  overrides[stepName] = target;
+  var resetText = target === 'en' ? '\u2192 EN' : '\u2192 \u4e2d\u6587';
+  _dfAudioLangs[langKey] = target;
+  try {
+    var saveBody = {};
+    saveBody[langKey] = target;
+    await fetch('/api/settings', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(saveBody)
+    });
+  } catch (e) {}
+  _runAudioJob([stepName], 'Translating ' + label + ' to ' + targetLabel, btn, resetText, overrides);
 }
 async function loadDfReportContent(dateStr, filename, btn) {
   var preview = document.getElementById('dfReportPreview');
@@ -1780,9 +1887,12 @@ function _aiKBRenderTable() {
     var audioCell = '';
     if (existingAudioUrl) {
       audioCell = '<audio controls preload="none" style="height:28px;max-width:160px" src="' + existingAudioUrl + '"></audio>'
-        + ' <button type="button" onclick="event.stopPropagation();generateArticleAudio(' + i + ',this)" style="background:none;border:none;font-size:0.8em;color:#60a5fa;cursor:pointer;padding:0 2px" title="Regenerate">&#x1f504;</button>';
+        + ' <button type="button" onclick="event.stopPropagation();sendAudioToTelegram(\'' + existingAudioUrl.replace(/'/g,"\\'") + '\',\'' + _escHtml(it.title).replace(/'/g,"\\'") + '\',this)" style="background:none;border:none;font-size:0.95em;color:#0088cc;cursor:pointer;padding:0 3px" title="Send to Telegram">&#x1F4E8;</button>'
+        + ' <button type="button" onclick="event.stopPropagation();generateArticleAudio(' + i + ',this,\'zh\')" style="background:none;border:none;font-size:0.72em;color:#f59e0b;cursor:pointer;padding:0 2px" title="Regenerate in Chinese only">\u2192\u4e2d\u6587</button>'
+        + ' <button type="button" onclick="event.stopPropagation();generateArticleAudio(' + i + ',this,\'en\')" style="background:none;border:none;font-size:0.72em;color:#a5b4fc;cursor:pointer;padding:0 2px" title="Regenerate in English only">\u2192 EN</button>'
+        + ' <button type="button" onclick="event.stopPropagation();generateArticleAudio(' + i + ',this)" style="background:none;border:none;font-size:0.8em;color:#60a5fa;cursor:pointer;padding:0 2px" title="Regenerate (bilingual)">&#x1f504;</button>';
     } else {
-      audioCell = '<button type="button" onclick="event.stopPropagation();generateArticleAudio(' + i + ',this)" style="background:#1a2a3e;border:1px solid #3b82f6;border-radius:4px;padding:1px 6px;font-size:0.85em;color:#60a5fa;cursor:pointer" title="Generate deep-dive audio">&#x1f3a7;</button>';
+      audioCell = '<button type="button" onclick="event.stopPropagation();generateArticleAudio(' + i + ',this)" style="background:#1a2a3e;border:1px solid #3b82f6;border-radius:4px;padding:1px 6px;font-size:0.85em;color:#60a5fa;cursor:pointer" title="Generate deep-dive audio (bilingual)">&#x1f3a7;</button>';
     }
     html += '<tr style="border-bottom:1px solid #1a1d2e;cursor:pointer" onclick="toggleAiKBSummary(\'' + rowId + '\')">'
       + '<td style="padding:4px 8px;color:#8b8fa4;white-space:nowrap">' + _escHtml(it.date) + '</td>'
@@ -1828,7 +1938,7 @@ function sortAiKBTable(col) {
   _aiKBRenderTable();
 }
 
-async function generateArticleAudio(idx, btn) {
+async function generateArticleAudio(idx, btn, lang) {
   var items = _aiKBItems;
   var kw = (document.getElementById('aiKBFilter').value || '').toLowerCase();
   var cat = document.getElementById('aiKBCatFilter').value;
@@ -1850,13 +1960,16 @@ async function generateArticleAudio(idx, btn) {
   btn.disabled = true;
   btn.innerHTML = '&#x23f3;';
   btn.title = 'Generating...';
+  var langLabel = lang === 'zh' ? ' (中文)' : lang === 'en' ? ' (EN)' : ' (bilingual)';
   var statusEl = document.getElementById('aiKBStatus');
-  statusEl.textContent = 'Generating audio for: ' + it.title.substring(0, 50) + '...';
+  statusEl.textContent = 'Generating audio' + langLabel + ' for: ' + it.title.substring(0, 50) + '...';
   try {
+    var payload = {title: it.title, summary: it.summary || '', url: it.url || '', source: it.source || ''};
+    if (lang) payload.language = lang;
     var resp = await fetch('/api/toolbar/ai-news-kb/article-audio', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({title: it.title, summary: it.summary || '', url: it.url || '', source: it.source || ''})
+      body: JSON.stringify(payload)
     });
     var data = await resp.json();
     if (data.error) { showToast(data.error); btn.disabled = false; btn.innerHTML = '&#x1f3a7;'; statusEl.textContent = ''; return; }
@@ -1886,6 +1999,37 @@ async function generateArticleAudio(idx, btn) {
     btn.disabled = false;
     btn.innerHTML = '&#x1f3a7;';
     statusEl.textContent = '';
+  }
+}
+
+async function sendAudioToTelegram(audioUrl, title, btn) {
+  var origHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '&#x23f3;';
+  btn.title = 'Sending...';
+  var statusEl = document.getElementById('aiKBStatus');
+  statusEl.textContent = 'Sending to Telegram...';
+  try {
+    var resp = await fetch('/api/toolbar/ai-news-kb/send-telegram', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({audio_url: audioUrl, title: title})
+    });
+    var data = await resp.json();
+    if (!resp.ok || data.error) {
+      statusEl.innerHTML = '<span style="color:#ef4444">Telegram: ' + _escHtml(data.error || 'Send failed') + '</span>';
+      showToast('Telegram send failed: ' + (data.error || 'unknown error'));
+    } else {
+      statusEl.innerHTML = '<span style="color:#34d399">&#10004; Sent to Telegram</span>';
+      showToast('Audio sent to Telegram');
+    }
+  } catch(e) {
+    statusEl.innerHTML = '<span style="color:#ef4444">Error: ' + _escHtml(e.message) + '</span>';
+    showToast('Error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = origHtml;
+    btn.title = 'Send to Telegram';
   }
 }
 
@@ -2111,12 +2255,17 @@ async function startAudioKnowledge() {
             progressText.textContent = 'Failed: ' + sj.error;
             document.getElementById('btnGenerateAudio').disabled = false;
           } else {
+            var curKnLang = document.getElementById('audioLanguage').value || 'zh';
+            var oppKnLang = curKnLang === 'zh' ? 'en' : 'zh';
+            var oppKnLabel = oppKnLang === 'en' ? '\u2192 EN' : '\u2192 \u4e2d\u6587';
+            var oppKnTitle = oppKnLang === 'en' ? 'Regenerate in English' : 'Regenerate in Chinese';
             progressText.textContent = 'Audio generated!';
             resultEl.style.display = 'block';
             resultEl.innerHTML = '<audio controls style="width:100%;margin-bottom:8px" src="' + escHtml(sj.output_url) + '"></audio>' +
-              '<div style="font-size:0.78em;color:#8b8fa4">' +
+              '<div style="font-size:0.78em;color:#8b8fa4;display:flex;gap:10px;align-items:center;flex-wrap:wrap">' +
               '<a href="' + escHtml(sj.output_url) + '" download style="color:#60a5fa;text-decoration:none">Download MP3</a>' +
-              (sj.narration_preview ? ' | Preview: ' + escHtml(sj.narration_preview.substring(0, 200)) + '...' : '') +
+              '<button type="button" onclick="translateKnowledgeAudio(\'' + oppKnLang + '\')" style="background:#1a2a3e;border:1px solid #6366f1;border-radius:4px;padding:1px 8px;font-size:1em;color:#a5b4fc;cursor:pointer" title="' + oppKnTitle + '">' + oppKnLabel + '</button>' +
+              (sj.narration_preview ? '<span>Preview: ' + escHtml(sj.narration_preview.substring(0, 200)) + '...</span>' : '') +
               '</div>';
             addSystemMessage('Audio from Knowledge', 'Audio generated from ' + (sj.items_found || '?') + ' knowledge items (' + (_audioTypeLabels[_audioSelectedType] || _audioSelectedType) + '). Listen above or download the MP3.');
           }
@@ -2127,6 +2276,11 @@ async function startAudioKnowledge() {
     progressText.textContent = 'Error: ' + e.message;
     document.getElementById('btnGenerateAudio').disabled = false;
   }
+}
+
+function translateKnowledgeAudio(targetLang) {
+  document.getElementById('audioLanguage').value = targetLang;
+  startAudioKnowledge();
 }
 
 function modalSelectAll(listId) {
@@ -2766,6 +2920,7 @@ async function openGlobalSettings() {
     document.getElementById('settAudioAi').value = d.audio_lang_ai || 'zh';
     document.getElementById('settAudioWorld').value = d.audio_lang_world || 'zh';
     document.getElementById('settAudioChina').value = d.audio_lang_china || 'zh';
+    document.getElementById('settAudioWiki').value = d.audio_lang_wiki || 'en';
     document.getElementById('settAudioKnowledge').value = d.audio_lang_knowledge || 'zh';
     var masked = d.deepseek_api_key_masked || '';
     var el = document.getElementById('settDeepseekKey');
@@ -2782,6 +2937,7 @@ async function saveGlobalSettings() {
     audio_lang_ai: document.getElementById('settAudioAi').value,
     audio_lang_world: document.getElementById('settAudioWorld').value,
     audio_lang_china: document.getElementById('settAudioChina').value,
+    audio_lang_wiki: document.getElementById('settAudioWiki').value,
     audio_lang_knowledge: document.getElementById('settAudioKnowledge').value,
   };
   try {
@@ -3678,6 +3834,165 @@ async function loadScanHistory() {
   } catch(e) { el.innerHTML = '<p style="color:#f87171">加载失败</p>'; }
 }
 
+// --- AI Midday Overnight Scanner ---
+let _middayPollTimer = null;
+function openMiddayModal() {
+  document.getElementById('middayModal').classList.add('open');
+  // Immediately poll status or load latest results if idle
+  fetch('/api/stock/midday/status')
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'completed') {
+        loadLatestMiddayResult();
+      } else if (d.status === 'running') {
+        document.getElementById('btnMiddayStart').disabled = true;
+        document.getElementById('btnMiddayStop').disabled = false;
+        document.getElementById('middayProgress').style.display = 'block';
+        if (!_middayPollTimer) _middayPollTimer = setInterval(pollMiddayScanStatus, 3000);
+      }
+    }).catch(e => {});
+}
+function closeMiddayModal() {
+  document.getElementById('middayModal').classList.remove('open');
+  if (_middayPollTimer) { clearInterval(_middayPollTimer); _middayPollTimer = null; }
+}
+async function startMiddayScan() {
+  const st = document.getElementById('middayStatus');
+  st.textContent = '启动中...';
+  document.getElementById('btnMiddayStart').disabled = true;
+  document.getElementById('btnMiddayStop').disabled = false;
+  document.getElementById('middayProgress').style.display = 'block';
+  var useDs = document.getElementById('middayUseDeepseek').checked;
+  document.getElementById('middayResult').innerHTML = '<p style="color:#60a5fa">⏳ 正在启动午盘极速隔夜套利扫描并获取实时行情...' + (useDs ? ' (DeepSeek enabled)' : '') + '</p>';
+  try {
+    const r = await fetch('/api/stock/midday/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({use_deepseek: useDs})});
+    const d = await r.json();
+    if (d.error) { st.textContent = d.error; document.getElementById('btnMiddayStart').disabled = false; return; }
+    st.textContent = '扫描进行中';
+    if (!_middayPollTimer) _middayPollTimer = setInterval(pollMiddayScanStatus, 3000);
+  } catch(e) { st.textContent = '启动失败'; document.getElementById('btnMiddayStart').disabled = false; }
+}
+async function stopMiddayScan() {
+  try { await fetch('/api/stock/midday/stop', {method:'POST'}); } catch(e) {}
+  document.getElementById('middayStatus').textContent = '正在停止...';
+}
+async function pollMiddayScanStatus() {
+  try {
+    const r = await fetch('/api/stock/midday/status');
+    const d = await r.json();
+    const st = document.getElementById('middayStatus');
+    const bar = document.getElementById('middayProgressBar');
+    const txt = document.getElementById('middayProgressText');
+    const phase = document.getElementById('middayPhase');
+    const prog = document.getElementById('middayProgress');
+
+    if (!d.status || d.status === '') return;
+
+    prog.style.display = 'block';
+    
+    if (d.status === 'running') {
+      st.textContent = '扫描进行中';
+      bar.style.width = (d.progress || 10) + '%';
+      txt.textContent = (d.progress || 10) + '%';
+      phase.textContent = d.step || '执行深度分析中...';
+      document.getElementById('btnMiddayStart').disabled = true;
+      document.getElementById('btnMiddayStop').disabled = false;
+    } else if (d.status === 'completed') {
+      bar.style.width = '100%';
+      txt.textContent = '100%';
+      phase.textContent = d.step || '扫描成功结束！';
+      st.textContent = '扫描已完成';
+      document.getElementById('btnMiddayStart').disabled = false;
+      document.getElementById('btnMiddayStop').disabled = true;
+      if (_middayPollTimer) { clearInterval(_middayPollTimer); _middayPollTimer = null; }
+      loadLatestMiddayResult();
+    } else if (d.status === 'failed') {
+      phase.textContent = '扫描失败: ' + (d.error || '未知错误');
+      st.textContent = '扫描发生错误';
+      document.getElementById('btnMiddayStart').disabled = false;
+      document.getElementById('btnMiddayStop').disabled = true;
+      if (_middayPollTimer) { clearInterval(_middayPollTimer); _middayPollTimer = null; }
+    } else if (d.status === 'idle') {
+      st.textContent = d.step || '未运行';
+      document.getElementById('btnMiddayStart').disabled = false;
+      document.getElementById('btnMiddayStop').disabled = true;
+      if (_middayPollTimer) { clearInterval(_middayPollTimer); _middayPollTimer = null; }
+    }
+  } catch(e) {}
+}
+async function loadLatestMiddayResult() {
+  try {
+    const r = await fetch('/api/stock/midday/result');
+    const d = await r.json();
+    if (d.error) {
+      document.getElementById('middayResult').innerHTML = '<p style="color:#ef4444">' + d.error + '</p>';
+      return;
+    }
+    renderMiddayResultHTML(d);
+  } catch(e) {
+    document.getElementById('middayResult').innerHTML = '<p style="color:#ef4444">加载结果失败: ' + e.message + '</p>';
+  }
+}
+function renderMiddayResultHTML(data) {
+  const el = document.getElementById('middayResult');
+  const picks = data.picks || [];
+  
+  let h = '';
+  h += '<div style="margin-bottom:12px;border-bottom:1px solid #2a2d3e;padding-bottom:10px">';
+  h += ' <span style="font-size:1.15em;font-weight:700;color:#eab308">⚡ 午盘极速内参 (隔夜 T+1 套利)</span>';
+  h += ' <span style="font-size:0.8em;color:#8b8fa4;margin-left:10px">分析截止: ' + (data.ended_at || data.date) + '</span>';
+  h += '</div>';
+
+  if (picks.length === 0) {
+    h += '<div style="text-align:center;padding:24px">';
+    h += ' <p style="color:#f59e0b;font-size:1.05em;font-weight:600">🔴 今日暂无推荐标的</p>';
+    h += ' <p style="color:#8b8fa4;font-size:0.85em;margin-top:8px">经过上午盘资金量价的严苛筛选，没有找到满足突破且隔夜高期望值的个股。</p>';
+    h += ' <p style="color:#6b7280;font-size:0.8em;margin-top:4px">"不交易、守住现金" 是超短线极高的智慧，避免午后炸板风险。</p>';
+    h += '</div>';
+  } else {
+    h += '<div style="margin-bottom:12px"><h3 style="color:#eab308;margin:0 0 8px">🔥 AI 终极买入推荐: ' + picks.length + ' 只 (仓位建议: 1-2成底仓小试)</h3></div>';
+    picks.forEach((p, idx) => {
+      const chgColor = (p.change_pct||0) > 0 ? '#ef4444' : (p.change_pct||0) < 0 ? '#22c55e' : '#c4c8f0';
+      const judgeTag = p.judged_by === 'deepseek' ? '<span style="color:#3b82f6;font-size:0.75em;margin-left:8px;border:1px solid #3b82f6;border-radius:4px;padding:1px 4px">&#128300; DeepSeek 游资决策</span>' : '<span style="color:#8b8fa4;font-size:0.75em;margin-left:8px;border:1px solid #2a2d3e;border-radius:4px;padding:1px 4px">&#129302; 本地LLM判断</span>';
+      
+      h += '<div style="background:#0f1117;border:1px solid #eab308;border-radius:8px;padding:14px;margin-bottom:12px;box-shadow:0 0 10px rgba(234,179,8,0.1)">';
+      h += ' <div style="display:flex;justify-content:space-between;align-items:center">';
+      h += '  <div><span style="color:#eab308;font-weight:800;font-size:1.15em">⚡ 推荐 #' + (idx+1) + '</span> ';
+      h += '   <span style="color:#60a5fa;font-weight:700;font-size:1.1em">' + escHtml(p.name) + '</span> ';
+      h += '   <span style="color:#8b8fa4">(' + p.symbol + ')</span>' + judgeTag + '</div>';
+      h += '  <div style="display:flex;align-items:center;gap:6px">';
+      h += '   <button onclick="addScanPickToWatchlist(\'' + p.symbol + '\',\'' + escHtml(p.name).replace(/'/g,"\\'") + '\')" style="background:#2d2306;border:1px solid #eab308;color:#eab308;border-radius:6px;padding:4px 12px;cursor:pointer;font-size:0.8em;font-weight:600" title="加入自选股">⭐ 加自选</button>';
+      h += '   <span style="color:#eab308;font-size:1.25em;font-weight:800;margin-left:8px">' + (p.final_score||0).toFixed(0) + '</span><span style="color:#8b8fa4;font-size:0.8em">分</span>';
+      h += '  </div>';
+      h += ' </div>';
+      
+      h += ' <div style="display:flex;flex-wrap:wrap;gap:15px;margin-top:10px;font-size:0.85em;background:#1e2130;padding:8px;border-radius:6px">';
+      h += '  <span>上午盘价: <strong style="color:#e0e0e0">¥' + p.price + '</strong></span>';
+      h += '  <span>涨跌幅: <strong style="color:' + chgColor + '">' + ((p.change_pct||0)>0?'+':'') + p.change_pct + '%</strong></span>';
+      h += '  <span>换手率: <strong style="color:#38bdf8">' + p.turnover_rate + '%</strong></span>';
+      h += '  <span>量比: <strong style="color:#a3e635">' + p.volume_ratio + '</strong></span>';
+      h += '  <span>行业: <strong style="color:#c4b5fd">' + (p.industry || '未指定') + '</strong></span>';
+      h += ' </div>';
+      
+      h += ' <div style="margin-top:10px;font-size:0.85em;background:#162c21;border:1px solid #15803d;padding:10px;border-radius:6px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">';
+      h += '  <div>🎯 <strong>建议限价介入价</strong>: <strong style="color:#4ade80;font-size:1.1em">¥' + (p.limit_buy_price || p.price) + '</strong></div>';
+      h += '  <div>📈 <strong>明日止盈目标</strong>: <strong style="color:#fbbf24;font-size:1.1em">¥' + (p.take_profit_target || 'N/A') + '</strong></div>';
+      h += '  <div>📉 <strong>明日严格止损</strong>: <strong style="color:#f87171;font-size:1.1em">¥' + (p.stop_loss_target || 'N/A') + '</strong></div>';
+      h += '  <div>⭐ <strong>信心评级</strong>: <strong style="color:#eab308">' + (p.confidence_level || '中') + '</strong></div>';
+      h += ' </div>';
+      
+      h += ' <div style="margin-top:10px;color:#f3f4f6;font-size:0.84em;line-height:1.5">';
+      h += '  <p style="margin:2px 0"><strong style="color:#a3e635">💡 推荐逻辑：</strong>' + escHtml(p.reasoning) + '</p>';
+      h += '  <p style="margin:2px 0;margin-top:4px"><strong style="color:#f87171">⚠️ 隔夜风险：</strong>' + escHtml(p.risk) + '</p>';
+      h += '  <p style="margin:2px 0;margin-top:4px;background:#2d1a09;border:1px solid #7c2d12;padding:6px;border-radius:4px"><strong style="color:#fb923c">🚨 冲高失败退场预案：</strong>若明日早盘 9:30-10:00 冲高受阻，或开盘直接无量低开跌破严格止损价，超短线盘口套利应在开盘半小时内（10:00前）果断清仓了结。切忌心存幻想，严防短线单做成长期套牢单！</p>';
+      h += ' </div>';
+      h += '</div>';
+    });
+  }
+  
+  el.innerHTML = h;
+}
+
 // --- Long-Term Scanner ---
 let _ltPollTimer = null;
 function openLongTermModal() {
@@ -3804,6 +4119,17 @@ function renderLtResult(data) {
       h += '<div style="font-size:0.82em;color:#a0a4b8;margin-top:4px">' + (t.logic||'') + '</div>';
       if (t.industries) h += '<div style="font-size:0.8em;color:#8b8fa4;margin-top:2px">行业: ' + (Array.isArray(t.industries) ? t.industries.join(', ') : t.industries) + '</div>';
       if (t.catalysts) h += '<div style="font-size:0.8em;color:#38bdf8;margin-top:2px">催化剂: ' + (Array.isArray(t.catalysts) ? t.catalysts.join(', ') : t.catalysts) + '</div>';
+      
+      // Render recommended stocks directly under the theme
+      if (t.recommended_stocks && t.recommended_stocks.length > 0) {
+        h += '<div style="font-size:0.8em;color:#a3e635;margin-top:6px;border-top:1px dashed #2a2d3e;padding-top:4px">💡 推荐代表个股及预估 (长达半年到1年):</div>';
+        t.recommended_stocks.forEach(s => {
+          h += '<div style="font-size:0.78em;color:#e0e0e0;margin-left:8px;margin-top:2px">';
+          h += '<strong style="color:#60a5fa">' + escHtml(s.name || '') + ' (' + escHtml(s.symbol || '') + ')</strong>: ' + escHtml(s.logic || '');
+          h += '</div>';
+        });
+      }
+
       h += '<div style="display:flex;gap:10px;font-size:0.78em;margin-top:4px">';
       if (t.time_horizon) h += '<span style="color:#a0a4b8">⏱ ' + t.time_horizon + '</span>';
       if (t.confidence) h += '<span style="color:#fbbf24">置信度: ' + t.confidence + '</span>';

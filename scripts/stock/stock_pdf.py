@@ -490,6 +490,17 @@ def _build_long_term(data: dict, elements: list) -> None:
                 STYLES["body_small"],
             )
         )
+        rec_stocks = th.get("recommended_stocks") or []
+        if rec_stocks and isinstance(rec_stocks, list):
+            elements.append(Paragraph("<b>推荐代表个股及预估 (半年到1年)</b>", STYLES["h3"]))
+            for s in rec_stocks:
+                if isinstance(s, dict):
+                    elements.append(
+                        Paragraph(
+                            f"· <b>{_safe(s.get('name', '—'))} ({_safe(s.get('symbol', '—'))})</b>: {_safe(s.get('logic', ''))}",
+                            STYLES["body_small"],
+                        )
+                    )
     elements.append(_hr())
     elements.append(Paragraph("长期标的", STYLES["h1"]))
     for pick in data.get("picks") or []:

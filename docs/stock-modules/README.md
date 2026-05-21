@@ -65,6 +65,7 @@
 | 模块 | 文档 | 说明 |
 |------|------|------|
 | `scanner.py` | [scanner.md](./scanner.md) | 三层AI选股扫描器：快筛→深度分析→LLM评分（Ollama+DeepSeek） |
+| `midday_scanner.py` | [midday_scanner.md](./midday_scanner.md) | 午盘极速选股扫描器：12:30运行，全市场高可用快筛，3路大模型并发T+1套利决策 |
 | `long_term_scanner.py` | [long_term_scanner.md](./long_term_scanner.md) | 长线主题扫描器：新闻主题提取、贵金属分析、上涨空间评估 |
 | `llm_reasoning.py` | [llm_reasoning.md](./llm_reasoning.md) | LLM综合推理：多源融合（TA+FA+情绪+A股数据+ML）生成分析报告 |
 

@@ -31,7 +31,7 @@ _STOCK_MODULES = [
     "model_price_predictor", "prediction_tracker", "llm_reasoning",
     "watchlist", "scanner", "long_term_scanner", "hot_sectors", "market_sentiment",
     "black_swan_detector", "china_market_data", "model_timing",
-    "backtest_engine",
+    "backtest_engine", "midday_scanner",
 ]
 
 log = logging.getLogger(__name__)
@@ -453,6 +453,62 @@ def api_stock_lt_result_by_date(date_str):
         if result:
             return jsonify(result)
         return jsonify({"error": "该日期无长期推荐结果"}), 404
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+# --- Mid-day Overnight Speculative Scanner ---
+
+@stock_bp.route("/api/stock/midday/start", methods=["POST"])
+@_with_stock_imports
+def api_stock_midday_start():
+    """Start Mid-day Overnight scanner."""
+    try:
+        body = request.get_json(silent=True) or {}
+        use_ds = bool(body.get("use_deepseek", True))
+        from midday_scanner import start_midday_scan
+        result = start_midday_scan(use_deepseek=use_ds)
+        return jsonify(result)
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/midday/status", methods=["GET"])
+@_with_stock_imports
+def api_stock_midday_status():
+    """Get Mid-day scan progress and status."""
+    try:
+        from midday_scanner import get_midday_scan_status
+        return jsonify(get_midday_scan_status())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/midday/stop", methods=["POST"])
+@_with_stock_imports
+def api_stock_midday_stop():
+    """Stop running Mid-day scan."""
+    try:
+        from midday_scanner import stop_midday_scan
+        return jsonify(stop_midday_scan())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/midday/result", methods=["GET"])
+@_with_stock_imports
+def api_stock_midday_result():
+    """Get latest Mid-day scan result."""
+    try:
+        from midday_scanner import get_latest_midday_result
+        result = get_latest_midday_result()
+        if result:
+            return jsonify(result)
+        return jsonify({"error": "暂无午盘扫描结果"}), 404
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500

@@ -90,6 +90,17 @@ The DeepSeek endpoint sends the same data as `generate_prediction` but uses the 
 
 ---
 
+### Mid-day Speculative Scanner (T+1 Overnight)
+
+| Method | Path | Body/Params | Response |
+|--------|------|-------------|----------|
+| `POST` | `/api/stock/midday/start` | `{ use_deepseek }` (boolean) | `{ ok, message }` |
+| `POST` | `/api/stock/midday/stop` | — | `{ ok, message }` |
+| `GET` | `/api/stock/midday/status` | — | Persistent thread-safe status JSON |
+| `GET` | `/api/stock/midday/result` | — | Latest completed midday scan JSON |
+
+---
+
 ### Price Prediction & Training
 
 | Method | Path | Body/Params | Response |

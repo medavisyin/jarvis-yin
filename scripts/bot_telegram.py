@@ -69,6 +69,7 @@ AUDIO_FILES = [
     ("ai-briefing.mp3", "AI Briefing"),
     ("world-news.mp3", "World News"),
     ("china-news.mp3", "China News"),
+    ("wiki-report.mp3", "Wiki Fetch Report"),
 ]
 
 if not BOT_TOKEN:
@@ -285,6 +286,40 @@ def _fmt_scan_result(data: dict) -> str:
     return "\n".join(lines)
 
 
+def _fmt_midday_result(data: dict) -> str:
+    picks = data.get("picks", [])
+    total_cand = data.get("all_candidates_count", "?")
+    
+    header = (
+        f"⚡ Jarvis AI 午盘隔夜套利内参\n"
+        f"数据截至: {data.get('ended_at', '?')}\n"
+        f"初筛活跃候选: {total_cand} 只\n"
+    )
+    
+    if not picks:
+        return (
+            header +
+            "\n评估结果: 今日暂无符合苛刻隔夜突破指标的推荐个股。\n"
+            "\"不操作、守住现金\" 也是超短线交易中极高的智慧。"
+        )
+        
+    lines = [header, f"🔥 终极推荐买入个股: {len(picks)} 只\n"]
+    for i, p in enumerate(picks, 1):
+        lines.append(
+            f"{i}. {p.get('name', '?')} ({p.get('symbol', '?')})\n"
+            f"   最新价: ¥{p.get('price', '?')}  上午涨幅: {p.get('change_pct', '?')}%\n"
+            f"   量比: {p.get('volume_ratio', '?')}  换手率: {p.get('turnover_rate', '?')}%\n"
+            f"   🎯 建议买入价: ¥{p.get('limit_buy_price', '?')}\n"
+            f"   📈 明日止盈目标: ¥{p.get('take_profit_target', '?')}\n"
+            f"   📉 明日止损价格: ¥{p.get('stop_loss_target', '?')}\n"
+            f"   T+1冲高失败策略: 当明日早盘冲高失败，若 9:30-10:00 无法放量冲高或开盘跌破止损线，超短线套利必须在 10:00 前果断清仓离场，切忌将短线做成中线套牢！\n"
+            f"   ⭐ 信心评级: {p.get('confidence_level', '中')}\n"
+            f"   💡 推荐理由: {p.get('reasoning', 'N/A')}\n"
+            f"   ⚠️ 主要风险: {p.get('risk', 'N/A')}\n"
+        )
+    return "\n".join(lines)
+
+
 def _fmt_stock_analyze(data: dict, symbol: str) -> str:
     if "error" in data:
         return f"{symbol}: {data['error']}"
@@ -366,6 +401,7 @@ HELP_TEXT = """Jarvis Bot Commands:
 /train — Train stock models
 /scan — Run short-term stock scanner
 /longscan — Run long-term stock scanner
+/midday — Run mid-day overnight speculative stock scanner
 /english — Tech English (AI news topics)
 /english <topic> — Analyze a topic
 /casual — Casual English (world news topics)
@@ -726,6 +762,34 @@ async def cmd_longscan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"Long-term scan error: {e}")
 
 
+@owner_only
+async def cmd_midday(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Starting midday overnight speculative scanner...")
+    try:
+        resp = await _agent_post("/api/stock/midday/start")
+        msg = resp.get("message", "started")
+        await update.message.reply_text(f"Midday scanner: {msg}")
+        
+        for _ in range(60):
+            await asyncio.sleep(10)
+            try:
+                st = await _agent_get("/api/stock/midday/status")
+                status = st.get("status", "")
+                if status in ("idle", "completed", "done"):
+                    result = await _agent_get("/api/stock/midday/result")
+                    text = _fmt_midday_result(result)
+                    await update.message.reply_text(_truncate(text))
+                    return
+                if status == "failed":
+                    await update.message.reply_text(f"Midday scan failed: {st.get('error', 'unknown')}")
+                    return
+            except Exception:
+                continue
+        await update.message.reply_text("Midday scan still running (stopped polling after 10 min).")
+    except Exception as e:
+        await update.message.reply_text(f"Midday scan error: {e}")
+
+
 # ---------------------------------------------------------------------------
 # English Learning — shared helpers and per-session history
 # ---------------------------------------------------------------------------
@@ -950,6 +1014,7 @@ async def _run_bot():
     app.add_handler(CommandHandler("train", cmd_train))
     app.add_handler(CommandHandler("scan", cmd_scan))
     app.add_handler(CommandHandler("longscan", cmd_longscan))
+    app.add_handler(CommandHandler("midday", cmd_midday))
     app.add_handler(CommandHandler("english", cmd_english))
     app.add_handler(CommandHandler("casual", cmd_casual))
     app.add_handler(CommandHandler("stop", cmd_stop))
