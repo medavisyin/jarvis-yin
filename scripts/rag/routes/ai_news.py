@@ -1041,236 +1041,61 @@ def _generate_segmented_narrations(
     content_type: str = "ai",
     lang: str = "zh",
 ) -> list[str]:
-    """Generate narrations per source/category segment as dual-host dialogue.
+    """Generate narrations per source/category segment as single-narrator news reading.
 
     *segments* is a list of dicts:
         {"name": "<source or category name>", "content": "<items text>"}
-    *lang* is "zh" for Chinese narration or "en" for English.
 
-    Returns a list of dialogue narration strings (one per segment, in order).
-    Each line is prefixed with [主播] or [嘉宾] (or [Host]/[Guest] for English).
-    The first segment gets an intro, the last gets an outro.
+    Returns a list of narration strings (one per segment, in order).
+    Single narrator, factual reporting only — no dialogue, no commentary.
     """
     total = len(segments)
     narrations: list[str] = []
-    use_en = lang == "en"
-
-    _ENGLISH_LEARNING = (
-        "\n\n[VOCABULARY TEACHING — MANDATORY]:\n"
-        "The listener is Chinese (CET-6 level). You MUST explain 4-6 difficult English words/phrases in the dialogue.\n"
-        "Use this exact pattern — say the word, then explain it with a dash:\n\n"
-        "EXAMPLE (follow this pattern exactly):\n"
-        '[Host] They decided to pivot — meaning to completely change direction — toward enterprise customers.\n'
-        '[Guest] The ramifications — the consequences and knock-on effects — could be enormous for the whole industry.\n'
-        '[Host] It really moves the needle — an idiom meaning it makes a significant difference — for smaller companies.\n'
-        '[Guest] They plan to roll out — to gradually release and make available — the feature next month.\n'
-        '[Host] The situation is unprecedented — meaning it has never happened before — in the history of AI.\n'
-        '[Guest] They are doubling down — investing even more heavily — on their safety research.\n\n'
-        "RULES:\n"
-        "- Pick advanced words: idioms, phrasal verbs, formal vocabulary (NOT basic words like 'important' or 'big')\n"
-        "- Spread the explanations throughout the dialogue, not at the end\n"
-        "- Each explanation is short: just a few words after the dash\n"
-        "- This is REQUIRED. A dialogue without vocabulary explanations is WRONG.\n"
-    )
-
-    _DIALOGUE_FORMAT_ZH = (
-        "\n\n【对话格式规则——严格遵守】：\n"
-        "1. 每一句话必须以 [主播] 或 [嘉宾] 开头，标明说话人\n"
-        "2. 主播负责引导话题、提出问题、串联过渡\n"
-        "3. 嘉宾负责深入分析、解释技术细节、给出见解\n"
-        "4. 对话要自然流畅，像两个人真的在聊天\n"
-        "5. 不要每句都太长，保持对话节奏感\n"
-        "6. 不要生硬地加比喻或口头禅，自然表达即可\n"
-        "7. 全部用中文，只有专有名词保留英文\n"
-        "8. 不要用markdown格式\n"
-        "9. 禁止在对话内容中提及角色身份（如\u201c我是主播\u201d\u201c今天请到嘉宾\u201d\u201c主持人\u201d\u201c分析师\u201d等），直接讨论话题内容\n"
-        "10. 不要自我介绍或介绍对方，不要说\u201c欢迎来到XX节目\u201d之类的套话，直接进入话题\n"
-        "\n示例格式：\n"
-        "[主播] 今天我们来聊一个很有意思的话题。\n"
-        "[嘉宾] 对，这个话题最近确实很火。\n"
-        "[主播] 那你能给我们讲讲具体是怎么回事吗？\n"
-        "[嘉宾] 简单说就是……\n"
-    )
-
-    _DIALOGUE_FORMAT_EN = (
-        "\n\n[DIALOGUE FORMAT RULES — STRICT]:\n"
-        "1. Every line MUST start with [Host] or [Guest] to indicate the speaker\n"
-        "2. Host drives the conversation: asks questions, transitions between topics\n"
-        "3. Guest provides analysis, explains technical details, shares insights\n"
-        "4. Keep the dialogue natural and conversational\n"
-        "5. Vary sentence lengths for good rhythm\n"
-        "6. Don't force analogies or catchphrases — speak naturally\n"
-        "7. No markdown formatting\n"
-        "8. NEVER mention speaker roles in dialogue content (no 'I'm your host', 'our guest today', 'presenter', 'analyst', etc.) — just discuss the topic directly\n"
-        "9. No self-introductions or show introductions ('welcome to the show' etc.) — jump straight into the topic\n"
-        "\nExample format:\n"
-        "[Host] Let's talk about something really interesting today.\n"
-        "[Guest] Yeah, this has been a hot topic recently.\n"
-        "[Host] Can you break it down for us?\n"
-        "[Guest] Sure, basically what happened is...\n"
-    )
 
     for idx, seg in enumerate(segments):
-        is_first = idx == 0
-        is_last = idx == total - 1
         seg_name = seg["name"]
         seg_content = seg["content"]
-        min_chars = max(400, len(seg_content) // 2)
-        max_chars = max(800, len(seg_content))
-
-        review_zh = ""
-        review_en = ""
-        if is_last and total > 1:
-            prev_names = [s["name"] for s in segments[:idx]]
-            review_zh = (
-                f"\n在结束前，主播和嘉宾一起用几句话快速回顾今天所有板块的核心要点"
-                f"（{', '.join(prev_names)}以及当前板块）。"
-            )
-            review_en = (
-                f"\nBefore signing off, Host and Guest briefly recap key takeaways "
-                f"from all segments ({', '.join(prev_names)} and this one)."
-            )
+        min_chars = max(200, len(seg_content) // 3)
+        max_chars = max(500, len(seg_content) // 2)
 
         if content_type == "world":
-            if use_en:
-                system_prompt = (
-                    "You are writing a world news podcast dialogue between two people:\n"
-                    "- [Host]: A sharp news anchor who asks good questions and drives the conversation.\n"
-                    "- [Guest]: An experienced analyst who provides depth, context, and clear explanations.\n"
-                    "Write natural, professional dialogue. No markdown. Every line must start with [Host] or [Guest].\n\n"
-                    "MANDATORY VOCABULARY TEACHING (the listener is a Chinese English learner at CET-6 level):\n"
-                    "When using an advanced word, IMMEDIATELY explain it with a dash, like:\n"
-                    "[Guest] The situation is unprecedented — meaning it has never happened before — in modern history.\n"
-                    "[Host] The ramifications — the far-reaching consequences — are enormous.\n"
-                    "You MUST include at least 4 such vocabulary explanations spread across the dialogue."
-                )
-                intro = "Host opens with a brief welcome and introduces today's topic. " if is_first else ""
-                outro = f"Host thanks the guest and wraps up.{review_en} " if is_last else ""
-                user_prompt = (
-                    f"Write a podcast dialogue about '{seg_name}' "
-                    f"(approximately {min_chars}-{max_chars} words). "
-                    f"{intro}Cover background, impact, and implications. "
-                    f"{outro}"
-                    f"{_ENGLISH_LEARNING}"
-                    f"{_DIALOGUE_FORMAT_EN}\n\n{seg_content}"
-                )
-            else:
-                system_prompt = (
-                    "你在写一档世界新闻播客的双人对话脚本，两个角色：\n"
-                    "- [主播]：资深新闻主播，负责引导话题、提出关键问题、串联板块。\n"
-                    "- [嘉宾]：国际时事分析师，负责深入解读、提供背景和洞察。\n"
-                    "对话要自然专业，不要堆砌比喻和口头禅。不要用markdown。每句必须以[主播]或[嘉宾]开头。\n"
-                    "重要：全部用中文写作，不要附加英文段落。只有人名和专有名词保留英文。"
-                )
-                intro = "主播先简短开场欢迎听众，引入今天话题。" if is_first else ""
-                outro = f"主播做简短收尾，感谢嘉宾和听众。{review_zh}" if is_last else ""
-                user_prompt = (
-                    f"写一段关于「{seg_name}」的世界新闻播客对话"
-                    f"（约{min_chars}-{max_chars}字）。"
-                    f"{intro}提供背景分析和影响解读。{outro}"
-                    f"{_DIALOGUE_FORMAT_ZH}\n\n"
-                    f"以下是素材（请用中文重新组织讲解）：\n\n{seg_content}"
-                )
-        elif content_type == "wiki":
-            brief_chars = max(300, len(seg_content) // 2)
-            if use_en:
-                system_prompt = (
-                    "You are a concise news-style narrator reading a team wiki update report. "
-                    "Single speaker, no dialogue, no commentary, no filler. "
-                    "For each wiki page state: the author, what the page is about, "
-                    "and what was created or changed. Use short, clear sentences. "
-                    "No markdown. No self-introductions."
-                )
-                outro = "End with one sentence summarizing total activity." if is_last else ""
-                user_prompt = (
-                    f"Read out the wiki updates for '{seg_name}' as a brief report "
-                    f"(approximately {brief_chars}-{min_chars} words). "
-                    f"For each page: state the author, purpose, and changes in 1-2 sentences. "
-                    f"No opinions or discussion. {outro}\n\n{seg_content}"
-                )
-            else:
-                system_prompt = (
-                    "你是一位简洁的新闻播报员，正在播报团队Wiki更新报告。"
-                    "单人播报，不要对话，不要评论，不要多余内容。"
-                    "对于每个Wiki页面，说明：作者、页面用途、新增或变更的内容。"
-                    "用简短清晰的句子。不要用markdown。不要自我介绍。"
-                )
-                outro = "最后用一句话总结整体活动。" if is_last else ""
-                user_prompt = (
-                    f"播报「{seg_name}」的Wiki更新（约{brief_chars}-{min_chars}字）。"
-                    f"对于每个页面：用1-2句话说明作者、用途和变更内容。"
-                    f"不要发表评论或讨论。{outro}\n\n{seg_content}"
-                )
+            system_prompt = (
+                "你是一位专业的新闻播报员，正在播报新闻简报。\n"
+                "单人播报，不要对话，不要分角色。用简洁清晰的句子陈述事实。\n"
+                "全部用中文，只有人名和专有名词保留英文。\n"
+                "不要发表个人评论、分析或预测。不要用markdown。\n"
+                "不要自我介绍，不要开场白，直接播报新闻内容。"
+            )
+            user_prompt = (
+                f"播报以下「{seg_name}」板块的新闻（约{min_chars}-{max_chars}字）。\n"
+                f"对每条新闻：用1-2句话说明发生了什么、涉及谁、关键数据。\n"
+                f"不要添加评论或分析。直接报道事实。\n\n"
+                f"新闻素材：\n\n{seg_content}"
+            )
         else:
-            _content_depth_en = (
-                "\n\nCRITICAL CONTENT RULES:\n"
-                "- You MUST discuss each news item listed below by name. Cover what it is and why it matters.\n"
-                "- Keep it concise: 1-2 quick exchanges per item. Highlight the key insight, then move on.\n"
-                "- NO filler content: no generic AI philosophy, no vague predictions, no padding.\n"
-                "- Stay focused and brief. The listener wants a quick daily digest, not a deep dive.\n"
+            system_prompt = (
+                "你是一位专业的AI科技新闻播报员，正在播报AI行业简报。\n"
+                "单人播报，不要对话，不要分角色。用简洁清晰的句子陈述事实。\n"
+                "全部用中文，专有名词保留英文。\n"
+                "不要发表个人评论、分析或预测。不要用markdown。\n"
+                "不要自我介绍，不要开场白，直接播报新闻内容。"
             )
-            _content_depth_zh = (
-                "\n\n【内容规则——最高优先级】：\n"
-                "- 你必须逐条讨论下面列出的每条新闻，说清它是什么、为什么重要。\n"
-                "- 保持简洁：每条新闻1-2轮快速对话即可，点明核心要点后立即进入下一条。\n"
-                "- 禁止填充内容：不要泛泛而谈AI哲学、不要凑字数、不要过度展开。\n"
-                "- 听众需要的是快速每日速览，不是深度分析。\n"
+            user_prompt = (
+                f"播报以下「{seg_name}」的AI新闻（约{min_chars}-{max_chars}字）。\n"
+                f"对每条新闻：用1-2句话说明它是什么、关键事实和数据。\n"
+                f"不要添加评论或分析。直接报道事实。\n\n"
+                f"新闻条目：\n\n{seg_content}"
             )
 
-            if use_en:
-                system_prompt = (
-                    "You are writing an AI tech podcast dialogue between two people:\n"
-                    "- [Host]: A curious tech journalist who asks sharp questions.\n"
-                    "- [Guest]: An AI expert who explains things clearly and insightfully.\n"
-                    "Write natural, engaging dialogue. No markdown. Every line must start with [Host] or [Guest].\n"
-                    "FORBIDDEN: Never mention speaker roles in dialogue ('I'm your host', 'our guest', 'presenter', 'analyst'). No self-introductions. Jump directly into topic discussion.\n\n"
-                    "MANDATORY VOCABULARY TEACHING (the listener is a Chinese English learner at CET-6 level):\n"
-                    "When using an advanced word, IMMEDIATELY explain it with a dash, like:\n"
-                    "[Guest] This is a paradigm shift — a fundamental change in approach — for the industry.\n"
-                    "[Host] They plan to roll out — gradually release — the new features next month.\n"
-                    "You MUST include at least 4 such vocabulary explanations spread across the dialogue."
-                )
-                intro = "Open by jumping straight into the topic (no self-introductions). " if is_first else ""
-                outro = f"Wrap up the segment briefly.{review_en} " if is_last else ""
-                user_prompt = (
-                    f"Write a podcast dialogue about '{seg_name}' "
-                    f"(approximately {min_chars}-{max_chars} words). "
-                    f"{intro}Discuss each news item below in depth — explain what it is, why it matters, and its impact. "
-                    f"{outro}"
-                    f"{_content_depth_en}"
-                    f"{_ENGLISH_LEARNING}"
-                    f"{_DIALOGUE_FORMAT_EN}\n\n"
-                    f"NEWS ITEMS TO DISCUSS:\n\n{seg_content}"
-                )
-            else:
-                system_prompt = (
-                    "你在写一档AI科技播客的双人对话脚本，两个角色：\n"
-                    "- [主播]：好奇心强的科技记者，善于提出好问题，引导话题方向。\n"
-                    "- [嘉宾]：资深AI专家，善于把复杂技术讲清楚，有独到见解。\n"
-                    "对话要自然流畅，不要堆砌比喻和口头禅。不要用markdown。每句必须以[主播]或[嘉宾]开头。\n"
-                    "重要：全部用中文写作，不要附加英文原文。只有专有名词保留英文。\n"
-                    "禁止：不要在对话中提及\u201c主播\u201d\u201c嘉宾\u201d\u201c主持人\u201d\u201c分析师\u201d等角色身份词，不要自我介绍或介绍对方，直接讨论内容。"
-                )
-                intro = "用一句话引出今天要聊的话题（不要自我介绍）。" if is_first else ""
-                outro = f"简短收尾总结。{review_zh}" if is_last else ""
-                user_prompt = (
-                    f"写一段关于「{seg_name}」的AI科技播客对话"
-                    f"（约{min_chars}-{max_chars}字）。"
-                    f"{intro}逐条深入讨论下面的每条新闻——解释它是什么、为什么重要、有什么影响。{outro}"
-                    f"{_content_depth_zh}"
-                    f"{_DIALOGUE_FORMAT_ZH}\n\n"
-                    f"以下是要讨论的新闻条目（请用中文重新组织讲解）：\n\n{seg_content}"
-                )
-
-        _log.info("Generating dialogue segment %d/%d: %s (%d chars input)",
+        _log.info("Generating narration segment %d/%d: %s (%d chars input)",
                   idx + 1, total, seg_name, len(seg_content))
         try:
             narration = _ollama_narration_call(system_prompt, user_prompt, max_tokens=2048, timeout=300)
             if narration and len(narration) > 50:
                 narrations.append(narration)
-                _log.info("Segment %d/%d done: %d chars dialogue", idx + 1, total, len(narration))
+                _log.info("Segment %d/%d done: %d chars", idx + 1, total, len(narration))
             else:
-                _log.warning("Segment %d/%d returned too short dialogue (%d chars), skipping",
+                _log.warning("Segment %d/%d too short (%d chars), skipping",
                              idx + 1, total, len(narration) if narration else 0)
         except Exception as e:
             _log.warning("Segment %d/%d failed: %s", idx + 1, total, str(e)[:200])
@@ -1464,29 +1289,24 @@ def _enhance_narration_rhythm(text: str) -> str:
 
 
 def _tts_segments_to_mp3(narrations: list[str], out_path: str, voice: str = "zh-CN-YunxiNeural"):
-    """Convert a list of dialogue narration segments to a single combined MP3.
+    """Convert a list of narration segments to a single combined MP3.
 
-    Parses [主播]/[嘉宾] (or [Host]/[Guest]) markers and renders each turn
-    with a different voice for natural dual-host podcast effect.
+    Uses a single voice (zh-CN-YunxiNeural) for all segments.
     """
     import edge_tts
     import shutil
     import tempfile
 
     out_dir = os.path.dirname(out_path)
-    is_en = "en-" in voice
-    lang_key = "en" if is_en else "zh"
-    voices = _DIALOGUE_VOICES.get(lang_key, _DIALOGUE_VOICES["zh"])
     all_part_paths: list[str] = []
 
-    async def _save_chunk(chunk_text, chunk_path, chunk_voice):
-        fallbacks = [chunk_voice] + [v for v in _TTS_VOICE_FALLBACKS if v != chunk_voice]
-        for v in fallbacks:
+    async def _save_chunk(chunk_text, chunk_path):
+        for v in _TTS_VOICE_FALLBACKS:
             for attempt in range(2):
                 try:
                     comm = edge_tts.Communicate(chunk_text, v, rate="-5%", pitch="+0Hz")
                     await comm.save(chunk_path)
-                    return v
+                    return
                 except Exception:
                     if attempt < 1:
                         await asyncio.sleep(2)
@@ -1512,6 +1332,7 @@ def _tts_segments_to_mp3(narrations: list[str], out_path: str, voice: str = "zh-
         part_counter = 0
         for seg_idx, narration in enumerate(narrations):
             narration = _clean_narration_for_tts(narration)
+            narration = _enhance_narration_rhythm(narration)
 
             if seg_idx > 0:
                 silence_part = os.path.join(out_dir, f"_df_p{part_counter}_silence.mp3")
@@ -1519,17 +1340,12 @@ def _tts_segments_to_mp3(narrations: list[str], out_path: str, voice: str = "zh-
                     all_part_paths.append(silence_part)
                     part_counter += 1
 
-            turns = _parse_dialogue_turns(narration)
-            for turn_idx, (role, text) in enumerate(turns):
-                turn_voice = voices["host"] if role == "host" else voices["guest"]
-                text = _enhance_narration_rhythm(text)
-
-                chunks: list[str] = []
-                remaining = text
-                while remaining:
-                    if len(remaining) <= 2000:
-                        chunks.append(remaining)
-                        break
+            remaining = narration
+            while remaining:
+                if len(remaining) <= 2000:
+                    chunk = remaining
+                    remaining = ""
+                else:
                     split_at = remaining.rfind("。", 0, 2000)
                     if split_at < 0:
                         split_at = remaining.rfind(".", 0, 2000)
@@ -1537,12 +1353,12 @@ def _tts_segments_to_mp3(narrations: list[str], out_path: str, voice: str = "zh-
                         split_at = 2000
                     else:
                         split_at += 1
-                    chunks.append(remaining[:split_at])
+                    chunk = remaining[:split_at]
                     remaining = remaining[split_at:].strip()
 
-                for ci, chunk in enumerate(chunks):
+                if chunk.strip():
                     part = os.path.join(out_dir, f"_df_p{part_counter}.mp3")
-                    await _save_chunk(chunk, part, turn_voice)
+                    await _save_chunk(chunk, part)
                     all_part_paths.append(part)
                     part_counter += 1
 
@@ -1573,7 +1389,7 @@ def _tts_segments_to_mp3(narrations: list[str], out_path: str, voice: str = "zh-
                 os.remove(p)
             except OSError:
                 pass
-        _log.info("Dialogue TTS done (%d segments, %d parts merged, dual-voice)",
+        _log.info("TTS done (%d segments, %d parts merged, single voice)",
                   len(narrations), len(all_part_paths))
 
     asyncio.run(_do_tts())

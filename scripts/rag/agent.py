@@ -1134,7 +1134,6 @@ _GLOBAL_SETTINGS_DEFAULTS = {
     "audio_lang_ai": "zh",
     "audio_lang_world": "zh",
     "audio_lang_china": "zh",
-    "audio_lang_wiki": "en",
     "audio_lang_knowledge": "zh",
     "deepseek_api_key": "",
 }

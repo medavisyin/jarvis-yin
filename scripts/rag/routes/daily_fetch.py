@@ -60,8 +60,35 @@ _AUDIO_STEP_LANG_KEYS = {
     "ai_audio": "audio_lang_ai",
     "world_audio": "audio_lang_world",
     "china_audio": "audio_lang_china",
-    "wiki_audio": "audio_lang_wiki",
 }
+
+_AUDIO_EXCLUDE_SOURCES = {"Arxiv AI", "Arxiv Machine Learning"}
+
+
+def _get_recent_ai_titles(reports_root: str, today_str: str, lookback_days: int = 3) -> set[str]:
+    """Collect AI news titles from past N days for cross-day deduplication."""
+    titles: set[str] = set()
+    try:
+        today_dt = datetime.strptime(today_str, "%Y-%m-%d")
+    except ValueError:
+        return titles
+    for d in range(1, lookback_days + 1):
+        past_date = (today_dt - timedelta(days=d)).strftime("%Y-%m-%d")
+        for fname in ("briefing-data-filtered.json", "briefing-data.json"):
+            fpath = os.path.join(reports_root, past_date, fname)
+            if os.path.isfile(fpath):
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    for src_block in (data.get("per_source_data") or []):
+                        for it in src_block.get("items", []):
+                            t = (it.get("title") or "").strip().lower()
+                            if t:
+                                titles.add(t)
+                except Exception:
+                    pass
+                break
+    return titles
 
 
 def _resolve_audio_lang(step: str, gs: dict, lang_overrides: dict | None) -> str:
@@ -284,7 +311,6 @@ def _run_daily_fetch(
             "ai_audio": lambda: os.path.isfile(os.path.join(output_dir, "ai-briefing.mp3")),
             "world_audio": lambda: os.path.isfile(os.path.join(output_dir, "world-news.mp3")),
             "china_audio": lambda: os.path.isfile(os.path.join(output_dir, "china-news.mp3")),
-            "wiki_audio": lambda: os.path.isfile(os.path.join(output_dir, "wiki-report.mp3")),
             "commit_report": lambda: any(
                 f.startswith("commit-report-") and f.endswith(".md")
                 for f in os.listdir(output_dir)
@@ -664,36 +690,39 @@ def _run_daily_fetch(
             except Exception as e:
                 steps.append({"step": "refetch_ai", "exit_code": 1, "output": str(e)[:300]})
 
-        # --- Audio generation: AI Briefing (segmented per-source) ---
         if _should_run("ai_audio") and not _already_done("ai_audio"):
-            job["step"] = "Generating AI briefing audio (segmented)..."
+            job["step"] = "Generating AI briefing audio..."
             try:
-                data_file = os.path.join(output_dir, "briefing-data.json")
+                data_file = os.path.join(output_dir, "briefing-data-filtered.json")
                 if not os.path.exists(data_file):
-                    data_file = os.path.join(output_dir, "briefing-data-filtered.json")
+                    data_file = os.path.join(output_dir, "briefing-data.json")
                 if os.path.exists(data_file):
                     import json as _json
                     with open(data_file, "r", encoding="utf-8") as df:
                         bdata = _json.load(df)
+                    recent_titles = _get_recent_ai_titles(REPORTS_ROOT, today)
                     ai_segments: list[dict] = []
+                    seen_titles: set[str] = set()
                     for src_block in (bdata.get("per_source_data") or []):
                         src_name = src_block.get("source_name") or src_block.get("name") or ""
+                        if src_name in _AUDIO_EXCLUDE_SOURCES:
+                            continue
                         items_text_parts = []
-                        for it in src_block.get("items", [])[:3]:
+                        for it in src_block.get("items", [])[:5]:
                             title = it.get("title", "")
-                            summary_text = it.get("summary") or it.get("description") or ""
-                            url = it.get("url") or ""
-                            points = it.get("points") or []
                             if not title:
                                 continue
+                            title_key = title.strip().lower()
+                            if title_key in recent_titles or title_key in seen_titles:
+                                continue
+                            seen_titles.add(title_key)
+                            summary_text = it.get("summary") or it.get("description") or ""
+                            points = it.get("points") or []
                             parts = [title]
                             if summary_text:
                                 parts.append(summary_text)
-                            else:
-                                if points:
-                                    parts.append(" | ".join(str(p) for p in points[:5]))
-                                if url:
-                                    parts.append(f"Source: {url}")
+                            elif points:
+                                parts.append(" | ".join(str(p) for p in points[:5]))
                             items_text_parts.append("\n".join(parts))
                         if items_text_parts:
                             ai_segments.append({
@@ -701,17 +730,14 @@ def _run_daily_fetch(
                                 "content": "\n\n".join(items_text_parts),
                             })
                     if ai_segments:
-                        gs = _get_global_settings()
-                        ai_lang = _resolve_audio_lang("ai_audio", gs, job.get("lang_overrides"))
-                        ai_voice = "en-US-AndrewNeural" if ai_lang == "en" else "zh-CN-YunxiNeural"
-                        job["step"] = f"Generating AI narration ({len(ai_segments)} segments, lang={ai_lang})..."
-                        narrations_ai = _generate_segmented_narrations(ai_segments, "ai", lang=ai_lang)
+                        job["step"] = f"Generating AI narration ({len(ai_segments)} segments)..."
+                        narrations_ai = _generate_segmented_narrations(ai_segments, "ai", lang="zh")
                         if narrations_ai:
                             total_chars = sum(len(n) for n in narrations_ai)
                             ai_mp3 = os.path.join(output_dir, "ai-briefing.mp3")
-                            _tts_segments_to_mp3(narrations_ai, ai_mp3, voice=ai_voice)
+                            _tts_segments_to_mp3(narrations_ai, ai_mp3)
                             steps.append({"step": "ai_audio", "exit_code": 0,
-                                          "output": f"Generated ai-briefing.mp3 ({len(narrations_ai)} segments, {total_chars} chars total)"})
+                                          "output": f"Generated ai-briefing.mp3 ({len(ai_segments)} segments, {total_chars} chars, {len(recent_titles)} titles deduped)"})
                         else:
                             steps.append({"step": "ai_audio", "exit_code": 1, "output": "All narration segments failed"})
                     else:
@@ -858,21 +884,19 @@ def _run_daily_fetch(
                         wdata = _json.load(wf)
                     categories = wdata.get("categories") or []
 
-                    gs = _get_global_settings()
-                    wn_lang = _resolve_audio_lang("world_audio", gs, job.get("lang_overrides"))
-                    wn_voice = "en-US-AndrewNeural" if wn_lang == "en" else "zh-CN-YunxiNeural"
                     wn_segments = _build_audio_segments(
                         categories,
                         source_filter=lambda s: _CHINA_SOURCE_TAG not in s,
-                        prefer_zh=(wn_lang == "zh"),
+                        prefer_zh=True,
+                        max_per_cat=8,
                     )
                     if wn_segments:
-                        job["step"] = f"Generating world narration ({len(wn_segments)} segments, lang={wn_lang})..."
-                        narrations_wn = _generate_segmented_narrations(wn_segments, "world", lang=wn_lang)
+                        job["step"] = f"Generating world narration ({len(wn_segments)} segments)..."
+                        narrations_wn = _generate_segmented_narrations(wn_segments, "world", lang="zh")
                         if narrations_wn:
                             total_chars = sum(len(n) for n in narrations_wn)
                             wn_mp3 = os.path.join(output_dir, "world-news.mp3")
-                            _tts_segments_to_mp3(narrations_wn, wn_mp3, voice=wn_voice)
+                            _tts_segments_to_mp3(narrations_wn, wn_mp3)
                             steps.append({"step": "world_audio", "exit_code": 0,
                                           "output": f"Generated world-news.mp3 ({len(narrations_wn)} segments, {total_chars} chars)"})
                         else:
@@ -894,22 +918,19 @@ def _run_daily_fetch(
                         wdata = _json.load(wf)
                     categories = wdata.get("categories") or []
 
-                    gs = _get_global_settings()
-                    cn_lang = _resolve_audio_lang("china_audio", gs, job.get("lang_overrides"))
-                    cn_voice = "en-US-AndrewNeural" if cn_lang == "en" else "zh-CN-YunxiNeural"
                     cn_segments = _build_audio_segments(
                         categories,
                         source_filter=lambda s: _CHINA_SOURCE_TAG in s,
-                        prefer_zh=(cn_lang == "zh"),
+                        prefer_zh=True,
                         max_per_cat=15,
                     )
                     if cn_segments:
-                        job["step"] = f"Generating China narration ({len(cn_segments)} segments, lang={cn_lang})..."
-                        narrations_cn = _generate_segmented_narrations(cn_segments, "world", lang=cn_lang)
+                        job["step"] = f"Generating China narration ({len(cn_segments)} segments)..."
+                        narrations_cn = _generate_segmented_narrations(cn_segments, "world", lang="zh")
                         if narrations_cn:
                             total_chars = sum(len(n) for n in narrations_cn)
                             cn_mp3 = os.path.join(output_dir, "china-news.mp3")
-                            _tts_segments_to_mp3(narrations_cn, cn_mp3, voice=cn_voice)
+                            _tts_segments_to_mp3(narrations_cn, cn_mp3)
                             steps.append({"step": "china_audio", "exit_code": 0,
                                           "output": f"Generated china-news.mp3 ({len(narrations_cn)} segments, {total_chars} chars)"})
                         else:
@@ -920,85 +941,6 @@ def _run_daily_fetch(
                     steps.append({"step": "china_audio", "exit_code": -1, "output": "No world news data file found"})
             except Exception as e:
                 steps.append({"step": "china_audio", "exit_code": 1, "output": str(e)[:300]})
-
-        # --- Audio generation: Wiki Fetch Report (purpose, changes, author per page) ---
-        if _should_run("wiki_audio") and not _already_done("wiki_audio"):
-            job["step"] = "Generating Wiki Fetch Report audio..."
-            try:
-                wiki_details_file = None
-                for fn in os.listdir(output_dir):
-                    if fn.startswith("wiki-details-") and fn.endswith(".json"):
-                        wiki_details_file = os.path.join(output_dir, fn)
-                        break
-
-                wiki_page_details: dict[str, list[dict]] = {}
-                if wiki_details_file and os.path.isfile(wiki_details_file):
-                    with open(wiki_details_file, "r", encoding="utf-8") as wdf:
-                        wiki_page_details = json.load(wdf)
-                elif all_user_pages_detail:
-                    wiki_page_details = all_user_pages_detail
-
-                if wiki_page_details:
-                    wiki_segments: list[dict] = []
-                    for user, pages in wiki_page_details.items():
-                        if not pages:
-                            continue
-                        page_texts: list[str] = []
-                        for pg in pages:
-                            title = pg.get("title", "Untitled")
-                            space = pg.get("space", "")
-                            version = pg.get("version_number", 1)
-                            ai_summary = pg.get("ai_summary", "")
-                            raw_summary = pg.get("summary", "").strip()
-                            headings = pg.get("headings", [])
-
-                            parts = [f"Page: {title}"]
-                            if space:
-                                parts.append(f"Space: {space}")
-                            parts.append(f"Author: {user}")
-                            if version <= 1:
-                                parts.append("This is a newly created page.")
-                            else:
-                                parts.append(f"This page was updated (version {version}).")
-                            if ai_summary:
-                                parts.append(f"Summary: {ai_summary}")
-                            elif raw_summary:
-                                parts.append(f"Content: {raw_summary[:300]}")
-                            if headings:
-                                parts.append(f"Sections: {', '.join(headings[:6])}")
-                            page_texts.append("\n".join(parts))
-
-                        if page_texts:
-                            wiki_segments.append({
-                                "name": f"{user}'s Wiki Updates",
-                                "content": "\n\n".join(page_texts),
-                            })
-
-                    if wiki_segments:
-                        gs = _get_global_settings()
-                        wiki_lang = _resolve_audio_lang("wiki_audio", gs, job.get("lang_overrides"))
-                        wiki_voice = "en-US-AndrewNeural" if wiki_lang == "en" else "zh-CN-YunxiNeural"
-                        job["step"] = f"Generating Wiki narration ({len(wiki_segments)} segments, lang={wiki_lang})..."
-                        narrations_wiki = _generate_segmented_narrations(
-                            wiki_segments, "wiki", lang=wiki_lang,
-                        )
-                        if narrations_wiki:
-                            total_chars = sum(len(n) for n in narrations_wiki)
-                            wiki_mp3 = os.path.join(output_dir, "wiki-report.mp3")
-                            _tts_segments_to_mp3(narrations_wiki, wiki_mp3, voice=wiki_voice)
-                            steps.append({"step": "wiki_audio", "exit_code": 0,
-                                          "output": f"Generated wiki-report.mp3 ({len(narrations_wiki)} segments, {total_chars} chars)"})
-                        else:
-                            steps.append({"step": "wiki_audio", "exit_code": 1,
-                                          "output": "Wiki narration generation failed"})
-                    else:
-                        steps.append({"step": "wiki_audio", "exit_code": -1,
-                                      "output": "No wiki pages with content to narrate"})
-                else:
-                    steps.append({"step": "wiki_audio", "exit_code": -1,
-                                  "output": "No wiki details data found"})
-            except Exception as e:
-                steps.append({"step": "wiki_audio", "exit_code": 1, "output": str(e)[:300]})
 
         job["status"] = "done"
         job["step"] = "Complete"
@@ -1172,7 +1114,6 @@ def api_daily_fetch_history():
     has_audio = os.path.isfile(os.path.join(date_dir, "ai-briefing.mp3"))
     has_wn_audio = os.path.isfile(os.path.join(date_dir, "world-news.mp3"))
     has_cn_audio = os.path.isfile(os.path.join(date_dir, "china-news.mp3"))
-    has_wiki_audio = os.path.isfile(os.path.join(date_dir, "wiki-report.mp3"))
     has_pdf = os.path.isfile(os.path.join(date_dir, "ai-briefing.pdf"))
 
     has_sources = os.path.isfile(os.path.join(date_dir, "briefing-data.json"))
@@ -1221,13 +1162,6 @@ def api_daily_fetch_history():
         missing_steps.append("china_audio")
     elif not has_wn_data and has_wn_source_jsons and not has_cn_audio:
         missing_steps.append("china_audio")
-    has_wiki_details = any(f.startswith("wiki-details-") and f.endswith(".json")
-                          for f in os.listdir(date_dir)) if os.path.isdir(date_dir) else False
-    if not has_wiki_audio and (has_wiki_details or has_wiki):
-        if has_wiki and not has_wiki_details:
-            missing_steps.append("wiki_fetch")
-        missing_steps.append("wiki_audio")
-
     date_dirs = sorted(
         [d for d in os.listdir(REPORTS_ROOT)
          if os.path.isdir(os.path.join(REPORTS_ROOT, d)) and d[:4].isdigit()],
@@ -1239,7 +1173,6 @@ def api_daily_fetch_history():
         "audio_lang_ai": gs.get("audio_lang_ai", "zh"),
         "audio_lang_world": gs.get("audio_lang_world", "zh"),
         "audio_lang_china": gs.get("audio_lang_china", "zh"),
-        "audio_lang_wiki": gs.get("audio_lang_wiki", "en"),
     }
 
     return jsonify({
@@ -1260,7 +1193,6 @@ def api_daily_fetch_history():
         "has_audio": has_audio,
         "has_wn_audio": has_wn_audio,
         "has_cn_audio": has_cn_audio,
-        "has_wiki_audio": has_wiki_audio,
         "has_pdf": has_pdf,
         "missing_steps": missing_steps,
         "available_dates": date_dirs,

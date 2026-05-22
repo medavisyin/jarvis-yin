@@ -250,12 +250,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
           </select>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f1117;border-radius:6px;border:1px solid #2a2d3e">
-          <span style="font-size:0.88em;color:#e0e0e0">&#128220; Wiki Report</span>
-          <select id="settAudioWiki" style="background:#1a1d2e;color:#a0a4b8;border:1px solid #3a3d4a;border-radius:4px;padding:4px 8px;font-size:0.85em">
-            <option value="en">English</option><option value="zh">中文</option>
-          </select>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f1117;border-radius:6px;border:1px solid #2a2d3e">
           <span style="font-size:0.88em;color:#e0e0e0">&#128214; Knowledge Audio</span>
           <select id="settAudioKnowledge" style="background:#1a1d2e;color:#a0a4b8;border:1px solid #3a3d4a;border-radius:4px;padding:4px 8px;font-size:0.85em">
             <option value="zh">中文</option><option value="en">English</option>
@@ -1411,7 +1405,7 @@ async function loadDailyFetchHistory(date) {
     h += '<div style="font-size:1.3em;font-weight:700;color:#38bdf8">' + (s.wiki_pages || 0) + ' <span style="font-size:0.55em;font-weight:400">pages</span></div></div>';
     h += '</div>';
     if (_dfMissingSteps.length > 0) {
-      var stepLabels = {fetch_sources:'Source Fetch',topic_dedup:'Topic Dedup',commit_report:'Commit Report',jira_daily:'Jira Report',wiki_fetch:'Wiki Fetch',world_news_merge:'World News Merge',ai_audio:'AI Audio',world_audio:'World Audio',china_audio:'\u4e2d\u56fd\u65b0\u95fb Audio',wiki_audio:'Wiki Report Audio'};
+      var stepLabels = {fetch_sources:'Source Fetch',topic_dedup:'Topic Dedup',commit_report:'Commit Report',jira_daily:'Jira Report',wiki_fetch:'Wiki Fetch',world_news_merge:'World News Merge',ai_audio:'AI Audio',world_audio:'World Audio',china_audio:'\u4e2d\u56fd\u65b0\u95fb Audio'};
       h += '<div style="background:#2a1a0a;border:1px solid #d97706;border-radius:8px;padding:10px 14px;margin-bottom:14px">';
       h += '<div style="font-size:0.78em;font-weight:600;color:#f59e0b;margin-bottom:6px">Incomplete — missing steps:</div>';
       h += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
@@ -1421,7 +1415,7 @@ async function loadDailyFetchHistory(date) {
       }
       h += '</div></div>';
     }
-    if (data.has_audio || data.has_wn_audio || data.has_cn_audio || data.has_wiki_audio) {
+    if (data.has_audio || data.has_wn_audio || data.has_cn_audio) {
       var _cacheBust = '?t=' + Date.now();
       h += '<div style="margin-bottom:14px">';
       if (data.has_audio) {
@@ -1450,14 +1444,6 @@ async function loadDailyFetchHistory(date) {
         h += '<button type="button" onclick="recreateAudio(\'china_audio\',\'China News\',this)" style="background:#1a0f0f;border:1px solid #b91c1c;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fca5a5;cursor:pointer" title="Re-fetch China news then recreate audio">&#x1f504; Refetch &amp; Recreate</button>';
         h += '</div>';
         h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/china-news.mp3' + _cacheBust + '"></audio>';
-      }
-      if (data.has_wiki_audio) {
-        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">';
-        h += '<span style="font-size:0.78em;font-weight:600;color:#38bdf8">Wiki Fetch Report Audio</span>';
-        h += _dfTranslateBtnHtml('wiki_audio', 'Wiki Report', 'audio_lang_wiki', 'background:#0f2a3a;border:1px solid #0ea5e9;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#7dd3fc;cursor:pointer');
-        h += '<button type="button" onclick="recreateAudioOnly(\'wiki_audio\',\'Wiki Report\',this)" style="background:#0f2a3a;border:1px solid #38bdf8;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#38bdf8;cursor:pointer" title="Regenerate audio from existing wiki data">&#x21bb; Recreate</button>';
-        h += '</div>';
-        h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/wiki-report.mp3' + _cacheBust + '"></audio>';
       }
       h += '</div>';
     }
@@ -1518,8 +1504,6 @@ async function runDailyFetchFromModal() {
             '<audio controls style="width:100%;margin-bottom:6px" src="/api/toolbar/audio-file/' + today + '/world-news.mp3"></audio>' +
             '<div style="font-weight:600;color:#ef4444;margin:12px 0 8px">中国新闻 Audio</div>' +
             '<audio controls style="width:100%;margin-bottom:6px" src="/api/toolbar/audio-file/' + today + '/china-news.mp3"></audio>' +
-            '<div style="font-weight:600;color:#38bdf8;margin:12px 0 8px">Wiki Fetch Report Audio</div>' +
-            '<audio controls style="width:100%;margin-bottom:6px" src="/api/toolbar/audio-file/' + today + '/wiki-report.mp3"></audio>' +
             '</div>';
           var audioMsg = document.createElement('div');
           audioMsg.className = 'system-msg';
@@ -2936,7 +2920,6 @@ async function openGlobalSettings() {
     document.getElementById('settAudioAi').value = d.audio_lang_ai || 'zh';
     document.getElementById('settAudioWorld').value = d.audio_lang_world || 'zh';
     document.getElementById('settAudioChina').value = d.audio_lang_china || 'zh';
-    document.getElementById('settAudioWiki').value = d.audio_lang_wiki || 'en';
     document.getElementById('settAudioKnowledge').value = d.audio_lang_knowledge || 'zh';
     var masked = d.deepseek_api_key_masked || '';
     var el = document.getElementById('settDeepseekKey');
@@ -2953,7 +2936,6 @@ async function saveGlobalSettings() {
     audio_lang_ai: document.getElementById('settAudioAi').value,
     audio_lang_world: document.getElementById('settAudioWorld').value,
     audio_lang_china: document.getElementById('settAudioChina').value,
-    audio_lang_wiki: document.getElementById('settAudioWiki').value,
     audio_lang_knowledge: document.getElementById('settAudioKnowledge').value,
   };
   try {
