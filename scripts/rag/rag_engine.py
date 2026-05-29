@@ -58,9 +58,17 @@ def get_qdrant():
         )
         if os.path.exists(SNAPSHOT_PATH):
             _qdrant_points_snapshot_mtime = os.path.getmtime(SNAPSHOT_PATH)
-            with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            points = data.get("points", [])
+            try:
+                with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                points = data.get("points", [])
+            except (json.JSONDecodeError, OSError, ValueError) as e:
+                # A snapshot truncated by a killed writer must never brick
+                # startup — log and continue with an empty collection so the
+                # server still boots (re-index to repopulate).
+                print(f"  WARNING: failed to load snapshot {SNAPSHOT_PATH}: {e}; "
+                      f"starting with empty collection", flush=True)
+                points = []
             _qdrant_points = [
                 {"id": p.get("id"), "payload": dict(p.get("payload") or {})}
                 for p in points
@@ -90,9 +98,14 @@ def sync_qdrant_points_from_snapshot() -> None:
     mtime = os.path.getmtime(SNAPSHOT_PATH)
     if mtime <= _qdrant_points_snapshot_mtime:
         return
-    with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    points = data.get("points", [])
+    try:
+        with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        points = data.get("points", [])
+    except (json.JSONDecodeError, OSError, ValueError) as e:
+        print(f"  WARNING: skipping snapshot reload, {SNAPSHOT_PATH} unreadable: {e}",
+              flush=True)
+        return
     _qdrant_points = [
         {"id": p.get("id"), "payload": dict(p.get("payload") or {})}
         for p in points

@@ -104,8 +104,10 @@ def _save_snapshot(client):
         offset = next_offset
 
     os.makedirs(os.path.dirname(SNAPSHOT_PATH), exist_ok=True)
-    with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
+    _tmp = f"{SNAPSHOT_PATH}.tmp-{os.getpid()}"
+    with open(_tmp, "w", encoding="utf-8") as f:
         json.dump({"points": all_points, "count": len(all_points)}, f)
+    os.replace(_tmp, SNAPSHOT_PATH)
     print(f"  Saved {len(all_points)} total points to snapshot")
 
 
@@ -147,12 +149,31 @@ def _chunk_text(text: str, max_chars: int = 500, overlap: int = 100) -> List[str
 
 
 def _strip_html(html: str) -> str:
+    """Strip HTML to plain text while preserving block boundaries.
+
+    Block-level elements (paragraphs, list items, headings, table rows, etc.)
+    are converted to newlines *before* whitespace is collapsed. This keeps the
+    document's paragraph structure intact so that line-based diffing (see
+    ``_compute_change_summary``) and paragraph chunking (``_chunk_text``) can
+    operate on real units instead of one flattened blob.
+    """
     if not html:
         return ""
     import html as html_mod
     text = html_mod.unescape(html)
+    # Line breaks → single newline
+    text = re.sub(r'(?i)<br\s*/?>', '\n', text)
+    # Closing block tags → paragraph break (double newline)
+    text = re.sub(
+        r'(?i)</(p|div|li|tr|h[1-6]|td|th|blockquote|section|article|ul|ol|table|pre)\s*>',
+        '\n\n', text)
+    # Drop every remaining tag
     text = re.sub(r'<[^>]+>', ' ', text)
-    text = re.sub(r'\s+', ' ', text)
+    # Collapse intra-line whitespace but keep newlines
+    text = re.sub(r'[ \t\f\v]+', ' ', text)
+    # Trim padding around newlines and collapse runs of blank lines
+    text = re.sub(r' *\n *', '\n', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
 
@@ -187,6 +208,31 @@ def _fetch_previous_version_text(page_id: str, current_version: int) -> str:
         return _strip_html(storage_html)
     except Exception:
         return ""
+
+
+def _fetch_version_message(page_id: str, version_number: int) -> str:
+    """Fetch the author's edit comment for a page version via the Confluence V2 API.
+
+    The V2 ``/wiki/api/v2/pages/{id}/versions`` endpoint exposes the per-version
+    ``message`` (the note the editor typed when saving) plus ``minorEdit``. The
+    edit comment is often the cleanest "what changed" signal and needs no diffing.
+    Returns an empty string if unavailable.
+    """
+    if version_number < 1:
+        return ""
+    try:
+        import requests
+        url = f"https://{SITE}/wiki/api/v2/pages/{page_id}/versions"
+        r = requests.get(url, headers=_HEADERS,
+                         params={"limit": 50, "sort": "-modified-date"}, timeout=15)
+        if r.status_code != 200:
+            return ""
+        for v in r.json().get("results", []):
+            if v.get("number") == version_number:
+                return (v.get("message") or "").strip()
+    except Exception:
+        return ""
+    return ""
 
 
 def _compute_change_summary(current_text: str, previous_text: str) -> str:
@@ -337,10 +383,12 @@ def fetch_user_pages_cql(display_name: str, limit: int = 200,
 
         version_num = meta.get("version_number", 1)
         change_summary = ""
+        version_message = ""
         if version_num > 1 and body_text:
             prev_text = _fetch_previous_version_text(page_id, version_num)
             if prev_text:
                 change_summary = _compute_change_summary(body_text, prev_text)
+            version_message = _fetch_version_message(page_id, version_num)
 
         full_text = f"{meta['title']}\n\n"
         if meta["space_name"]:
@@ -365,6 +413,7 @@ def fetch_user_pages_cql(display_name: str, limit: int = 200,
             "summary": (body_text[:500] + "...") if len(body_text) > 500 else body_text,
             "version_number": version_num,
             "change_summary": change_summary,
+            "version_message": version_message,
         })
 
         if (i + 1) % 10 == 0:
@@ -618,6 +667,7 @@ def main():
                 "modified_at": p.get("updated_when", "") or p.get("modified_at", ""),
                 "version_number": p.get("version_number", 1),
                 "change_summary": p.get("change_summary", "")[:600],
+                "version_message": p.get("version_message", "")[:300],
             })
         print(f"REPORT_JSON:{_json.dumps(page_details, ensure_ascii=True)}")
 

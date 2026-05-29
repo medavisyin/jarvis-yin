@@ -485,17 +485,21 @@ def _run_daily_fetch(
                     raw_summary = page_detail.get("summary", "").strip()
                     headings = page_detail.get("headings", [])
                     change_summary = page_detail.get("change_summary", "").strip()
+                    version_message = page_detail.get("version_message", "").strip()
                     version_number = page_detail.get("version_number", 1)
-                    if not raw_summary and not change_summary:
+                    if not raw_summary and not change_summary and not version_message:
                         return ""
 
-                    is_update = version_number > 1 and change_summary
+                    is_update = version_number > 1 and (change_summary or version_message)
                     context_parts = [f"Page title: {title}"]
                     if headings:
                         context_parts.append(f"Sections: {', '.join(headings[:8])}")
 
                     if is_update:
-                        context_parts.append(f"Changes in this update:\n{change_summary}")
+                        if version_message:
+                            context_parts.append(f"Author's edit note: {version_message}")
+                        if change_summary:
+                            context_parts.append(f"Changes in this update:\n{change_summary}")
                         system_prompt = (
                             "You are a concise technical writer. Given a Confluence wiki page's "
                             "change diff, write a 1-2 sentence summary of what was actually "

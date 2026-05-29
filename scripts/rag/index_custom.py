@@ -98,8 +98,10 @@ def _save_snapshot(client):
         offset = next_offset
 
     os.makedirs(os.path.dirname(SNAPSHOT_PATH), exist_ok=True)
-    with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
+    _tmp = f"{SNAPSHOT_PATH}.tmp-{os.getpid()}"
+    with open(_tmp, "w", encoding="utf-8") as f:
         json.dump({"points": all_points, "count": len(all_points)}, f)
+    os.replace(_tmp, SNAPSHOT_PATH)
     print(f"  Saved {len(all_points)} points to snapshot")
 
 
@@ -432,8 +434,10 @@ def cmd_remove(pattern: str):
         return
 
     data["count"] = after
-    with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
+    _tmp = f"{SNAPSHOT_PATH}.tmp-{os.getpid()}"
+    with open(_tmp, "w", encoding="utf-8") as f:
         json.dump(data, f)
+    os.replace(_tmp, SNAPSHOT_PATH)
     print(f"Removed {removed} chunks matching '{pattern}' ({after} points remaining)")
 
 

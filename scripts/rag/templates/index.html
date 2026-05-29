@@ -114,6 +114,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 .query-rewrite .qr-alias{display:inline-block;padding:1px 6px;margin:1px 2px;background:#1e3a5f;
                           border-radius:4px;font-family:monospace;font-size:0.9em;color:#93c5fd}
 .query-rewrite .qr-fuzzy{border-style:dashed;background:#2a2235;color:#c4b5fd}
+.model-notice{align-self:flex-start;padding:8px 14px;background:#1a2235;border:1px solid #2a3d5a;
+  border-radius:8px;font-size:0.82em;color:#94a3b8;margin:4px 0}
+.model-notice .tool-badge{color:#a5b4fc}
 .sources{margin-top:10px;padding:10px 14px;background:#161822;border:1px solid #2a2d3a;
          border-radius:8px;font-size:0.82em}
 .sources summary{cursor:pointer;color:#60a5fa;font-weight:500;margin-bottom:6px}
@@ -1402,7 +1405,8 @@ async function loadDailyFetchHistory(date) {
     h += '<div style="font-size:1.3em;font-weight:700;color:#34d399">' + (s.confluence_pages || 0) + ' <span style="font-size:0.55em;font-weight:400">pages</span></div></div>';
     h += '<div style="background:#1a1d2e;border-radius:8px;padding:10px 14px;border:1px solid #2a2d3e">';
     h += '<div style="font-size:0.72em;color:#8b8fa4;text-transform:uppercase;letter-spacing:0.5px">Wiki Fetch</div>';
-    h += '<div style="font-size:1.3em;font-weight:700;color:#38bdf8">' + (s.wiki_pages || 0) + ' <span style="font-size:0.55em;font-weight:400">pages</span></div></div>';
+    h += '<div style="font-size:1.3em;font-weight:700;color:#38bdf8">' + (s.wiki_pages || 0) + ' <span style="font-size:0.55em;font-weight:400">pages</span></div>';
+    h += '<button type="button" onclick="recreateWikiFetch(this)" style="margin-top:6px;background:#0f2433;border:1px solid #0ea5e9;border-radius:4px;padding:2px 8px;font-size:0.7em;color:#38bdf8;cursor:pointer" title="Re-run wiki fetch + change detection for all team members">&#x1f504; Refresh &amp; Recreate</button></div>';
     h += '</div>';
     if (_dfMissingSteps.length > 0) {
       var stepLabels = {fetch_sources:'Source Fetch',topic_dedup:'Topic Dedup',commit_report:'Commit Report',jira_daily:'Jira Report',wiki_fetch:'Wiki Fetch',world_news_merge:'World News Merge',ai_audio:'AI Audio',world_audio:'World Audio',china_audio:'\u4e2d\u56fd\u65b0\u95fb Audio'};
@@ -1639,6 +1643,9 @@ async function _runAudioJob(steps, label, btn, btnResetText, langOverrides) {
 }
 async function recreateAudioOnly(stepName, label, btn) {
   _runAudioJob([stepName], 'Recreating ' + label + ' audio', btn, '\u21bb Recreate');
+}
+async function recreateWikiFetch(btn) {
+  _runAudioJob(['wiki_fetch'], 'Refreshing & recreating wiki fetch', btn, '\ud83d\udd04 Refresh & Recreate');
 }
 async function recreateAudio(stepName, label, btn) {
   var preSteps = [stepName];
@@ -2670,6 +2677,15 @@ function addThinking(toolName, args) {
   return div;
 }
 
+function addModelNotice(model) {
+  const div = document.createElement('div');
+  div.className = 'model-notice';
+  div.innerHTML = 'Using LLM: <span class="tool-badge">' + escHtml(model || '?') + '</span>';
+  chatEl.appendChild(div);
+  chatEl.scrollTop = chatEl.scrollHeight;
+  return div;
+}
+
 function addQueryRewrite(event) {
   const div = document.createElement('div');
   div.className = 'query-rewrite';
@@ -2816,7 +2832,7 @@ async function sendMessage() {
         if (event.type === 'query_rewrite') {
           addQueryRewrite(event);
         } else if (event.type === 'model') {
-          // show which model is being used
+          addModelNotice(event.model);
         } else if (event.type === 'thinking') {
           thinkingEls.push(addThinking(event.tool, event.args));
         } else if (event.type === 'tool_result') {
@@ -2902,11 +2918,13 @@ async function sendMessage() {
 
 async function switchModel(model) {
   try {
-    await fetch('/api/switch-model', {
+    const r = await fetch('/api/switch-model', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({model}),
     });
+    const d = await r.json();
+    if (d.model) showToast('LLM: ' + d.model);
     checkHealth();
   } catch {}
 }

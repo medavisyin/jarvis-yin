@@ -1632,8 +1632,10 @@ def api_delete():
 
     if removed > 0:
         snap["count"] = after
-        with open(SNAPSHOT_PATH, "w", encoding="utf-8") as f:
+        _tmp = f"{SNAPSHOT_PATH}.tmp-{os.getpid()}"
+        with open(_tmp, "w", encoding="utf-8") as f:
             json.dump(snap, f)
+        os.replace(_tmp, SNAPSHOT_PATH)
 
         global _client
         _client = None

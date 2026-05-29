@@ -47,6 +47,12 @@ def init(*, ollama_model: str, ollama_host: str, ollama_model_fast: str,
     _MAX_AGENT_ITERATIONS = max_agent_iterations
 
 
+def set_ollama_model(model: str) -> None:
+    """Update the active chat model (called when user switches via /api/switch-model)."""
+    global _OLLAMA_MODEL
+    _OLLAMA_MODEL = model
+
+
 # ---------------------------------------------------------------------------
 # History summarization
 # ---------------------------------------------------------------------------
@@ -152,6 +158,7 @@ def run_agent(user_query: str, image_b64: str | None = None,
             When None (legacy/learning paths), falls back to keyword heuristics.
 
     Events:
+      {"type": "model", "model": "..."}
       {"type": "thinking", "tool": "...", "args": {...}}
       {"type": "tool_result", "tool": "...", "preview": "..."}
       {"type": "token", "content": "..."}

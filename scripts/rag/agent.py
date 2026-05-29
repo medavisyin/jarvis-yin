@@ -102,6 +102,7 @@ from rag_engine import (
 # Agent loop (imported from agent_loop.py)
 # ---------------------------------------------------------------------------
 import agent_loop
+from agent_loop import set_ollama_model as _set_ollama_model
 agent_loop.init(
     ollama_model=OLLAMA_MODEL,
     ollama_host=OLLAMA_HOST,
@@ -1253,6 +1254,7 @@ def api_switch_model():
         new_model = data.get("model", "").strip()
         if new_model:
             OLLAMA_MODEL = new_model
+            _set_ollama_model(new_model)
             return jsonify({"model": OLLAMA_MODEL, "changed": True})
         return jsonify({"error": "No model specified"}), 400
     return jsonify({"model": OLLAMA_MODEL})
