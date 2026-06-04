@@ -10,6 +10,9 @@ import os
 import sys
 from typing import Any
 
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+
 from config import PROJECT_GRAPH_PATH, SNAPSHOT_PATH
 
 COLLECTION = "ai_briefings"
@@ -35,7 +38,12 @@ def get_embed_model():
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
         from sentence_transformers import SentenceTransformer
-        _embed_model = SentenceTransformer("all-MiniLM-L6-v2")
+        _embed_model = SentenceTransformer(
+            "all-MiniLM-L6-v2",
+            local_files_only=True,
+            model_kwargs={"local_files_only": True},
+            tokenizer_kwargs={"local_files_only": True},
+        )
     return _embed_model
 
 

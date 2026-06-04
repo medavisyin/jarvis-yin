@@ -59,7 +59,7 @@ for _d in [STOCK_DATA_DIR, STOCK_MODELS_DIR, STOCK_CACHE_DIR]:
 # ── DeepSeek API integration ────────────────────────────────
 
 DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-DEEPSEEK_MODEL = "deepseek-v4-pro"
+DEEPSEEK_MODEL = "deepseek-v4-flash"
 
 _AGENT_SETTINGS_FILE = os.path.normpath(
     os.path.join(os.path.dirname(__file__), "..", "rag", ".global_settings.json")

@@ -1107,7 +1107,12 @@ def _get_model():
         os.environ["HF_HUB_OFFLINE"] = "1"
         os.environ["TRANSFORMERS_OFFLINE"] = "1"
         from sentence_transformers import SentenceTransformer
-        _model = SentenceTransformer("all-MiniLM-L6-v2")
+        _model = SentenceTransformer(
+            "all-MiniLM-L6-v2",
+            local_files_only=True,
+            model_kwargs={"local_files_only": True},
+            tokenizer_kwargs={"local_files_only": True},
+        )
     return _model
 
 
