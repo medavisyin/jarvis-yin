@@ -393,12 +393,12 @@ def _generate_knowledge_audio(job_id: str, item_type: str,
         _audio_jobs[job_id]["status"] = "generating_script"
 
         if language == "en":
-            voice = "en-US-AndrewNeural"
+            voice = TTS_VOICE_EN
             lang_instruction = "Write in conversational English."
             section_rag = "FROM KNOWLEDGE BASE"
             section_web = "LATEST FROM THE WEB"
         else:
-            voice = "zh-CN-YunxiNeural"
+            voice = TTS_VOICE_ZH
             lang_instruction = "用中文写播客旁白。技术术语保留英文。Write the narration in Chinese (中文)."
             section_rag = "知识库内容"
             section_web = "最新网上资讯"
@@ -505,7 +505,7 @@ Knowledge base content:
             part_paths = []
 
             async def _save_ka_chunk(chunk_text, chunk_path, chunk_voice):
-                fallbacks = [chunk_voice] + [v for v in _TTS_VOICE_FALLBACKS if v != chunk_voice]
+                fallbacks = _voice_fallback_chain(chunk_voice)
                 for v in fallbacks:
                     try:
                         comm = edge_tts.Communicate(chunk_text, v, rate="-5%", pitch="+0Hz")
@@ -1051,6 +1051,7 @@ def _generate_segmented_narrations(
     """
     total = len(segments)
     narrations: list[str] = []
+    is_en = lang == "en"
 
     for idx, seg in enumerate(segments):
         seg_name = seg["name"]
@@ -1058,37 +1059,67 @@ def _generate_segmented_narrations(
         min_chars = max(200, len(seg_content) // 3)
         max_chars = max(500, len(seg_content) // 2)
 
-        if content_type == "world":
-            system_prompt = (
-                "你是一位专业的新闻播报员，正在播报新闻简报。\n"
-                "单人播报，不要对话，不要分角色。用简洁清晰的句子陈述事实。\n"
-                "全部用中文，只有人名和专有名词保留英文。\n"
-                "不要发表个人评论、分析或预测。不要用markdown。\n"
-                "不要自我介绍，不要开场白，直接播报新闻内容。"
-            )
-            user_prompt = (
-                f"播报以下「{seg_name}」板块的新闻（约{min_chars}-{max_chars}字）。\n"
-                f"对每条新闻：用1-2句话说明发生了什么、涉及谁、关键数据。\n"
-                f"不要添加评论或分析。直接报道事实。\n\n"
-                f"新闻素材：\n\n{seg_content}"
-            )
+        if is_en:
+            if content_type == "world":
+                system_prompt = (
+                    "You are a professional news anchor reading a news briefing.\n"
+                    "Single narrator, no dialogue, no role-play. State the facts in clear, concise sentences.\n"
+                    "Write entirely in English.\n"
+                    "No personal commentary, analysis, or predictions. No markdown.\n"
+                    "No self-introduction or opening remarks — read the news content directly."
+                )
+                user_prompt = (
+                    f"Read the news in the \"{seg_name}\" section (about {min_chars}-{max_chars} words).\n"
+                    f"For each item: in 1-2 sentences state what happened, who is involved, and key figures.\n"
+                    f"Do not add commentary or analysis. Just report the facts.\n\n"
+                    f"News material:\n\n{seg_content}"
+                )
+            else:
+                system_prompt = (
+                    "You are a professional AI-tech news anchor reading an AI industry briefing.\n"
+                    "Single narrator, no dialogue, no role-play. State the facts in clear, concise sentences.\n"
+                    "Write entirely in English.\n"
+                    "No personal commentary, analysis, or predictions. No markdown.\n"
+                    "No self-introduction or opening remarks — read the news content directly."
+                )
+                user_prompt = (
+                    f"Read the AI news in \"{seg_name}\" (about {min_chars}-{max_chars} words).\n"
+                    f"For each item: in 1-2 sentences state what it is and the key facts and figures.\n"
+                    f"Do not add commentary or analysis. Just report the facts.\n\n"
+                    f"News items:\n\n{seg_content}"
+                )
         else:
-            system_prompt = (
-                "你是一位专业的AI科技新闻播报员，正在播报AI行业简报。\n"
-                "单人播报，不要对话，不要分角色。用简洁清晰的句子陈述事实。\n"
-                "全部用中文，专有名词保留英文。\n"
-                "不要发表个人评论、分析或预测。不要用markdown。\n"
-                "不要自我介绍，不要开场白，直接播报新闻内容。"
-            )
-            user_prompt = (
-                f"播报以下「{seg_name}」的AI新闻（约{min_chars}-{max_chars}字）。\n"
-                f"对每条新闻：用1-2句话说明它是什么、关键事实和数据。\n"
-                f"不要添加评论或分析。直接报道事实。\n\n"
-                f"新闻条目：\n\n{seg_content}"
-            )
+            if content_type == "world":
+                system_prompt = (
+                    "你是一位专业的新闻播报员，正在播报新闻简报。\n"
+                    "单人播报，不要对话，不要分角色。用简洁清晰的句子陈述事实。\n"
+                    "全部用中文，只有人名和专有名词保留英文。\n"
+                    "不要发表个人评论、分析或预测。不要用markdown。\n"
+                    "不要自我介绍，不要开场白，直接播报新闻内容。"
+                )
+                user_prompt = (
+                    f"播报以下「{seg_name}」板块的新闻（约{min_chars}-{max_chars}字）。\n"
+                    f"对每条新闻：用1-2句话说明发生了什么、涉及谁、关键数据。\n"
+                    f"不要添加评论或分析。直接报道事实。\n\n"
+                    f"新闻素材：\n\n{seg_content}"
+                )
+            else:
+                system_prompt = (
+                    "你是一位专业的AI科技新闻播报员，正在播报AI行业简报。\n"
+                    "单人播报，不要对话，不要分角色。用简洁清晰的句子陈述事实。\n"
+                    "全部用中文，专有名词保留英文。\n"
+                    "不要发表个人评论、分析或预测。不要用markdown。\n"
+                    "不要自我介绍，不要开场白，直接播报新闻内容。"
+                )
+                user_prompt = (
+                    f"播报以下「{seg_name}」的AI新闻（约{min_chars}-{max_chars}字）。\n"
+                    f"对每条新闻：用1-2句话说明它是什么、关键事实和数据。\n"
+                    f"不要添加评论或分析。直接报道事实。\n\n"
+                    f"新闻条目：\n\n{seg_content}"
+                )
 
-        _log.info("Generating narration segment %d/%d: %s (%d chars input)",
-                  idx + 1, total, seg_name, len(seg_content))
+        _log.info("Generating narration segment %d/%d: %s (%d chars input, lang=%s)",
+                  idx + 1, total, seg_name, len(seg_content), "en" if is_en else "zh")
         try:
             narration = _ollama_narration_call(system_prompt, user_prompt, max_tokens=2048, timeout=300)
             if narration and len(narration) > 50:
@@ -1156,12 +1187,34 @@ def _enrich_vocabulary(dialogue: str) -> str:
     return dialogue
 
 
-_TTS_VOICE_FALLBACKS = ["zh-CN-YunxiNeural", "zh-CN-YunjianNeural", "zh-CN-XiaoxiaoNeural"]
+TTS_VOICE_ZH = "zh-CN-shaanxi-XiaoniNeural"
+TTS_VOICE_EN = "en-IN-PrabhatNeural"
+
+_TTS_VOICE_FALLBACKS_ZH = [TTS_VOICE_ZH, "zh-CN-YunjianNeural", "zh-CN-XiaoxiaoNeural"]
+# English fallbacks stay male so a single-voice male briefing never degrades to a female voice.
+# Neerja (female) is still used as the *primary* dialogue guest via _DIALOGUE_VOICES; on failure it
+# falls back through these male voices, which is acceptable for a best-effort recovery.
+_TTS_VOICE_FALLBACKS_EN = [TTS_VOICE_EN, "en-US-AndrewNeural", "en-US-GuyNeural"]
+_TTS_VOICE_FALLBACKS = _TTS_VOICE_FALLBACKS_ZH  # backward-compat alias
 
 _DIALOGUE_VOICES = {
-    "zh": {"host": "zh-CN-YunxiNeural", "guest": "zh-CN-XiaoxiaoNeural"},
-    "en": {"host": "en-US-AndrewNeural", "guest": "en-US-JennyNeural"},
+    "zh": {"host": TTS_VOICE_ZH, "guest": "zh-CN-XiaoxiaoNeural"},
+    "en": {"host": TTS_VOICE_EN, "guest": "en-IN-NeerjaNeural"},
 }
+
+
+def tts_voice_for_lang(lang: str) -> str:
+    """Return the Edge-TTS voice id for a briefing audio language code."""
+    return TTS_VOICE_EN if lang == "en" else TTS_VOICE_ZH
+
+
+def _voice_fallback_chain(voice: str) -> list[str]:
+    chain = [voice]
+    pool = _TTS_VOICE_FALLBACKS_EN if voice.startswith("en-") else _TTS_VOICE_FALLBACKS_ZH
+    chain.extend(v for v in pool if v != voice)
+    return chain
+
+
 _HOST_TAGS = {"[主播]", "[Host]"}
 _GUEST_TAGS = {"[嘉宾]", "[Guest]"}
 
@@ -1288,11 +1341,8 @@ def _enhance_narration_rhythm(text: str) -> str:
     return "\n\n".join(enhanced)
 
 
-def _tts_segments_to_mp3(narrations: list[str], out_path: str, voice: str = "zh-CN-YunxiNeural"):
-    """Convert a list of narration segments to a single combined MP3.
-
-    Uses a single voice (zh-CN-YunxiNeural) for all segments.
-    """
+def _tts_segments_to_mp3(narrations: list[str], out_path: str, voice: str = TTS_VOICE_ZH):
+    """Convert a list of narration segments to a single combined MP3."""
     import edge_tts
     import shutil
     import tempfile
@@ -1301,15 +1351,15 @@ def _tts_segments_to_mp3(narrations: list[str], out_path: str, voice: str = "zh-
     all_part_paths: list[str] = []
 
     async def _save_chunk(chunk_text, chunk_path):
-        for v in _TTS_VOICE_FALLBACKS:
-            for attempt in range(2):
+        for v in _voice_fallback_chain(voice):
+            for attempt in range(3):
                 try:
                     comm = edge_tts.Communicate(chunk_text, v, rate="-5%", pitch="+0Hz")
                     await comm.save(chunk_path)
                     return
                 except Exception:
-                    if attempt < 1:
-                        await asyncio.sleep(2)
+                    if attempt < 2:
+                        await asyncio.sleep(3)
             _log.warning("Voice %s failed for chunk, trying next fallback", v)
         raise RuntimeError(f"All TTS voices failed for chunk ({len(chunk_text)} chars)")
 
@@ -1395,7 +1445,7 @@ def _tts_segments_to_mp3(narrations: list[str], out_path: str, voice: str = "zh-
     asyncio.run(_do_tts())
 
 
-def _tts_to_mp3(narration: str, out_path: str, voice: str = "zh-CN-YunxiNeural"):
+def _tts_to_mp3(narration: str, out_path: str, voice: str = TTS_VOICE_ZH):
     """Convert dialogue narration to MP3 with dual-voice rendering.
 
     Parses [主播]/[嘉宾] markers and uses different voices per role.
@@ -1413,16 +1463,16 @@ def _tts_to_mp3(narration: str, out_path: str, voice: str = "zh-CN-YunxiNeural")
     out_dir = os.path.dirname(out_path)
 
     async def _save_chunk(chunk_text, chunk_path, chunk_voice):
-        fallbacks = [chunk_voice] + [v for v in _TTS_VOICE_FALLBACKS if v != chunk_voice]
+        fallbacks = _voice_fallback_chain(chunk_voice)
         for v in fallbacks:
-            for attempt in range(2):
+            for attempt in range(3):
                 try:
                     comm = edge_tts.Communicate(chunk_text, v, rate="-5%", pitch="+0Hz")
                     await comm.save(chunk_path)
                     return v
                 except Exception:
-                    if attempt < 1:
-                        await asyncio.sleep(2)
+                    if attempt < 2:
+                        await asyncio.sleep(3)
             _log.warning("Voice %s failed for chunk, trying next fallback", v)
         raise RuntimeError(f"All TTS voices failed for chunk ({len(chunk_text)} chars)")
 

@@ -42,7 +42,7 @@ OUTPUT_DIR = os.path.join(REPORTS_ROOT, DATE_FOLDER)
 OUTPUT_VIDEO = os.path.join(OUTPUT_DIR, "ai-briefing.mp4")
 TEMP_AUDIO = os.path.join(OUTPUT_DIR, "_temp_narration.mp3")
 
-VOICE = "en-US-AndrewNeural"
+VOICE = "en-IN-PrabhatNeural"  # India English male; see routes.ai_news.TTS_VOICE_EN
 RATE = "-5%"
 PITCH = "+0Hz"
 

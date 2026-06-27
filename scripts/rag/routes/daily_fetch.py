@@ -23,7 +23,12 @@ for _p in (_SCRIPTS_DIR, _RAG_DIR):
 from config import JIRA_REPORT_SCRIPT, KNOWLEDGE_ROOT, REPORTS_ROOT
 from tools import tool_commit_summary
 from learning.constants import LEARNING_SESSION_IDS as _LEARNING_SESSION_IDS
-from routes.ai_news import _generate_segmented_narrations, _load_ai_kb, _tts_segments_to_mp3
+from routes.ai_news import (
+    _generate_segmented_narrations,
+    _load_ai_kb,
+    _tts_segments_to_mp3,
+    tts_voice_for_lang,
+)
 
 daily_fetch_bp = Blueprint("daily_fetch", __name__)
 _log = logging.getLogger(__name__)
@@ -273,6 +278,60 @@ def _check_wn_translated(output_dir: str) -> bool:
         return False
 
 
+def _count_briefing_items(date_dir: str) -> int:
+    """Count AI briefing items on disk (filtered file preferred)."""
+    for fname in ("briefing-data-filtered.json", "briefing-data.json"):
+        fp = os.path.join(date_dir, fname)
+        if not os.path.isfile(fp):
+            continue
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                bd = json.load(f)
+            count = sum(len(src.get("items") or []) for src in (bd.get("per_source_data") or []))
+            if count:
+                return count
+        except Exception:
+            pass
+    return 0
+
+
+def _resolve_briefing_data_file(output_dir: str) -> str | None:
+    """Pick the briefing JSON with content (prefer filtered when non-empty)."""
+    for fname in ("briefing-data-filtered.json", "briefing-data.json"):
+        fp = os.path.join(output_dir, fname)
+        if not os.path.isfile(fp):
+            continue
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                bd = json.load(f)
+            if sum(len(src.get("items") or []) for src in (bd.get("per_source_data") or [])) > 0:
+                return fp
+        except Exception:
+            pass
+    return None
+
+
+def _count_world_news_items(date_dir: str) -> tuple[int, int]:
+    """Return (international_count, china_count) from world-news-data.json."""
+    wn_count = cn_count = 0
+    wn_file = os.path.join(date_dir, "world-news", "world-news-data.json")
+    if not os.path.isfile(wn_file):
+        return wn_count, cn_count
+    try:
+        with open(wn_file, "r", encoding="utf-8") as f:
+            wd = json.load(f)
+        _CHINA_TAG = "中国新闻"
+        for c in wd.get("categories") or []:
+            for it in c.get("items") or []:
+                if _CHINA_TAG in (it.get("source") or ""):
+                    cn_count += 1
+                else:
+                    wn_count += 1
+    except Exception:
+        pass
+    return wn_count, cn_count
+
+
 def _run_daily_fetch(
     job_id: str,
     *,
@@ -306,7 +365,7 @@ def _run_daily_fetch(
         if only_steps:
             return False
         checks = {
-            "fetch_sources": lambda: os.path.isfile(os.path.join(output_dir, "briefing-data.json")),
+            "fetch_sources": lambda: _count_briefing_items(output_dir) > 0,
             "topic_dedup": lambda: os.path.isfile(os.path.join(output_dir, "briefing-data-filtered.json")),
             "ai_audio": lambda: os.path.isfile(os.path.join(output_dir, "ai-briefing.mp3")),
             "world_audio": lambda: os.path.isfile(os.path.join(output_dir, "world-news.mp3")),
@@ -694,13 +753,14 @@ def _run_daily_fetch(
             except Exception as e:
                 steps.append({"step": "refetch_ai", "exit_code": 1, "output": str(e)[:300]})
 
+        gs = _get_global_settings()
+        lang_overrides = job.get("lang_overrides") or {}
+
         if _should_run("ai_audio") and not _already_done("ai_audio"):
             job["step"] = "Generating AI briefing audio..."
             try:
-                data_file = os.path.join(output_dir, "briefing-data-filtered.json")
-                if not os.path.exists(data_file):
-                    data_file = os.path.join(output_dir, "briefing-data.json")
-                if os.path.exists(data_file):
+                data_file = _resolve_briefing_data_file(output_dir)
+                if data_file:
                     import json as _json
                     with open(data_file, "r", encoding="utf-8") as df:
                         bdata = _json.load(df)
@@ -734,12 +794,13 @@ def _run_daily_fetch(
                                 "content": "\n\n".join(items_text_parts),
                             })
                     if ai_segments:
-                        job["step"] = f"Generating AI narration ({len(ai_segments)} segments)..."
-                        narrations_ai = _generate_segmented_narrations(ai_segments, "ai", lang="zh")
+                        ai_lang = _resolve_audio_lang("ai_audio", gs, lang_overrides)
+                        job["step"] = f"Generating AI narration ({len(ai_segments)} segments, {ai_lang})..."
+                        narrations_ai = _generate_segmented_narrations(ai_segments, "ai", lang=ai_lang)
                         if narrations_ai:
                             total_chars = sum(len(n) for n in narrations_ai)
                             ai_mp3 = os.path.join(output_dir, "ai-briefing.mp3")
-                            _tts_segments_to_mp3(narrations_ai, ai_mp3)
+                            _tts_segments_to_mp3(narrations_ai, ai_mp3, voice=tts_voice_for_lang(ai_lang))
                             steps.append({"step": "ai_audio", "exit_code": 0,
                                           "output": f"Generated ai-briefing.mp3 ({len(ai_segments)} segments, {total_chars} chars, {len(recent_titles)} titles deduped)"})
                         else:
@@ -895,12 +956,13 @@ def _run_daily_fetch(
                         max_per_cat=8,
                     )
                     if wn_segments:
-                        job["step"] = f"Generating world narration ({len(wn_segments)} segments)..."
-                        narrations_wn = _generate_segmented_narrations(wn_segments, "world", lang="zh")
+                        wn_lang = _resolve_audio_lang("world_audio", gs, lang_overrides)
+                        job["step"] = f"Generating world narration ({len(wn_segments)} segments, {wn_lang})..."
+                        narrations_wn = _generate_segmented_narrations(wn_segments, "world", lang=wn_lang)
                         if narrations_wn:
                             total_chars = sum(len(n) for n in narrations_wn)
                             wn_mp3 = os.path.join(output_dir, "world-news.mp3")
-                            _tts_segments_to_mp3(narrations_wn, wn_mp3)
+                            _tts_segments_to_mp3(narrations_wn, wn_mp3, voice=tts_voice_for_lang(wn_lang))
                             steps.append({"step": "world_audio", "exit_code": 0,
                                           "output": f"Generated world-news.mp3 ({len(narrations_wn)} segments, {total_chars} chars)"})
                         else:
@@ -929,12 +991,13 @@ def _run_daily_fetch(
                         max_per_cat=15,
                     )
                     if cn_segments:
-                        job["step"] = f"Generating China narration ({len(cn_segments)} segments)..."
-                        narrations_cn = _generate_segmented_narrations(cn_segments, "world", lang="zh")
+                        cn_lang = _resolve_audio_lang("china_audio", gs, lang_overrides)
+                        job["step"] = f"Generating China narration ({len(cn_segments)} segments, {cn_lang})..."
+                        narrations_cn = _generate_segmented_narrations(cn_segments, "world", lang=cn_lang)
                         if narrations_cn:
                             total_chars = sum(len(n) for n in narrations_cn)
                             cn_mp3 = os.path.join(output_dir, "china-news.mp3")
-                            _tts_segments_to_mp3(narrations_cn, cn_mp3)
+                            _tts_segments_to_mp3(narrations_cn, cn_mp3, voice=tts_voice_for_lang(cn_lang))
                             steps.append({"step": "china_audio", "exit_code": 0,
                                           "output": f"Generated china-news.mp3 ({len(narrations_cn)} segments, {total_chars} chars)"})
                         else:
@@ -1135,10 +1198,25 @@ def api_daily_fetch_history():
             for f in os.listdir(wn_dir)
         )
 
+    has_filtered_items = False
+    filtered_file = os.path.join(date_dir, "briefing-data-filtered.json")
+    if os.path.isfile(filtered_file):
+        try:
+            with open(filtered_file, "r", encoding="utf-8") as _ff:
+                _fd = json.load(_ff)
+            has_filtered_items = sum(
+                len(src.get("items") or []) for src in (_fd.get("per_source_data") or [])
+            ) > 0
+        except Exception:
+            pass
+
+    has_briefing_items = ai_count > 0 or _count_briefing_items(date_dir) > 0
+    has_wn_items = (wn_count + cn_count) > 0
+
     missing_steps = []
-    if not has_sources:
+    if not has_sources or not has_briefing_items:
         missing_steps.append("fetch_sources")
-    if has_sources and not has_filtered:
+    if has_briefing_items and not has_filtered_items:
         missing_steps.append("topic_dedup")
     if not has_commit:
         missing_steps.append("commit_report")
@@ -1148,7 +1226,9 @@ def api_daily_fetch_history():
         missing_steps.append("wiki_fetch")
     if has_wn_source_jsons and not has_wn_data:
         missing_steps.append("world_news_merge")
-    if has_wn_data:
+    if not has_wn_items and (has_wn_data or has_wn_source_jsons):
+        missing_steps.append("refetch_world")
+    if has_wn_items and has_wn_data:
         try:
             with open(wn_file, "r", encoding="utf-8") as _wf:
                 _wn_check = json.load(_wf)
@@ -1156,7 +1236,7 @@ def api_daily_fetch_history():
                 missing_steps.append("world_news_translate")
         except Exception:
             pass
-    if (has_sources or has_filtered) and not has_audio:
+    if has_briefing_items and not has_audio:
         missing_steps.append("ai_audio")
     if has_wn_data and not has_wn_audio and wn_count > 0:
         missing_steps.append("world_audio")

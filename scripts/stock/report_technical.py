@@ -71,13 +71,14 @@ def _trend_assessment(analysis: dict) -> dict:
     }
 
 
-def generate_report(symbol: str, analysis: dict | None = None) -> str:
+def generate_report(symbol: str, analysis: dict | None = None, realtime_quote: dict | None = None) -> str:
     """
     生成中文技术分析 Markdown 报告.
 
     Args:
         symbol: 股票代码
         analysis: 预计算的分析结果, 为 None 则自动计算
+        realtime_quote: 实时行情数据 (可选)
 
     Returns:
         Markdown 格式的报告文本
@@ -116,11 +117,45 @@ def generate_report(symbol: str, analysis: dict | None = None) -> str:
     lines.append(f"> 日期: {date} | 综合判断: **{overall}** | 风险等级: {risk_bar} {risk_num}/5 ({risk_label})")
     lines.append("")
 
-    lines.append("## 价格概览")
+    if realtime_quote and realtime_quote.get("最新价"):
+        rt = realtime_quote
+        rt_chg = rt.get("涨跌幅")
+        rt_chg_str = f"{rt_chg:+.2f}%" if rt_chg is not None else "N/A"
+        lines.append("## 📡 实时行情")
+        lines.append("")
+        lines.append(f"| 项目 | 数值 |")
+        lines.append(f"|------|------|")
+        lines.append(f"| **当前价格** | **¥{rt['最新价']}** |")
+        lines.append(f"| 今日涨跌 | {rt_chg_str} |")
+        lines.append(f"| 今开 | ¥{rt.get('今开', 'N/A')} |")
+        lines.append(f"| 最高 | ¥{rt.get('最高', 'N/A')} |")
+        lines.append(f"| 最低 | ¥{rt.get('最低', 'N/A')} |")
+        lines.append(f"| 昨收 | ¥{rt.get('昨收', 'N/A')} |")
+        rt_vol = rt.get("成交量")
+        if rt_vol:
+            if rt_vol > 100_000_000:
+                rt_vol_str = f"{rt_vol / 100_000_000:.2f}亿手"
+            elif rt_vol > 10_000:
+                rt_vol_str = f"{rt_vol / 10_000:.1f}万手"
+            else:
+                rt_vol_str = f"{int(rt_vol)}手"
+            lines.append(f"| 成交量 | {rt_vol_str} |")
+        rt_amt = rt.get("成交额")
+        if rt_amt:
+            if rt_amt > 100_000_000:
+                rt_amt_str = f"{rt_amt / 100_000_000:.2f}亿"
+            elif rt_amt > 10_000:
+                rt_amt_str = f"{rt_amt / 10_000:.0f}万"
+            else:
+                rt_amt_str = str(int(rt_amt))
+            lines.append(f"| 成交额 | {rt_amt_str} |")
+        lines.append("")
+
+    lines.append("## 价格概览 (历史日线)")
     lines.append("")
     lines.append(f"| 项目 | 数值 |")
     lines.append(f"|------|------|")
-    lines.append(f"| 收盘价 | ¥{price.get('close', 'N/A')} |")
+    lines.append(f"| 上一交易日收盘 | ¥{price.get('close', 'N/A')} |")
     chg = price.get("change_pct")
     chg_str = f"{chg:+.2f}%" if chg is not None else "N/A"
     lines.append(f"| 涨跌幅 | {chg_str} |")

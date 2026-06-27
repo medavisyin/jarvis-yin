@@ -65,8 +65,16 @@ def _build_prompt(symbol: str, data: dict) -> str:
     sections.append(f"股票: {name} ({symbol}) | 行业: {industry}")
     sections.append("")
 
+    realtime = data.get("realtime_quote", {})
+    if realtime and realtime.get("最新价"):
+        sections.append(f"【实时行情】当前价: ¥{realtime['最新价']} | 今日涨跌: {realtime.get('涨跌幅', 'N/A')}% | 今开: ¥{realtime.get('今开', 'N/A')} | 最高: ¥{realtime.get('最高', 'N/A')} | 最低: ¥{realtime.get('最低', 'N/A')}")
+        sections.append(f"  成交额: {realtime.get('成交额', 'N/A')} | 昨收: ¥{realtime.get('昨收', 'N/A')}")
+
     price = tech.get("price", {})
-    sections.append(f"【价格】收盘: ¥{price.get('close', 'N/A')} | 涨跌: {price.get('change_pct', 'N/A')}%")
+    if realtime and realtime.get("最新价"):
+        sections.append(f"【历史收盘参考】上一交易日收盘: ¥{price.get('close', 'N/A')} | 涨跌: {price.get('change_pct', 'N/A')}%")
+    else:
+        sections.append(f"【价格】收盘: ¥{price.get('close', 'N/A')} | 涨跌: {price.get('change_pct', 'N/A')}% (注意: 未能获取实时价格, 此为历史收盘价)")
 
     signals = tech.get("signals", {})
     if signals:
@@ -151,32 +159,63 @@ def _build_prompt(symbol: str, data: dict) -> str:
     return "\n".join(sections)
 
 
-def _make_system_prompt() -> str:
-    return (
+def _make_system_prompt(cost_price: float | None = None) -> str:
+    base = (
         "你是一位资深A股市场分析师，为散户投资者撰写预测报告。\n"
         "要求：\n"
         "1. 用中文撰写，技术术语可保留英文\n"
         "2. 诚实面对不确定性，不夸大预测准确度\n"
         "3. 解释推理过程，让初学者也能理解\n"
-        "4. 给出明确的操作建议和关键价位\n"
-        "5. 报告结构必须包含以下部分:\n"
+        "4. 基于实时价格（如有）进行判断，而非仅看历史收盘价\n"
+        "5. 给出明确的操作建议和关键价位\n"
+        "6. 报告结构必须包含以下部分:\n"
+        "   - 买入判断 (明确回答: 建议买入 / 建议观望 / 建议回避)\n"
         "   - 方向判断 (看涨/看跌/震荡)\n"
         "   - 信心水平 (高/中/低)\n"
-        "   - 时间范围 (1周/2周)\n"
+        "   - 时间范围 (短期2周到2-3个月)\n"
         "   - 核心理由 (3-5条)\n"
         "   - 风险因素\n"
-        "   - 建议操作 (买入/持有/减仓/观望)\n"
-        "   - 关键价位 (支撑/阻力/止损)"
+        "   - 建议操作 (买入区间/持有/减仓/观望)\n"
+        "   - 关键价位 (支撑/阻力/止损/止盈目标)\n"
+        "7. A股T+1规则意味着买入当天不能卖出，追高风险极大\n"
+        "8. 如果数据中提供了实时行情，请以实时价格作为当前价位进行分析"
     )
+    if cost_price is not None and cost_price > 0:
+        base += (
+            f"\n9. 【重要】用户已持有该股票，持仓成本 ¥{cost_price:.2f}。"
+            "\n   报告中必须额外包含以下'持仓操作策略'板块，根据当前盈亏状态给出不同建议："
+            "\n"
+            "\n   **如果当前浮亏（现价 < 成本价）：**"
+            "\n   - 补仓建议 (是否建议补仓、补仓时机和条件)"
+            "\n   - 建议补仓价位 (具体价格区间，需低于成本价)"
+            "\n   - 补仓比例建议 (加仓多少比例合适)"
+            "\n   - 摊薄后预期成本 (补仓后新成本大约多少)"
+            "\n   - 回本预期 (基于当前趋势大概多久回本)"
+            "\n   - 最终止损价 (跌破什么价位考虑止损)"
+            "\n"
+            "\n   **如果当前浮盈（现价 >= 成本价）：**"
+            "\n   - 止盈建议 (是否应该卖出获利？分批还是一次性？)"
+            "\n   - 建议止盈价位 (目标卖出价格或价格区间)"
+            "\n   - 分批止盈策略 (到什么价位卖多少比例)"
+            "\n   - 继续持有条件 (什么情况下可以继续拿着不卖)"
+            "\n   - 回撤保护价 (如果从高点回落到什么价位必须卖出锁定利润)"
+            "\n"
+            "\n   基本原则："
+            "\n   - 浮亏时：补仓前提是基本面未恶化且有技术支撑"
+            "\n   - 浮盈时：不贪心，设好止盈位；趋势好可以用移动止盈保护利润"
+        )
+    return base
 
 
-def generate_prediction(symbol: str, stream: bool = False):
+def generate_prediction(symbol: str, stream: bool = False, realtime_quote: dict | None = None, cost_price: float | None = None):
     """
     生成 AI 综合预测报告 (本地 Ollama).
 
     Args:
         symbol: 股票代码
         stream: True 则返回 generator (用于 SSE), False 则返回完整文本
+        realtime_quote: 实时行情数据 (可选, 由调用方提供)
+        cost_price: 用户持仓成本价 (可选)
 
     Returns:
         str (完整报告) 或 generator (逐 token)
@@ -184,16 +223,56 @@ def generate_prediction(symbol: str, stream: bool = False):
     log.info("开始生成 %s AI 预测...", symbol)
 
     data = _load_or_compute(symbol)
+    if realtime_quote:
+        data["realtime_quote"] = realtime_quote
+    elif not data.get("realtime_quote"):
+        try:
+            from fetch_market_data import fetch_realtime_quote
+            data["realtime_quote"] = fetch_realtime_quote(symbol)
+        except Exception as e:
+            log.warning("获取实时行情失败: %s", e)
     analysis_text = _build_prompt(symbol, data)
 
     name = data.get("fundamental", {}).get("profile", {}).get("name") or symbol
     model = MODEL_USAGE.get("prediction_reasoning", "qwen3.5:4b")
 
-    system_prompt = _make_system_prompt()
+    system_prompt = _make_system_prompt(cost_price=cost_price)
+
+    cost_section = ""
+    if cost_price is not None and cost_price > 0:
+        current = None
+        if realtime_quote and realtime_quote.get("最新价"):
+            current = realtime_quote["最新价"]
+        elif data.get("technical", {}).get("price", {}).get("close"):
+            current = data["technical"]["price"]["close"]
+        pnl_str = ""
+        if current:
+            pnl_pct = (current - cost_price) / cost_price * 100
+            pnl_str = f"（当前{'浮盈' if pnl_pct >= 0 else '浮亏'} {pnl_pct:+.2f}%）"
+        if current and current >= cost_price:
+            cost_section = (
+                f"\n\n【持仓信息 — 当前浮盈】\n"
+                f"用户已持有该股，成本价: ¥{cost_price:.2f} {pnl_str}\n"
+                f"请重点给出止盈策略：\n"
+                f"1. 是否建议现在卖出获利？还是继续持有？\n"
+                f"2. 目标止盈价位是多少？分批卖出还是一次性？\n"
+                f"3. 如果继续持有，什么条件下必须卖出（回撤保护价）？\n"
+                f"4. 分批止盈方案（到什么价位卖多少比例）\n"
+            )
+        else:
+            cost_section = (
+                f"\n\n【持仓信息 — 当前浮亏】\n"
+                f"用户已持有该股，成本价: ¥{cost_price:.2f} {pnl_str}\n"
+                f"用户不希望割肉，请重点给出：\n"
+                f"1. 是否建议补仓？在什么价位补仓？\n"
+                f"2. 补仓后的摊薄成本大概是多少？\n"
+                f"3. 如果不补仓，预计需要等多久才能回本？\n"
+                f"4. 止损价位（如果跌破某个关键位，可能需要考虑止损）\n"
+            )
 
     user_prompt = (
         f"请根据以下{name}({symbol})的分析数据，撰写一份完整的AI预测报告:\n\n"
-        f"{analysis_text}\n\n"
+        f"{analysis_text}{cost_section}\n\n"
         f"请按照要求的结构撰写报告。"
     )
 
@@ -279,6 +358,18 @@ def _build_deepseek_prompt(symbol: str, data: dict) -> str:
     industry = fund.get("profile", {}).get("industry", "未知")
 
     sections.append(f"# {name} ({symbol}) | 行业: {industry}")
+
+    # ── Section 0: Real-time quote ──
+    realtime = data.get("realtime_quote", {})
+    if realtime and realtime.get("最新价"):
+        sections.append("\n## 实时行情 (当前)")
+        sections.append(f"- **当前价格**: ¥{realtime['最新价']}")
+        sections.append(f"- **今日涨跌**: {realtime.get('涨跌幅', 'N/A')}% (涨跌额: {realtime.get('涨跌额', 'N/A')})")
+        sections.append(f"- **今开**: ¥{realtime.get('今开', 'N/A')} | **最高**: ¥{realtime.get('最高', 'N/A')} | **最低**: ¥{realtime.get('最低', 'N/A')}")
+        sections.append(f"- **昨收**: ¥{realtime.get('昨收', 'N/A')}")
+        sections.append(f"- **成交量**: {realtime.get('成交量', 'N/A')} | **成交额**: {realtime.get('成交额', 'N/A')}")
+    else:
+        sections.append("\n## ⚠ 未获取到实时行情, 以下分析基于历史收盘数据")
 
     # ── Section 1: Recent OHLCV (last 20 trading days) ──
     ohlcv_path = os.path.join(STOCK_DATA_DIR, symbol, "daily.csv")
@@ -441,7 +532,7 @@ def _build_deepseek_prompt(symbol: str, data: dict) -> str:
     return "\n".join(sections)
 
 
-def generate_prediction_deepseek(symbol: str) -> dict:
+def generate_prediction_deepseek(symbol: str, realtime_quote: dict | None = None, cost_price: float | None = None) -> dict:
     """生成 AI 综合预测报告 via DeepSeek API (deepseek-v4-flash with thinking).
 
     与本地 Ollama 版本相比，DeepSeek 版本:
@@ -464,8 +555,38 @@ def generate_prediction_deepseek(symbol: str) -> dict:
     log.info("开始生成 %s DeepSeek 深度预测...", symbol)
 
     data = _load_or_compute(symbol)
+    if realtime_quote:
+        data["realtime_quote"] = realtime_quote
+    elif not data.get("realtime_quote"):
+        try:
+            from fetch_market_data import fetch_realtime_quote
+            data["realtime_quote"] = fetch_realtime_quote(symbol)
+        except Exception as e:
+            log.warning("获取实时行情失败: %s", e)
     analysis_text = _build_deepseek_prompt(symbol, data)
     name = data.get("fundamental", {}).get("profile", {}).get("name") or symbol
+
+    cost_system_extra = ""
+    if cost_price is not None and cost_price > 0:
+        cost_system_extra = (
+            f"\n\n**【重要：用户持仓信息】**\n"
+            f"用户已持有该股，成本价: ¥{cost_price:.2f}。\n"
+            f"报告中必须新增一个独立板块 '## 持仓操作策略（成本 ¥{cost_price:.2f}）'，根据当前盈亏状态给出建议：\n\n"
+            f"**如果当前浮亏（现价 < 成本价）：**\n"
+            f"- 是否建议补仓（结合技术面支撑位和资金流向判断）\n"
+            f"- 建议补仓价位区间（需低于成本价，说明理由）\n"
+            f"- 建议补仓比例（当前仓位的百分比）\n"
+            f"- 补仓后的摊薄成本计算（假设等量补仓）\n"
+            f"- 不补仓情况下的回本时间估计\n"
+            f"- 最终止损线（跌破什么价位不宜再持有）\n\n"
+            f"**如果当前浮盈（现价 >= 成本价）：**\n"
+            f"- 是否建议止盈卖出？还是继续持有？\n"
+            f"- 目标止盈价位（具体价格或价格区间）\n"
+            f"- 分批止盈方案（不同价位卖出不同比例）\n"
+            f"- 继续持有条件（什么指标/信号支持继续拿着）\n"
+            f"- 回撤保护价（从高点回落到什么价位必须卖出锁利）\n\n"
+            f"原则：浮亏时补仓前提是基本面未恶化；浮盈时用移动止盈保护利润，不贪。"
+        )
 
     system_prompt = (
         "你是一位顶级A股量化分析师，精通技术分析、基本面分析、资金流向分析和市场微观结构。\n"
@@ -495,11 +616,34 @@ def generate_prediction_deepseek(symbol: str) -> dict:
         "6. 关键价位与触发条件\n"
         "7. 风险评估与止损策略\n"
         "8. 未来1周/2周情景分析（乐观/中性/悲观三种情景及概率）"
+        + cost_system_extra
     )
+
+    cost_user_extra = ""
+    if cost_price is not None and cost_price > 0:
+        current = None
+        if realtime_quote and realtime_quote.get("最新价"):
+            current = realtime_quote["最新价"]
+        elif data.get("technical", {}).get("price", {}).get("close"):
+            current = data["technical"]["price"]["close"]
+        pnl_str = ""
+        if current:
+            pnl_pct = (current - cost_price) / cost_price * 100
+            pnl_str = f"（当前{'浮盈' if pnl_pct >= 0 else '浮亏'} {pnl_pct:+.2f}%）"
+        if current and current >= cost_price:
+            cost_user_extra = (
+                f"\n\n【用户持仓 — 浮盈】成本价 ¥{cost_price:.2f} {pnl_str}\n"
+                f"请重点给出：止盈目标价、分批卖出策略、回撤保护价（利润回吐到什么程度必须卖）。"
+            )
+        else:
+            cost_user_extra = (
+                f"\n\n【用户持仓 — 浮亏】成本价 ¥{cost_price:.2f} {pnl_str}\n"
+                f"用户不希望割肉，请重点给出补仓策略（价位、比例、摊薄成本）和回本路径。"
+            )
 
     user_prompt = (
         f"请对 {name}({symbol}) 进行深度分析。以下是完整的多维度数据：\n\n"
-        f"{analysis_text}\n\n"
+        f"{analysis_text}{cost_user_extra}\n\n"
         f"请基于以上所有数据，按照要求的结构进行深度分析。"
         f"特别注意：请自行从原始OHLCV数据中发现量价关系趋势，不要只看我提供的技术指标摘要。"
     )

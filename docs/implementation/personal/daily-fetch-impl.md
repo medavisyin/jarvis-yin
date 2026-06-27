@@ -101,7 +101,7 @@ flowchart TD
 
 - Output root: `REPORTS_ROOT` / `today` subdirectory (`4407–4408`).
 - Proxy: Per-domain strategy via `proxy_strategy.py`; resolves proxy URL from `BRIEFING_PROXY` env var first, falls back to the stored `proxy_url` in the memory file. Cache persisted at `REPORTS_ROOT/.proxy-strategy.json`. Startup scripts (`bin/jarvis-start.bat`, `bin/jarvis-restart.bat`) default `BRIEFING_PROXY` to `socks5://localhost:10808` if not already set.
-- Audio languages: `_GLOBAL_SETTINGS["audio_lang_ai" | "audio_lang_world" | "audio_lang_china"]` default `"zh"`; `"en"` selects `en-US-AndrewNeural` (`4741–4742`, `4851–4852`, `4886–4887`).
+- Audio languages: `_GLOBAL_SETTINGS["audio_lang_ai" | "audio_lang_world" | "audio_lang_china"]` default `"zh"`; `"en"` selects `en-IN-PrabhatNeural` (`4741–4742`, `4851–4852`, `4886–4887`).
 - Narration model: `RAG_NARRATION_MODEL` default `qwen3.5:4b` (upgraded from `qwen3:1.7b`); English mode uses 2-pass enrichment for vocabulary teaching.
 - `briefing-template.py` / `generate-audio.py`: use `REPORTS_ROOT` from `scripts/config.py`; schema aligned with `merge-sources` output—not called by `_run_daily_fetch`.
 

@@ -135,7 +135,7 @@ Edit this file to calibrate the briefing depth:
 
 ### Voice and audio
 
-Default voice: `zh-CN-YunxiNeural` (male, conversational).
+Default voice: `zh-CN-shaanxi-XiaoniNeural` (female, Shaanxi dialect, conversational).
 
 Override in the narration JSON:
 
@@ -148,7 +148,7 @@ Override in the narration JSON:
 }
 ```
 
-Available Chinese voices: `YunxiNeural` (male), `YunjianNeural` (male, deep), `YunyangNeural` (male, warm), `XiaoxiaoNeural` (female), `XiaoyiNeural` (female).
+Available Chinese voices: `shaanxi-XiaoniNeural` (female, Shaanxi dialect), `YunxiNeural` (male), `YunjianNeural` (male, deep), `YunyangNeural` (male, warm), `XiaoxiaoNeural` (female), `XiaoyiNeural` (female).
 
 ### Proxy
 

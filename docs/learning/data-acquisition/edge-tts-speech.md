@@ -56,14 +56,15 @@ You don't need to understand these internals to use Edge TTS — the library han
 
 | Voice | Language | Gender | Used for |
 |-------|----------|--------|----------|
-| `zh-CN-YunxiNeural` | Chinese | Male | Chinese news narration, AI briefing (ZH mode) |
-| `en-US-AndrewNeural` | English | Male | English narration |
+| `zh-CN-shaanxi-XiaoniNeural` | Chinese | Female | Chinese news narration, AI briefing (ZH mode) |
+| `en-IN-PrabhatNeural` | English (India) | Male | English narration (single-voice) |
+| `en-IN-NeerjaNeural` | English (India) | Female | English dialogue guest / fallback |
 
 Voice selection is driven by `_GLOBAL_SETTINGS`:
 
 ```python
 lang = _GLOBAL_SETTINGS.get("audio_lang_world", "zh")
-voice = "en-US-AndrewNeural" if lang == "en" else "zh-CN-YunxiNeural"
+voice = "en-IN-PrabhatNeural" if lang == "en" else "zh-CN-shaanxi-XiaoniNeural"
 ```
 
 Users can switch between Chinese and English audio via the Settings gear icon.
@@ -76,7 +77,7 @@ Users can switch between Chinese and English audio via the Settings gear icon.
 import edge_tts
 import asyncio
 
-async def text_to_mp3(text, output_path, voice="zh-CN-YunxiNeural"):
+async def text_to_mp3(text, output_path, voice="zh-CN-shaanxi-XiaoniNeural"):
     communicate = edge_tts.Communicate(text, voice)
     await communicate.save(output_path)
 

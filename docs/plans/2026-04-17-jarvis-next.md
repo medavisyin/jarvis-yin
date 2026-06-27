@@ -452,7 +452,7 @@ last-updated: 2026-04-18
 
 **Plan:**
 - Generate a **two-voice conversation** script: host asks questions, analyst provides insights
-- Use two different Edge TTS voices (e.g., `zh-CN-YunxiNeural` as host, `zh-CN-XiaoxiaoNeural` as analyst; `en-US-AndrewNeural` / `en-US-JennyNeural` for English)
+- Use two different Edge TTS voices (e.g., `zh-CN-shaanxi-XiaoniNeural` as host, `zh-CN-XiaoxiaoNeural` as analyst; `en-IN-PrabhatNeural` / `en-US-JennyNeural` for English)
 - LLM generates a dialogue-format script instead of a monologue
 - TTS generates segments per speaker, then merge with `ffmpeg`
 - Configurable in Global Settings: monologue vs. dialogue mode

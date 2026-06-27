@@ -95,7 +95,7 @@ The Daily Fetch pipeline generates audio using a **segmented per-source/category
 
 1. **Content splitting:** Briefing data is split by source (AI Brief) or category (World News). Each source/category becomes one narration segment.
 2. **Narration generation:** Each segment is sent to the fast narration model (`qwen3:1.7b` via `OLLAMA_MODEL_NARRATION`) with `num_predict: 8192` and 600s timeout. The first segment includes an intro, the last includes an outro.
-3. **TTS conversion:** Each narration is cleaned (markdown/sound-effect annotations removed), chunked at 2000-char sentence boundaries, and converted to MP3 via Edge-TTS (`zh-CN-YunxiNeural`, with fallback to `zh-CN-YunjianNeural` and `zh-CN-XiaoxiaoNeural`).
+3. **TTS conversion:** Each narration is cleaned (markdown/sound-effect annotations removed), chunked at 2000-char sentence boundaries, and converted to MP3 via Edge-TTS (`zh-CN-shaanxi-XiaoniNeural`, with fallback to `zh-CN-YunjianNeural` and `zh-CN-XiaoxiaoNeural`).
 4. **Concatenation:** All segment MP3 parts are merged via `ffmpeg -f concat -c copy` (or binary concatenation if ffmpeg is unavailable).
 
 ### Why segmented?
@@ -137,8 +137,8 @@ TTS voice selection is dynamic:
 
 | Language | Voice |
 |----------|-------|
-| Chinese (`"zh"`) | `zh-CN-YunxiNeural` |
-| English (`"en"`) | `en-US-AndrewNeural` |
+| Chinese (`"zh"`) | `zh-CN-shaanxi-XiaoniNeural` |
+| English (`"en"`) | `en-IN-PrabhatNeural` |
 
 See [Global Settings](../rag/global-settings-impl.md) for the full settings UI implementation.
 

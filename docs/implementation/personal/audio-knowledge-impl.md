@@ -29,7 +29,7 @@ flowchart TD
   LLM --> Clean[_clean_narration_for_tts]
   Clean --> Enrich["_enrich_vocabulary (English only)<br/>2nd LLM pass: add vocab annotations"]
   Enrich --> Parse["_parse_dialogue_turns<br/>split by role markers"]
-  Parse --> TTS["edge_tts per-turn rendering<br/>YunxiNeural(主播) + XiaoxiaoNeural(嘉宾)"]
+  Parse --> TTS["edge_tts per-turn rendering<br/>shaanxi-XiaoniNeural(主播) + XiaoxiaoNeural(嘉宾)"]
   TTS --> Concat[ffmpeg concat all turns]
   Concat --> MP3[REPORTS_ROOT/YYYY-MM-DD/knowledge-audio-HHMMSS.mp3]
 ```
@@ -46,7 +46,7 @@ Distinct from Daily Fetch audio: this path uses **retrieved chunk text** from th
 6. **Script**: Ollama `OLLAMA_MODEL_FAST`, `think: True`, `num_predict: 16384`, dual-host dialogue format with `[主播]`/`[嘉宾]` markers.
 7. **Cleanup**: Strip think tags, markdown, prefixes; `_clean_narration_for_tts`.
 8. **Parse**: `_parse_dialogue_turns` splits dialogue into (role, text) tuples.
-9. **TTS**: Each turn rendered with role-specific voice (YunxiNeural / XiaoxiaoNeural), chunked at ~2000 chars, concatenated via ffmpeg.
+9. **TTS**: Each turn rendered with role-specific voice (shaanxi-XiaoniNeural / XiaoxiaoNeural), chunked at ~2000 chars, concatenated via ffmpeg.
 10. **Done**: `output_path`, `output_url` under `/api/toolbar/audio-file/...`, `narration_preview`.
 
 ### Key Design Decisions
@@ -70,7 +70,7 @@ Initial approach forced analogies, filler words (嗯、对吧、说白了), and 
 **Solution: Dual-host podcast dialogue format**
 
 All narration prompts rewritten to generate dialogue between two roles:
-- **[主播] (Host)**: A sharp journalist/anchor who asks good questions and drives the conversation. Voice: `zh-CN-YunxiNeural` (male).
+- **[主播] (Host)**: A sharp journalist/anchor who asks good questions and drives the conversation. Voice: `zh-CN-shaanxi-XiaoniNeural` (female, Shaanxi dialect).
 - **[嘉宾] (Guest)**: An expert analyst who provides depth, context, and clear explanations. Voice: `zh-CN-XiaoxiaoNeural` (female).
 
 Key design changes:
@@ -79,7 +79,7 @@ Key design changes:
 3. **TTS pipeline** renders each turn with the appropriate voice, then concatenates
 4. **Graceful fallback**: if LLM doesn't produce markers, entire text renders as host voice
 
-English mode uses `[Host]`/`[Guest]` with `en-US-AndrewNeural` + `en-US-JennyNeural`.
+English mode uses `[Host]`/`[Guest]` with `en-IN-PrabhatNeural` + `en-IN-NeerjaNeural`.
 
 ### v3 (2026-05-07): English Vocabulary Enrichment — CURRENT for English mode
 
@@ -152,7 +152,7 @@ Edge-TTS v7.2.8 (2026-03) removed custom SSML support. Microsoft only permits th
 | `_enrich_vocabulary` | Post-process English dialogue to inject vocabulary annotations via a second LLM call |
 | `_tts_segments_to_mp3` | Multi-segment dual-voice TTS with inter-segment silence |
 | `_tts_to_mp3` | Single dialogue → dual-voice MP3 |
-| `_DIALOGUE_VOICES` | Voice mapping: zh host=YunxiNeural, guest=XiaoxiaoNeural |
+| `_DIALOGUE_VOICES` | Voice mapping: zh host=shaanxi-XiaoniNeural, guest=XiaoxiaoNeural |
 | `api_audio_knowledge` | Start job route |
 | `api_audio_knowledge_history` | List recent MP3s |
 | `api_audio_knowledge_items` | Group chunks by parent for UI |

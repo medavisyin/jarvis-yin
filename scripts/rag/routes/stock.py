@@ -76,6 +76,7 @@ def api_stock_analyze():
     body = request.get_json(silent=True) or {}
     symbol = body.get("symbol", "").strip()
     mode = body.get("mode", "full")
+    cost_price = body.get("cost_price")
 
     if not symbol or not symbol.isdigit():
         return jsonify({"error": "请输入有效的股票代码 (纯数字)"}), 400
@@ -83,12 +84,27 @@ def api_stock_analyze():
     try:
         result = {}
 
+        from fetch_market_data import fetch_daily_ohlcv, fetch_realtime_quote
+        try:
+            fetch_daily_ohlcv(symbol)
+        except Exception as e:
+            log.warning("刷新 %s 日线数据失败(不影响分析): %s", symbol, e)
+
+        realtime = {}
+        try:
+            realtime = fetch_realtime_quote(symbol)
+        except Exception as e:
+            log.warning("获取 %s 实时行情失败: %s", symbol, e)
+
+        if realtime:
+            result["realtime_quote"] = realtime
+
         if mode in ("technical", "full"):
             from report_technical import generate_report as gen_tech, save_report
             from technical_analysis import analyze as tech_analyze
             analysis = tech_analyze(symbol)
             save_report(symbol, analysis)
-            result["technical_report"] = gen_tech(symbol, analysis)
+            result["technical_report"] = gen_tech(symbol, analysis, realtime_quote=realtime)
 
         if mode in ("fundamental", "full"):
             from fundamental_analysis import fetch_fundamentals, generate_fundamental_report
@@ -142,7 +158,7 @@ def api_stock_analyze():
 
         if mode == "full":
             from llm_reasoning import generate_prediction
-            result["prediction_report"] = generate_prediction(symbol, stream=False)
+            result["prediction_report"] = generate_prediction(symbol, stream=False, realtime_quote=realtime, cost_price=cost_price)
 
         return jsonify(result)
 
@@ -157,13 +173,27 @@ def api_stock_analyze_deepseek():
     """Run DeepSeek API analysis for a stock (final LLM step only)."""
     body = request.get_json(silent=True) or {}
     symbol = body.get("symbol", "").strip()
+    cost_price = body.get("cost_price")
 
     if not symbol or not symbol.isdigit():
         return jsonify({"error": "请输入有效的股票代码 (纯数字)"}), 400
 
     try:
+        from fetch_market_data import fetch_daily_ohlcv, fetch_realtime_quote
+
+        try:
+            fetch_daily_ohlcv(symbol)
+        except Exception as e:
+            log.warning("刷新 %s 日线数据失败: %s", symbol, e)
+
+        realtime = {}
+        try:
+            realtime = fetch_realtime_quote(symbol)
+        except Exception as e:
+            log.warning("获取 %s 实时行情失败: %s", symbol, e)
+
         from llm_reasoning import generate_prediction_deepseek
-        result = generate_prediction_deepseek(symbol)
+        result = generate_prediction_deepseek(symbol, realtime_quote=realtime, cost_price=cost_price)
         return jsonify(result)
     except Exception as exc:
         traceback.print_exc()

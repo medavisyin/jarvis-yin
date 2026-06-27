@@ -770,6 +770,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
     <div class="modal-content" style="padding:14px 18px;background:#0f1117">
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
         <input type="text" id="stockSymbolInput" placeholder="输入股票代码 (如 600519)" style="background:#1a1d2e;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:8px 12px;font-size:0.88em;width:180px">
+        <input type="text" id="stockCostPrice" placeholder="成本价 (选填)" style="background:#1a1d2e;border:1px solid #3a3d4a;color:#fbbf24;border-radius:6px;padding:8px 12px;font-size:0.88em;width:110px" title="已持仓的成本价格，用于生成补仓建议">
         <button type="button" class="send-btn" id="btnStockAnalyze" onclick="runStockAnalysis()" style="padding:8px 18px;font-size:0.86em">&#128200; 全面分析</button>
         <button type="button" class="toolbar-btn" id="btnStockTech" onclick="runStockTech()" style="font-size:0.78em">技术分析</button>
         <button type="button" class="toolbar-btn" id="btnStockFund" onclick="runStockFund()" style="font-size:0.78em">基本面</button>
@@ -1409,7 +1410,7 @@ async function loadDailyFetchHistory(date) {
     h += '<button type="button" onclick="recreateWikiFetch(this)" style="margin-top:6px;background:#0f2433;border:1px solid #0ea5e9;border-radius:4px;padding:2px 8px;font-size:0.7em;color:#38bdf8;cursor:pointer" title="Re-run wiki fetch + change detection for all team members">&#x1f504; Refresh &amp; Recreate</button></div>';
     h += '</div>';
     if (_dfMissingSteps.length > 0) {
-      var stepLabels = {fetch_sources:'Source Fetch',topic_dedup:'Topic Dedup',commit_report:'Commit Report',jira_daily:'Jira Report',wiki_fetch:'Wiki Fetch',world_news_merge:'World News Merge',ai_audio:'AI Audio',world_audio:'World Audio',china_audio:'\u4e2d\u56fd\u65b0\u95fb Audio'};
+      var stepLabels = {fetch_sources:'Source Fetch',topic_dedup:'Topic Dedup',commit_report:'Commit Report',jira_daily:'Jira Report',wiki_fetch:'Wiki Fetch',world_news_merge:'World News Merge',refetch_world:'World News Fetch',world_news_translate:'World News Translate',ai_audio:'AI Audio',world_audio:'World Audio',china_audio:'\u4e2d\u56fd\u65b0\u95fb Audio'};
       h += '<div style="background:#2a1a0a;border:1px solid #d97706;border-radius:8px;padding:10px 14px;margin-bottom:14px">';
       h += '<div style="font-size:0.78em;font-weight:600;color:#f59e0b;margin-bottom:6px">Incomplete — missing steps:</div>';
       h += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
@@ -3379,6 +3380,8 @@ function showStockTab(tab) {
 async function runStockAnalysis() {
   const sym = document.getElementById('stockSymbolInput').value.trim();
   if (!sym) { showToast('请输入股票代码'); return; }
+  const costPriceRaw = document.getElementById('stockCostPrice').value.trim();
+  const costPrice = costPriceRaw ? parseFloat(costPriceRaw) : null;
   const st = document.getElementById('stockStatus');
   const res = document.getElementById('stockResult');
   const resDs = document.getElementById('stockResultDs');
@@ -3391,8 +3394,10 @@ async function runStockAnalysis() {
   resDs.style.display = 'none'; res.style.display = 'block';
   showStockTab('local');
   document.getElementById('btnStockAnalyze').disabled = true;
+  const payload = {symbol: sym, mode: 'full'};
+  if (costPrice && costPrice > 0) payload.cost_price = costPrice;
   try {
-    const r = await fetch('/api/stock/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({symbol: sym, mode: 'full'})});
+    const r = await fetch('/api/stock/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
     const d = await r.json();
     if (d.error) { res.innerHTML = '<p style="color:#f87171">'+d.error+'</p>'; }
     else { res.innerHTML = _renderStockMd(d); d.symbol = sym; _cachePdfData('stockAnalysis', d); }
@@ -3402,7 +3407,9 @@ async function runStockAnalysis() {
   if (useDs) {
     resDs.innerHTML = '<p style="color:#60a5fa">⏳ DeepSeek 分析中...</p>';
     try {
-      const r2 = await fetch('/api/stock/analyze/deepseek', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({symbol: sym})});
+      const dsPayload = {symbol: sym};
+      if (costPrice && costPrice > 0) dsPayload.cost_price = costPrice;
+      const r2 = await fetch('/api/stock/analyze/deepseek', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(dsPayload)});
       const d2 = await r2.json();
       if (d2.error) {
         resDs.innerHTML = '<p style="color:#f87171">DeepSeek: '+d2.error+'</p>';
@@ -3446,11 +3453,30 @@ async function _runStockPartial(mode) {
   } catch(e) { res.innerHTML = '<p style="color:#f87171">请求失败: '+e.message+'</p>'; st.textContent = ''; }
 }
 function _renderStockMd(d) {
+  let html = '';
+  if (d.realtime_quote && d.realtime_quote['最新价']) {
+    const q = d.realtime_quote;
+    const chg = q['涨跌幅'] || 0;
+    const color = chg > 0 ? '#ef4444' : chg < 0 ? '#22c55e' : '#94a3b8';
+    html += '<div style="background:linear-gradient(135deg,#1e293b,#0f172a);border:1px solid #334155;border-radius:10px;padding:16px 20px;margin-bottom:16px">';
+    html += '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">';
+    html += '<span style="font-size:0.8em;color:#64748b">📡 实时行情</span>';
+    html += '<span style="font-size:1.6em;font-weight:bold;color:'+color+'">¥' + q['最新价'] + '</span>';
+    html += '<span style="font-size:1.1em;color:'+color+'">' + (chg > 0 ? '+' : '') + chg.toFixed(2) + '%</span>';
+    html += '</div>';
+    html += '<div style="display:flex;gap:16px;margin-top:8px;font-size:0.82em;color:#94a3b8;flex-wrap:wrap">';
+    if (q['今开']) html += '<span>今开: ¥'+q['今开']+'</span>';
+    if (q['最高']) html += '<span>最高: ¥'+q['最高']+'</span>';
+    if (q['最低']) html += '<span>最低: ¥'+q['最低']+'</span>';
+    if (q['昨收']) html += '<span>昨收: ¥'+q['昨收']+'</span>';
+    html += '</div></div>';
+  }
   let md = d.report || d.technical_report || d.fundamental_report || d.sentiment_report || '';
   if (d.fund_flow_report) md += '\n\n---\n\n' + d.fund_flow_report;
   if (d.xgb_report) md += '\n\n---\n\n' + d.xgb_report;
   if (d.prediction_report) md += '\n\n---\n\n' + d.prediction_report;
-  return '<div style="white-space:pre-wrap;line-height:1.7">' + _simpleMarkdown(md) + '</div>';
+  html += '<div style="white-space:pre-wrap;line-height:1.7">' + _simpleMarkdown(md) + '</div>';
+  return html;
 }
 function _simpleMarkdown(text) {
   return text

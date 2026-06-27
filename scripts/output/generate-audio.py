@@ -16,7 +16,7 @@ Long narrations are split into chunks for Edge-TTS and concatenated.
 Uses ffmpeg if available; falls back to binary MP3 concatenation otherwise.
 
 Optional JSON keys:
-  "voice": override Edge voice (default zh-CN-YunxiNeural)
+  "voice": override Edge voice (default zh-CN-shaanxi-XiaoniNeural)
   "rate": e.g. "-5%" (default "-5%")
   "pitch": e.g. "+0Hz" (default "+0Hz")
 
@@ -39,7 +39,7 @@ DATE_FOLDER = date.today().strftime("%Y-%m-%d")
 OUTPUT_DIR = os.path.join(REPORTS_ROOT, DATE_FOLDER)
 DEFAULT_OUTPUT_FILENAME = "ai-briefing.mp3"
 
-VOICE = "zh-CN-YunxiNeural"
+VOICE = "zh-CN-shaanxi-XiaoniNeural"
 RATE = "-5%"
 PITCH = "+0Hz"
 

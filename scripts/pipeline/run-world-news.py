@@ -339,9 +339,15 @@ async def main():
     with open(timing_path, "w", encoding="utf-8") as f:
         json.dump(timing, f, ensure_ascii=False, indent=2)
 
-    print(f"\n  Sources used: {', '.join(merged['sources_used'])}")
+    def _safe_print(msg: str) -> None:
+        try:
+            print(msg)
+        except UnicodeEncodeError:
+            print(msg.encode("ascii", errors="replace").decode("ascii"))
+
+    _safe_print(f"\n  Sources used: {', '.join(merged['sources_used'])}")
     if merged["sources_unavailable"]:
-        print(f"  Unavailable: {', '.join(merged['sources_unavailable'])}")
+        _safe_print(f"  Unavailable: {', '.join(merged['sources_unavailable'])}")
     print(f"  Total items: {merged['total_items']}")
     for cat in merged["categories"]:
         print(f"    {cat['label']}: {len(cat['items'])} items")
