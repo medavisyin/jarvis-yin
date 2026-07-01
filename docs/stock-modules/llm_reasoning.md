@@ -53,6 +53,7 @@
 | `generate_prediction(symbol, stream=False)` | `POST {OLLAMA_HOST}/api/chat`，`model=MODEL_USAGE["prediction_reasoning"]`，`temperature=0.6`, `num_predict=1500`；去 ``；写 `prediction-report.md`；`stream=True` 时返回**逐 token 生成器**并过滤 think 段。 |
 | `_build_deepseek_prompt(symbol, data)` | **扩展版**：`daily.csv` 近 20 行表、**全量**指标与信号、**全部新闻条**表格、XGB 细节、`price_prediction.json`、**`stock_fund_flow_signals`**、**`get_market_sentiment()`** 大盘。 |
 | `generate_prediction_deepseek(symbol)` | `call_deepseek(..., max_tokens=8192)`，写 `prediction-report-deepseek.md`，返回 report/reasoning/usage。 |
+| `generate_prediction_verdict(stock_dict)` | **2026-07 新增**：**轻量版**深度复核，供 `scanner._run_deepseek_recheck_for_picks` 对 Top5 复用。复用数据装配逻辑但用更轻 system prompt，输出结构化 `{direction: 看多/看空/中性, confidence, reason}`；JSON 解析含 `think` 标签与代码块剥离的兜底。看空 verdict 用于在左侧一致性修复中否决 Top5。 |
 | `_make_system_prompt` | 本地版**段落结构**要求（方向、信心、1–2 周、风险、操作、价位）。 |
 
 ### 3.3 算法与计算逻辑

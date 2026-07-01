@@ -321,3 +321,29 @@ This avoids redundant DeepSeek calls.
 | `GET` | `/api/stock/scan/result/<date>` | Result for specific date |
 | `GET` | `/api/stock/scan/dates` | Available scan dates |
 | `GET` | `/api/stock/scan/history` | Scan history array |
+
+---
+
+## 2026-07-01 Update — Consistency Fix & Unified Scanner
+
+### A. Left-side Consistency Fix (eliminates "short-term buy vs deep-analysis sell" paradox)
+
+1. **Layer 2 fund-flow hard gate**: `stock_fund_flow_signals` now retried with backoff; on repeated failure sets `ff_data_missing=True`. Fund flow + OHLCV go through `scan_cache` (shared with right-side in unified runs).
+2. **Layer 3 prompt reinforcement**: `_build_deepseek_scoring_prompt` appends a strong warning when `ff_data_missing`, forbidding buy verdicts on technicals alone.
+3. **Pre-LLM veto**: `_layer3_llm_rank` calls `_fund_vetoed(stock)` — drops candidates with `ff_data_missing` or bearish fund phase (distribution / large 3d outflow) before LLM judging.
+4. **Post-judge downgrade**: `_layer3_deepseek_judge` / `_layer3_local_judge` force `verdict=="买入"` → `"观望"` when `ff_data_missing` or distribution phase, annotating the reason.
+5. **Phase 3.5 — Top5 DeepSeek recheck**: `_run_deepseek_recheck_for_picks` re-runs `llm_reasoning.generate_prediction_verdict` (lightweight) on each Top5; any **看空** verdict **vetoes** that pick. Surviving picks carry `deepseek_recheck` for the frontend "深度复核" label.
+6. **JSON parse fallback**: `_extract_llm_fields_fallback` regex-extracts fields when `json.loads` fails (tolerates unescaped quotes inside string values), reducing dropped judgments.
+
+### B. Unified Scanner Integration
+
+`_layer1_quick_filter(hot_stocks, market_df=None)` and `_run_scan_inner(market_df=None)` accept an optional shared market DataFrame so `unified_scanner` can inject one fetch. Module exposes `set_shared_market_df` / `get_shared_market_df` / `clear_shared_market_df`. See `docs/stock-modules/unified_scanner.md` and `docs/stock-modules/scan_cache.md`.
+
+### C. New sibling scanners
+
+- `right_side_scanner.py` — right-side trading (fund-flow reversal + trend confirmation). See `docs/stock-modules/right_side_scanner.md`.
+- `unified_scanner.py` — orchestrates left + right with shared market fetch + `scan_cache` enrichment reuse. New APIs: `/api/stock/unified_scan/{start,status,stop,result}`.
+
+### D. Strategy extensibility
+
+Future strategies follow the plugin contract in `docs/guides/stock-new-strategy-guide.md` (same function signatures as `scanner` / `right_side_scanner`). No code refactor required for current setup.

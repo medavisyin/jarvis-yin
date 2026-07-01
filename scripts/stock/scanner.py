@@ -102,7 +102,7 @@ def get_scan_status() -> dict:
 # Layer 1 — market-wide quick filter
 # ---------------------------------------------------------------------------
 
-def _layer1_quick_filter(hot_stocks: set[str]) -> tuple[list[dict], int]:
+def _layer1_quick_filter(hot_stocks: set[str], market_df=None) -> tuple[list[dict], int]:
     """
     Fetch full A-share realtime snapshot and filter candidates.
 
@@ -113,15 +113,17 @@ def _layer1_quick_filter(hot_stocks: set[str]) -> tuple[list[dict], int]:
       - Hot sector stocks get a moderate bonus
 
     Returns (candidates, market_total) where market_total is the raw count
-    before any filtering.
+    before any filtering. If market_df is provided, skip the network fetch
+    (used by unified scanner to share one market snapshot).
     """
     log.info("Layer 1: 获取全市场实时行情...")
 
-    df = None
-    try:
-        df = ak.stock_zh_a_spot_em()
-    except Exception as e:
-        log.warning("akshare 全市场行情失败: %s, 尝试东方财富备用API", e)
+    df = market_df
+    if df is None:
+        try:
+            df = ak.stock_zh_a_spot_em()
+        except Exception as e:
+            log.warning("akshare 全市场行情失败: %s, 尝试东方财富备用API", e)
 
     if df is None or df.empty:
         try:
@@ -288,7 +290,10 @@ def _layer2_rule_scoring(batch: list[dict], progress: dict) -> list[dict]:
         overbought = False
 
         try:
-            fetch_daily_ohlcv(sym)
+            import scan_cache as _sc_ohlcv
+            if not _sc_ohlcv.ohlcv_done(sym):
+                fetch_daily_ohlcv(sym)
+                _sc_ohlcv.mark_ohlcv(sym)
             df = load_ohlcv(sym)
             if df is not None and len(df) >= 30:
                 df = compute_indicators(df)
@@ -354,9 +359,20 @@ def _layer2_rule_scoring(batch: list[dict], progress: dict) -> list[dict]:
 
         ff_score = 50
         ff_signals = {}
+        ff_data_missing = False
         try:
             import china_market_data as cmd
-            ff = cmd.stock_fund_flow_signals(sym)
+            import scan_cache
+            cached_ff = scan_cache.get_ff(sym)
+            if cached_ff is not None:
+                ff = cached_ff
+            else:
+                ff = cmd.stock_fund_flow_signals(sym)
+                # 资金流向数据缺失时重试一次（akshare 偶发空响应）
+                if not ff or ff.get("data_days", 0) < 3:
+                    time.sleep(0.3)
+                    ff = cmd.stock_fund_flow_signals(sym)
+                scan_cache.set_ff(sym, ff)
             if ff and ff.get("data_days", 0) >= 3:
                 ff_signals = ff
                 accumulating = ff.get("accumulation_signal", False)
@@ -375,7 +391,12 @@ def _layer2_rule_scoring(batch: list[dict], progress: dict) -> list[dict]:
                 elif main_net_3d < 0:
                     ff_score = max(20, 50 + main_net_3d / 1e8 * 3)
                 ff_score = max(0, min(100, ff_score))
+            else:
+                # 资金流向数据缺失：保留中性 50 用于 L2 加权，但打标记供 Layer 3 门控
+                ff_data_missing = True
+                log.info("  %s 资金流向数据缺失(data_days<3)，标记 ff_data_missing", sym)
         except Exception as e:
+            ff_data_missing = True
             log.debug("  %s 资金流向失败: %s", sym, e)
 
         hot_bonus = 5 if stock.get("is_hot") else 0
@@ -394,6 +415,7 @@ def _layer2_rule_scoring(batch: list[dict], progress: dict) -> list[dict]:
             "fund_score": round(fund_score, 1),
             "ff_score": round(ff_score, 1),
             "ff_signals": ff_signals,
+            "ff_data_missing": ff_data_missing,
             "sentiment_score": sentiment_score,
             "hot_bonus": hot_bonus,
             "rsi": round(rsi_val, 1) if rsi_val else None,
@@ -487,9 +509,26 @@ def _layer3_llm_rank(candidates: list[dict]) -> list[dict]:
         log.info("Layer 3: 全部使用本地 LLM 判断 (%d 只)", len(top))
         all_evaluated.extend(_layer3_local_judge(top))
 
+    def _fund_vetoed(s: dict) -> bool:
+        """资金面否决：出货期或3日大额净流出，或缺资金数据，均不进入买入列表。"""
+        if s.get("ff_data_missing"):
+            return True
+        ff = s.get("ff_signals") or {}
+        if not ff:
+            return True
+        if ff.get("smart_money_phase") == "出货期":
+            return True
+        try:
+            if float(ff.get("main_net_3d", 0) or 0) < -0.5e8:
+                return True
+        except (TypeError, ValueError):
+            return True
+        return False
+
     buyable = [s for s in all_evaluated
                if s.get("verdict") == "买入"
-               and s.get("final_score", 0) >= MIN_BUYABILITY_SCORE]
+               and s.get("final_score", 0) >= MIN_BUYABILITY_SCORE
+               and not _fund_vetoed(s)]
 
     if not buyable:
         log.info("Layer 3: 本次扫描没有找到值得买入的股票 (这是正常的)")
@@ -540,6 +579,33 @@ def _layer3_deepseek_judge(stocks: list[dict]) -> list[dict]:
                 raw = result["content"]
                 parsed = _parse_llm_score(raw, stock)
                 parsed["judged_by"] = "deepseek"
+                # 资金流向数据缺失硬门控：禁止在缺关键数据下给出买入
+                if stock.get("ff_data_missing") and parsed.get("verdict") == "买入":
+                    log.info("  %s 资金流向缺失，降级买入→观望", sym)
+                    parsed["verdict"] = "观望"
+                    parsed["final_score"] = min(parsed.get("final_score", 0), MIN_BUYABILITY_SCORE - 1)
+                    orig_reason = parsed.get("reasoning", "")
+                    parsed["reasoning"] = (
+                        "【资金流向数据缺失，无法确认主力意图，自动降级为不买入】"
+                        + (f"\n原判断: {orig_reason}" if orig_reason else "")
+                    )
+                # 资金面否决项：出货期或大额净流出，无论 Alpha 多高都不买入
+                ff_sig = stock.get("ff_signals", {})
+                phase = ff_sig.get("smart_money_phase") if ff_sig else None
+                main_net_3d = ff_sig.get("main_net_3d", 0) if ff_sig else 0
+                try:
+                    mn3 = float(main_net_3d or 0)
+                except (TypeError, ValueError):
+                    mn3 = 0.0
+                if phase == "出货期" or mn3 < -0.5e8:
+                    if parsed.get("verdict") == "买入":
+                        log.info("  %s 资金面否决(phase=%s, main_net_3d=%.2e)，降级买入→观望", sym, phase, mn3)
+                        parsed["verdict"] = "观望"
+                        parsed["final_score"] = min(parsed.get("final_score", 0), MIN_BUYABILITY_SCORE - 1)
+                        parsed["reasoning"] = (
+                            f"【资金面否决：主力{'出货期' if phase == '出货期' else '3日大额净流出'}，"
+                            f"与短期买入逻辑冲突，自动降级为不买入】" + (f"\n{parsed.get('reasoning','')}" if parsed.get("reasoning") else "")
+                        )
                 # Store DeepSeek data for UI display
                 parsed["deepseek"] = {
                     "report": parsed.get("reasoning", ""),
@@ -618,6 +684,14 @@ def _build_deepseek_scoring_prompt(stock: dict) -> str:
             f"  模型NDCG: {stock.get('model_ndcg', 'N/A')}\n"
         )
 
+    ff_missing_warning = ""
+    if stock.get("ff_data_missing"):
+        ff_missing_warning = (
+            "\n⚠️【数据质量警告】该股资金流向数据缺失(data_days<3)，无法确认主力真实意图。\n"
+            "禁止仅凭估值/技术面/XGBoost Alpha 给出'买入'判断；默认应判'不买入'，\n"
+            "除非存在压倒性证据（如重大政策催化+放量突破+基本面爆发），并在 risk 中显式说明数据缺失风险。\n"
+        )
+
     return f"""判断 {stock['name']} ({stock['symbol']}) 现在是否值得买入。
 
 【行情快照】
@@ -638,7 +712,7 @@ def _build_deepseek_scoring_prompt(stock: dict) -> str:
 {xgb_text}
 【资金流向详情】
 {ff_text}
-
+{ff_missing_warning}
 【基本面详情】
 {fund_text}
 
@@ -803,6 +877,21 @@ def _parse_llm_score(raw: str, stock: dict) -> dict:
             return stock
         except (json.JSONDecodeError, ValueError) as e:
             log.warning("LLM JSON解析失败: %s | raw=%s", e, json_str[:200])
+            # Fallback: DeepSeek sometimes emits unescaped " inside string
+            # values (e.g. 不符合"追高是最大敌人"). Extract fields by regex,
+            # where a string value ends at a " followed by , or }.
+            fb = _extract_llm_fields_fallback(json_str)
+            if fb.get("verdict") or fb.get("score") is not None:
+                stock["final_score"] = float(fb.get("score") or stock.get("score_l2", 0))
+                stock["reasoning"] = fb.get("reason", "") or "LLM输出解析失败, 基于数值分析"
+                stock["risk"] = fb.get("risk", "") or ""
+                stock["buy_low"] = _safe_float(fb.get("buy_low"))
+                stock["buy_high"] = _safe_float(fb.get("buy_high"))
+                stock["strategy"] = fb.get("strategy", "") or ""
+                verdict_raw = str(fb.get("verdict", "")).strip()
+                stock["verdict"] = "买入" if "买入" in verdict_raw and "不" not in verdict_raw else "观望"
+                log.info("LLM JSON regex 兜底解析成功: verdict=%s score=%s", stock["verdict"], stock["final_score"])
+                return stock
 
     stock["final_score"] = stock.get("score_l2", 0)
     stock["reasoning"] = "LLM输出解析失败, 基于数值分析"
@@ -811,6 +900,39 @@ def _parse_llm_score(raw: str, stock: dict) -> dict:
     stock["buy_low"] = None
     stock["buy_high"] = None
     return stock
+
+
+def _extract_llm_fields_fallback(json_str: str) -> dict:
+    """Regex extraction of LLM JSON fields when json.loads fails.
+
+    Tolerates unescaped double-quotes inside string values by treating a
+    value as ending only at a quote that is followed by , or }.
+    """
+    import re
+
+    def str_field(key):
+        # value ends at a " followed by , or } (lookahead), allowing inner "
+        m = re.search(r'"%s"\s*:\s*"(.*?)"(?=\s*,|\s*\})' % re.escape(key), json_str, re.DOTALL)
+        if not m:
+            # last string field in the object (ends at "})
+            m = re.search(r'"%s"\s*:\s*"(.*?)"\s*\}' % re.escape(key), json_str, re.DOTALL)
+        return m.group(1) if m else None
+
+    def num_field(key):
+        m = re.search(r'"%s"\s*:\s*([0-9.\-]+|null)' % re.escape(key), json_str, re.IGNORECASE)
+        return m.group(1) if m else None
+
+    out = {}
+    v = str_field("verdict")
+    if v is not None:
+        out["verdict"] = v.strip()
+    out["reason"] = str_field("reason")
+    out["risk"] = str_field("risk")
+    out["strategy"] = str_field("strategy")
+    out["score"] = num_field("score")
+    out["buy_low"] = num_field("buy_low")
+    out["buy_high"] = num_field("buy_high")
+    return out
 
 
 def _safe_float(val) -> float | None:
@@ -1005,6 +1127,69 @@ def _run_comprehensive_for_picks(top_picks: list[dict], progress: dict) -> list[
                  sym, star, total_support, total_dims, comp["conclusion"])
 
     return enriched
+
+
+def _run_deepseek_recheck_for_picks(top_picks: list[dict], progress: dict) -> list[dict]:
+    """Phase 3.5: 对 Top5 运行 DeepSeek 轻量深度复核，保证短期推荐与"A股分析&AI预测"一致。
+
+    复用 llm_reasoning.generate_prediction_verdict（与深度分析同一份数据装配），
+    只输出结构化方向判断（看多/看空/中性）。若判空 → 否决该 pick 的买入资格。
+    """
+    from config import get_deepseek_key
+
+    if not get_deepseek_key():
+        log.info("深度复核: 无 DeepSeek API key, 跳过")
+        return top_picks
+    if not top_picks:
+        return top_picks
+
+    from llm_reasoning import generate_prediction_verdict
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    recheck_lock = threading.Lock()
+    vetoed_count = 0
+
+    def recheck_one(pick):
+        nonlocal vetoed_count
+        if _stop_event.is_set():
+            return
+        sym = pick["symbol"]
+        try:
+            verdict = generate_prediction_verdict(sym)
+            pick["deepseek_verdict"] = verdict
+            if verdict.get("ok") and verdict.get("direction") == "看空":
+                with recheck_lock:
+                    vetoed_count += 1
+                log.info("  深度复核否决 %s: 看空 (置信度 %s) — %s",
+                         sym, verdict.get("confidence"), verdict.get("veto_reason") or verdict.get("reason"))
+                pick["verdict"] = "观望"
+                pick["final_score"] = min(pick.get("final_score", 0), MIN_BUYABILITY_SCORE - 1)
+                orig = pick.get("reasoning", "")
+                veto = verdict.get("veto_reason") or verdict.get("reason") or "深度分析判空"
+                pick["reasoning"] = f"【深度复核否决：与深度分析方向冲突（{veto}）】" + (f"\n{orig}" if orig else "")
+                pick["recheck_vetoed"] = True
+            else:
+                log.info("  深度复核通过 %s: %s (置信度 %s)",
+                         sym, verdict.get("direction"), verdict.get("confidence"))
+        except Exception as e:
+            log.warning("  深度复核 %s 异常: %s (保留原判断)", sym, e)
+
+    max_workers = min(3, len(top_picks)) if top_picks else 1
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(recheck_one, p) for p in top_picks]
+        for i, future in enumerate(as_completed(futures)):
+            if _stop_event.is_set():
+                break
+            progress["recheck_current"] = f"{i+1}/{len(top_picks)}"
+            _save_progress(progress)
+            try:
+                future.result(timeout=60)
+            except Exception as e:
+                log.warning("深度复核任务异常: %s", e)
+
+    survivors = [p for p in top_picks if not p.get("recheck_vetoed")]
+    log.info("深度复核完成: 否决 %d 只, 保留 %d 只", vetoed_count, len(survivors))
+    return survivors
 
 
 def _run_deepseek_for_picks(top_picks: list[dict], progress: dict) -> list[dict]:
@@ -1294,7 +1479,7 @@ def _run_scan():
     """Execute the full 3-layer scan (runs in background thread)."""
     import traceback as _tb
     try:
-        _run_scan_inner()
+        _run_scan_inner(market_df=get_shared_market_df())
     except Exception:
         _tb.print_exc()
         try:
@@ -1306,8 +1491,31 @@ def _run_scan():
             pass
 
 
-def _run_scan_inner():
-    """Actual scan logic (called by _run_scan with top-level error handling)."""
+# Shared market snapshot for unified scanner (None = fetch normally)
+_SHARED_MARKET_DF = None
+
+
+def set_shared_market_df(df):
+    """Inject a pre-fetched market DataFrame (used by unified scanner)."""
+    global _SHARED_MARKET_DF
+    _SHARED_MARKET_DF = df
+
+
+def get_shared_market_df():
+    return _SHARED_MARKET_DF
+
+
+def clear_shared_market_df():
+    global _SHARED_MARKET_DF
+    _SHARED_MARKET_DF = None
+
+
+def _run_scan_inner(market_df=None):
+    """Actual scan logic (called by _run_scan with top-level error handling).
+
+    If market_df is provided, skip Layer 1 network fetch (shared snapshot
+    from the unified scanner).
+    """
     _stock_dir = os.path.dirname(os.path.abspath(__file__))
     if _stock_dir not in sys.path:
         sys.path.insert(0, _stock_dir)
@@ -1365,7 +1573,7 @@ def _run_scan_inner():
             _save_progress(progress)
             return
 
-        candidates, market_total = _layer1_quick_filter(hot_stocks)
+        candidates, market_total = _layer1_quick_filter(hot_stocks, market_df=market_df)
         if not candidates:
             progress["status"] = "error"
             progress["error"] = "Layer1 未找到候选股票 (市场数据不可用)"
@@ -1429,6 +1637,14 @@ def _execute_layer2_and_3(progress: dict, candidates: list[dict], resume: bool =
     _save_progress(progress)
 
     top_picks = _layer3_llm_rank(all_l2)
+
+    # Phase 3.5: DeepSeek 轻量深度复核 — 保证 Top5 与深度分析逻辑一致
+    if use_ds and top_picks and not _stop_event.is_set():
+        progress["status"] = "layer3_recheck"
+        progress["recheck_current"] = "0/%d" % len(top_picks)
+        _save_progress(progress)
+        log.info("Phase 3.5: 对 %d 只 Top5 推荐运行深度分析复核...", len(top_picks))
+        top_picks = _run_deepseek_recheck_for_picks(top_picks, progress)
 
     if top_picks and not _stop_event.is_set():
         progress["status"] = "comprehensive"

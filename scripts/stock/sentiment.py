@@ -96,49 +96,25 @@ def analyze_sentiment_single(article: dict, stock_name: str = "") -> dict:
     return {"score": 0.0, "reason": "分析失败"}
 
 
-def analyze_stock_sentiment(symbol: str, stock_name: str = "", days: int = 3) -> dict:
+def _resolve_stock_name(symbol: str, stock_name: str = "") -> str:
+    """Resolve stock display name from profile.json if not provided."""
+    if stock_name:
+        return stock_name
+    profile_path = os.path.join(STOCK_DATA_DIR, symbol, "profile.json")
+    if os.path.isfile(profile_path):
+        try:
+            with open(profile_path, encoding="utf-8") as f:
+                return json.load(f).get("股票简称", symbol)
+        except Exception:
+            pass
+    return symbol
+
+
+def _aggregate_sentiment(symbol: str, stock_name: str, analyzed: list[dict]) -> dict:
+    """Aggregate per-article scores into the standard sentiment result dict.
+
+    `analyzed` items: {"title", "score", "reason", "date"}.
     """
-    分析某只股票的新闻情绪.
-
-    Returns:
-    {
-        "symbol": "600519",
-        "daily_score": 0.35,
-        "article_count": 10,
-        "articles": [ { "title": ..., "score": ..., "reason": ... } ],
-        "top_positive": "...",
-        "top_negative": "...",
-        "trend": "improving" | "declining" | "stable"
-    }
-    """
-    articles = _load_news(symbol, days)
-    if not articles:
-        return {"symbol": symbol, "daily_score": 0.0, "article_count": 0,
-                "articles": [], "error": "无新闻数据"}
-
-    if not stock_name:
-        profile_path = os.path.join(STOCK_DATA_DIR, symbol, "profile.json")
-        if os.path.isfile(profile_path):
-            try:
-                with open(profile_path, encoding="utf-8") as f:
-                    stock_name = json.load(f).get("股票简称", symbol)
-            except Exception:
-                stock_name = symbol
-
-    log.info("分析 %s (%s) 的 %d 条新闻情绪...", symbol, stock_name, len(articles))
-
-    analyzed = []
-    for art in articles[:20]:
-        title = art.get("新闻标题") or art.get("title", "")
-        result = analyze_sentiment_single(art, stock_name)
-        analyzed.append({
-            "title": title,
-            "score": result["score"],
-            "reason": result["reason"],
-            "date": art.get("发布时间") or art.get("date", ""),
-        })
-        log.info("  [%.2f] %s", result["score"], title[:40])
-
     scores = [a["score"] for a in analyzed]
     daily_score = sum(scores) / len(scores) if scores else 0.0
 
@@ -174,7 +150,7 @@ def analyze_stock_sentiment(symbol: str, stock_name: str = "", days: int = 3) ->
         if abs(recent_avg - daily_score) > 0.5:
             shift_alert = True
 
-    result = {
+    return {
         "symbol": symbol,
         "name": stock_name,
         "daily_score": round(daily_score, 3),
@@ -187,10 +163,139 @@ def analyze_stock_sentiment(symbol: str, stock_name: str = "", days: int = 3) ->
         "analyzed_at": datetime.now().isoformat(),
     }
 
+
+def analyze_stock_sentiment(symbol: str, stock_name: str = "", days: int = 3) -> dict:
+    """
+    分析某只股票的新闻情绪 (本地 Ollama 打分).
+
+    结果写入 sentiment.json, 供本地分析路径使用.
+
+    Returns:
+    {
+        "symbol": "600519",
+        "daily_score": 0.35,
+        "article_count": 10,
+        "articles": [ { "title": ..., "score": ..., "reason": ... } ],
+        "top_positive": "...",
+        "top_negative": "...",
+        "trend": "improving" | "declining" | "stable"
+    }
+    """
+    articles = _load_news(symbol, days)
+    if not articles:
+        return {"symbol": symbol, "daily_score": 0.0, "article_count": 0,
+                "articles": [], "error": "无新闻数据"}
+
+    stock_name = _resolve_stock_name(symbol, stock_name)
+    log.info("分析 %s (%s) 的 %d 条新闻情绪 (Ollama)...", symbol, stock_name, len(articles))
+
+    analyzed = []
+    for art in articles[:20]:
+        title = art.get("新闻标题") or art.get("title", "")
+        result = analyze_sentiment_single(art, stock_name)
+        analyzed.append({
+            "title": title,
+            "score": result["score"],
+            "reason": result["reason"],
+            "date": art.get("发布时间") or art.get("date", ""),
+        })
+        log.info("  [%.2f] %s", result["score"], title[:40])
+
+    result = _aggregate_sentiment(symbol, stock_name, analyzed)
+    result["provider"] = "ollama"
+
     out_path = os.path.join(STOCK_DATA_DIR, symbol, "sentiment.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
-    log.info("情绪分析完成 → %s (得分: %.3f)", out_path, daily_score)
+    log.info("情绪分析完成 → %s (得分: %.3f)", out_path, result["daily_score"])
+
+    return result
+
+
+def analyze_stock_sentiment_deepseek(symbol: str, stock_name: str = "", days: int = 3) -> dict:
+    """
+    分析某只股票的新闻情绪 (DeepSeek 批量打分).
+
+    单次 DeepSeek 调用批量评分所有新闻, 结果写入 sentiment-deepseek.json,
+    与 Ollama 版 (sentiment.json) 互不干扰, 供 DeepSeek 分析路径独立使用.
+    """
+    from config import call_deepseek
+
+    articles = _load_news(symbol, days)
+    if not articles:
+        return {"symbol": symbol, "daily_score": 0.0, "article_count": 0,
+                "articles": [], "error": "无新闻数据"}
+
+    stock_name = _resolve_stock_name(symbol, stock_name)
+    articles = articles[:20]
+    log.info("DeepSeek 情绪分析 %s (%s) %d 条新闻...", symbol, stock_name, len(articles))
+
+    # 构建批量打分提示词: 一次调用返回所有新闻的分数
+    lines = [
+        f"股票: {stock_name}",
+        f"请对以下 {len(articles)} 条新闻逐条分析对该公司股价的情绪影响。",
+        "只输出JSON数组, 不要输出任何其他内容。格式:",
+        '[{"i":0,"score":0.0,"reason":"一句话"},...]',
+        "score范围: -1.0(非常利空) 到 +1.0(非常利好), 0=中性",
+        "reason 为简短中文一句话。",
+        "",
+    ]
+    for i, art in enumerate(articles):
+        title = art.get("新闻标题") or art.get("title", "")
+        content = art.get("新闻内容") or art.get("content", "")
+        body = f"标题: {title}" + (f"\n内容: {content[:300]}" if content else "")
+        lines.append(f"[{i}] {body}")
+
+    system_prompt = "你是A股市场分析师。分析每条新闻对股票的情绪影响。只输出JSON数组, 不输出其他内容。"
+    user_prompt = "\n".join(lines)
+
+    resp = call_deepseek(system_prompt, user_prompt, max_tokens=2048, reasoning_effort="low")
+
+    scores_map: dict[int, dict] = {}
+    if resp.get("ok"):
+        raw = (resp.get("content") or "").strip()
+        start, end = raw.find("["), raw.rfind("]")
+        if start != -1 and end != -1 and end > start:
+            try:
+                arr = json.loads(raw[start:end + 1])
+                for item in arr:
+                    if not isinstance(item, dict):
+                        continue
+                    idx = item.get("i", item.get("index"))
+                    try:
+                        idx = int(idx)
+                    except (TypeError, ValueError):
+                        continue
+                    try:
+                        score = max(-1.0, min(1.0, float(item.get("score", 0))))
+                    except (TypeError, ValueError):
+                        score = 0.0
+                    reason = str(item.get("reason", ""))[:60]
+                    scores_map[idx] = {"score": score, "reason": reason}
+            except Exception as e:
+                log.warning("DeepSeek 情绪 JSON 解析失败: %s", e)
+    else:
+        log.warning("DeepSeek 情绪打分失败: %s", resp.get("error"))
+
+    analyzed = []
+    for i, art in enumerate(articles):
+        title = art.get("新闻标题") or art.get("title", "")
+        sc = scores_map.get(i, {"score": 0.0, "reason": "未返回"})
+        analyzed.append({
+            "title": title,
+            "score": sc["score"],
+            "reason": sc["reason"],
+            "date": art.get("发布时间") or art.get("date", ""),
+        })
+        log.info("  [%.2f] %s", sc["score"], title[:40])
+
+    result = _aggregate_sentiment(symbol, stock_name, analyzed)
+    result["provider"] = "deepseek"
+
+    out_path = os.path.join(STOCK_DATA_DIR, symbol, "sentiment-deepseek.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+    log.info("DeepSeek 情绪分析完成 → %s (得分: %.3f)", out_path, result["daily_score"])
 
     return result
 

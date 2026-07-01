@@ -13,13 +13,18 @@ import requests
 from config import STOCK_DATA_DIR, OLLAMA_HOST, MODEL_USAGE
 from technical_analysis import analyze as tech_analyze
 from fundamental_analysis import load_fundamentals, fetch_fundamentals, score_fundamentals
-from sentiment import analyze_stock_sentiment
+from sentiment import analyze_stock_sentiment, analyze_stock_sentiment_deepseek
 
 log = logging.getLogger(__name__)
 
 
-def _load_or_compute(symbol: str) -> dict:
-    """加载或计算所有分析数据."""
+def _load_or_compute(symbol: str, sentiment_provider: str = "ollama") -> dict:
+    """加载或计算所有分析数据.
+
+    sentiment_provider:
+        "ollama"    -> 使用 sentiment.json (本地 Ollama 打分), 缺失则用 Ollama 实时打分
+        "deepseek"  -> 使用 sentiment-deepseek.json (DeepSeek 打分), 缺失则用 DeepSeek 实时打分
+    """
     tech = tech_analyze(symbol)
 
     fund_data = load_fundamentals(symbol)
@@ -31,12 +36,20 @@ def _load_or_compute(symbol: str) -> dict:
             fund_data = fund_data or {}
     fund_score = score_fundamentals(fund_data) if fund_data else {}
 
-    sent_path = os.path.join(STOCK_DATA_DIR, symbol, "sentiment.json")
-    if os.path.isfile(sent_path):
-        with open(sent_path, encoding="utf-8") as f:
-            sentiment = json.load(f)
+    if sentiment_provider == "deepseek":
+        sent_path = os.path.join(STOCK_DATA_DIR, symbol, "sentiment-deepseek.json")
+        if os.path.isfile(sent_path):
+            with open(sent_path, encoding="utf-8") as f:
+                sentiment = json.load(f)
+        else:
+            sentiment = analyze_stock_sentiment_deepseek(symbol)
     else:
-        sentiment = analyze_stock_sentiment(symbol)
+        sent_path = os.path.join(STOCK_DATA_DIR, symbol, "sentiment.json")
+        if os.path.isfile(sent_path):
+            with open(sent_path, encoding="utf-8") as f:
+                sentiment = json.load(f)
+        else:
+            sentiment = analyze_stock_sentiment(symbol)
 
     xgb_path = os.path.join(STOCK_DATA_DIR, symbol, "xgb_prediction.json")
     xgb_pred = None
@@ -554,7 +567,7 @@ def generate_prediction_deepseek(symbol: str, realtime_quote: dict | None = None
 
     log.info("开始生成 %s DeepSeek 深度预测...", symbol)
 
-    data = _load_or_compute(symbol)
+    data = _load_or_compute(symbol, sentiment_provider="deepseek")
     if realtime_quote:
         data["realtime_quote"] = realtime_quote
     elif not data.get("realtime_quote"):
@@ -672,6 +685,113 @@ def generate_prediction_deepseek(symbol: str, realtime_quote: dict | None = None
         "report": report,
         "reasoning": reasoning,
         "model": result["model"],
+        "usage": result.get("usage", {}),
+    }
+
+
+def generate_prediction_verdict(symbol: str, realtime_quote: dict | None = None) -> dict:
+    """轻量深度复核：复用深度分析的完整数据装配，但只输出结构化方向判断。
+
+    用于 scanner Top5 复核——保证短期推荐与"A股分析&AI预测"深度分析逻辑一致，
+    而无需生成完整 8 段报告（max_tokens=1500, reasoning medium，约为完整报告 1/5 开销）。
+
+    Returns dict:
+      - ok: bool
+      - direction: "看多" / "看空" / "中性"
+      - confidence: int (0-100)
+      - reason: str (一句话核心理由)
+      - veto_reason: str (若看空，给出否决依据)
+      - usage: dict
+      - error: str (if ok=False)
+    """
+    from config import call_deepseek
+
+    log.info("轻量深度复核 %s ...", symbol)
+    data = _load_or_compute(symbol, sentiment_provider="deepseek")
+    if realtime_quote:
+        data["realtime_quote"] = realtime_quote
+    elif not data.get("realtime_quote"):
+        try:
+            from fetch_market_data import fetch_realtime_quote
+            data["realtime_quote"] = fetch_realtime_quote(symbol)
+        except Exception as e:
+            log.warning("复核获取实时行情失败: %s", e)
+
+    analysis_text = _build_deepseek_prompt(symbol, data)
+
+    system_prompt = (
+        "你是一位顶级A股量化分析师。基于与深度分析完全相同的多维度数据"
+        "（技术×资金×基本面×情绪×原始OHLCV），给出一个**结构化方向判断**。\n\n"
+        "要求：\n"
+        "1. 必须交叉验证各维度，特别关注主力资金流向（净流入/净流出/出货期）与技术面的共振/矛盾。\n"
+        "2. 概率化判断，给出明确方向（看多/看空/中性）与置信度。\n"
+        "3. 若主力资金持续大幅净流出或处于出货期，且无压倒性反向证据，应判\"看空\"。\n"
+        "4. A股T+1，追高风险需考虑。\n\n"
+        "只输出一个JSON对象，不要任何其他文字或```json围栏：\n"
+        '{"direction":"看空","confidence":65,"reason":"一句话核心理由","veto_reason":"若看空给出否决依据，否则留空"}\n'
+        "direction 只能是 \"看多\" / \"看空\" / \"中性\"。confidence 0-100。"
+    )
+
+    result = call_deepseek(system_prompt, analysis_text, max_tokens=1500, reasoning_effort="medium")
+    if not result["ok"]:
+        return {"ok": False, "error": result.get("error", "DeepSeek 调用失败")}
+
+    import re as _re
+    text = result["content"].strip()
+    # 防御性剥离可能的 think 标签块（DeepSeek 通常把推理放 reasoning_content，content 一般已干净）
+    text = _re.sub(r"<think>.*?</think>", "", text, flags=_re.DOTALL).strip()
+    m = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, _re.DOTALL)
+    if m:
+        text = m.group(1)
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    parsed = None
+    if start >= 0 and end > start:
+        import json as _json
+        try:
+            parsed = _json.loads(text[start:end].replace("'", '"'))
+        except (ValueError, _json.JSONDecodeError) as e:
+            log.warning("复核 JSON 解析失败 %s: %s", symbol, e)
+    # 回退：直接搜索含 "direction" 的 JSON 对象（抗 think 标签噪声）
+    if parsed is None:
+        import json as _json2
+        m2 = _re.search(r'\{[^{}]*"direction"[^{}]*\}', result["content"], _re.DOTALL)
+        if m2:
+            try:
+                parsed = _json2.loads(m2.group(0).replace("'", '"'))
+            except (ValueError, _json2.JSONDecodeError):
+                parsed = None
+
+    if parsed is not None:
+        direction = str(parsed.get("direction", "")).strip()
+        if "空" in direction or "跌" in direction:
+            direction = "看空"
+        elif "多" in direction or "涨" in direction:
+            direction = "看多"
+        else:
+            direction = "中性"
+        return {
+            "ok": True,
+            "direction": direction,
+            "confidence": int(parsed.get("confidence", 50)),
+            "reason": parsed.get("reason", ""),
+            "veto_reason": parsed.get("veto_reason", ""),
+            "usage": result.get("usage", {}),
+        }
+
+    # 解析失败时，从原文做兜底关键词判断
+    low = text
+    bearish_kw = ["看空", "看跌", "卖出", "减仓", "止损", "出货", "净流出", "空头"]
+    bullish_kw = ["看多", "看涨", "买入", "加仓", "多头"]
+    bearish = sum(1 for k in bearish_kw if k in low)
+    bullish = sum(1 for k in bullish_kw if k in low)
+    direction = "看空" if bearish > bullish else ("看多" if bullish > bearish else "中性")
+    return {
+        "ok": True,
+        "direction": direction,
+        "confidence": 50,
+        "reason": "LLM结构化输出解析失败，基于关键词兜底判断",
+        "veto_reason": text[:200] if direction == "看空" else "",
         "usage": result.get("usage", {}),
     }
 

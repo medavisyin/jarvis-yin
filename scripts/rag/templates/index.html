@@ -349,7 +349,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
       <div class="toolbar-cat-body">
         <button type="button" class="toolbar-btn" onclick="openStockModal()" title="A股个股分析与AI预测">&#128200; 股票分析</button>
         <button type="button" class="toolbar-btn" onclick="openWatchlistModal()" title="管理自选股列表">&#11088; 自选股</button>
-        <button type="button" class="toolbar-btn" onclick="openScannerModal()" title="AI短期买入推荐 (当日行情+技术面+资金流)">&#128293; 短期推荐</button>
+        <button type="button" class="toolbar-btn" onclick="openUnifiedModal()" title="AI 股票推荐：一次扫描，共享市场数据，输出左侧(短期)+右侧(交易)两份报告">&#129302; AI 推荐</button>
         <button type="button" class="toolbar-btn" onclick="openMiddayModal()" title="AI午盘极速选股 (12:30运行，隔夜T+1套利)">⚡ 午盘推荐</button>
         <button type="button" class="toolbar-btn" onclick="openLongTermModal()" title="AI长期趋势推荐 (新闻+政策+贵金属分析)">&#128302; 长期推荐</button>
         <button type="button" class="toolbar-btn" onclick="openPriceTrainModal()" title="明日价格预测训练 (自选股)">&#127919; 价格预测</button>
@@ -899,6 +899,86 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <p style="color:#6b7280">点击"开始扫描"启动AI短期推荐分析（基于当日行情）。扫描过程分3层：</p>
         <p style="color:#6b7280">1. 全市场快速筛选 → 2. 分批详细分析 → 3. LLM买入判断</p>
         <p style="color:#6b7280;font-size:0.9em;margin-top:8px">扫描过程中可以查看部分结果，中断后可继续。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Right-Side Trading Scanner Modal -->
+<div id="rightSideModal" class="modal-overlay" role="dialog" aria-modal="true">
+  <div class="modal-panel" style="max-width:96vw;max-height:94vh;width:950px;background:#0f1117;border:1px solid #2a2d3e">
+    <div class="modal-head" style="border-bottom:1px solid #2a2d3e">
+      <h2>&#128294; AI 股票推荐(右侧交易)</h2>
+      <button type="button" class="modal-close" onclick="closeRightSideModal()" title="Close">&times;</button>
+    </div>
+    <div class="modal-content" style="padding:14px 18px;background:#0f1117">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <button type="button" class="send-btn" id="btnRsStart" onclick="startRightSideScan()" style="padding:8px 18px;font-size:0.86em;background:linear-gradient(135deg,#10b981,#059669);border:none">&#127775; 开始扫描</button>
+        <button type="button" class="toolbar-btn" id="btnRsStop" onclick="stopRightSideScan()" style="font-size:0.78em" disabled>&#9724; 停止</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;cursor:pointer;margin-left:8px" title="Layer 3 使用 DeepSeek 右侧判断（推荐）">
+          <input type="checkbox" id="rsUseDeepseek" style="accent-color:#10b981" checked>
+          <span>&#128171; DeepSeek</span>
+        </label>
+        <span id="rsStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
+      </div>
+      <div id="rsProgress" style="display:none;margin-bottom:12px">
+        <div style="background:#1a1d2e;border-radius:8px;overflow:hidden;height:24px;border:1px solid #2a2d3e">
+          <div id="rsProgressBar" style="height:100%;background:linear-gradient(90deg,#10b981,#34d399);transition:width 0.5s;width:0%;display:flex;align-items:center;justify-content:center">
+            <span id="rsProgressText" style="font-size:0.72em;color:#fff;font-weight:600"></span>
+          </div>
+        </div>
+        <div id="rsPhase" style="font-size:0.76em;color:#8b8fa4;margin-top:4px"></div>
+      </div>
+      <div id="rsResult" style="max-height:62vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:14px;background:#1a1d2e;font-size:0.84em;line-height:1.6;color:#c4c8f0">
+        <p style="color:#a0a4b8">&#128294; <b>AI 右侧交易推荐说明：</b></p>
+        <p style="color:#6b7280;margin-top:6px">与短期推荐(左侧抄底吸筹)互补。<b>右侧交易 = 确认后跟进</b>：等待主力资金由流出转为持续净流入，并伴随趋势/突破确认后再入场。</p>
+        <p style="color:#6b7280">1. 全市场活跃度筛选 → 2. 主力资金反转+趋势确认 → 3. DeepSeek 右侧入场判断</p>
+        <p style="color:#6b7280;font-size:0.9em;margin-top:8px">核心入场信号：<b>10日主力曾净流出，但近3日转为持续净流入(3日净占比≥+3%)</b>，且价格站上MA5/逼近MA20。持有2周~2-3个月，目标10%+，严格止损。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Unified Scanner Modal (left short-term + right-side, shared data) -->
+<div id="unifiedModal" class="modal-overlay" role="dialog" aria-modal="true">
+  <div class="modal-panel" style="max-width:97vw;max-height:95vh;width:1080px;background:#0f1117;border:1px solid #2a2d3e">
+    <div class="modal-head" style="border-bottom:1px solid #2a2d3e">
+      <h2>&#129302; AI 股票推荐（左侧+右侧 · 共享数据）</h2>
+      <button type="button" class="modal-close" onclick="closeUnifiedModal()" title="Close">&times;</button>
+    </div>
+    <div class="modal-content" style="padding:14px 18px;background:#0f1117">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <button type="button" class="send-btn" id="btnUniStart" onclick="startUnifiedScan()" style="padding:8px 18px;font-size:0.86em">&#127775; 开始扫描</button>
+        <button type="button" class="toolbar-btn" id="btnUniStop" onclick="stopUnifiedScan()" style="font-size:0.78em" disabled>&#9724; 停止</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;cursor:pointer;margin-left:8px" title="Layer 3 使用 DeepSeek 判断（推荐）">
+          <input type="checkbox" id="uniUseDeepseek" style="accent-color:#8b5cf6" checked>
+          <span>&#128171; DeepSeek</span>
+        </label>
+        <span id="uniStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
+      </div>
+      <div id="uniProgress" style="display:none;margin-bottom:12px">
+        <div style="background:#1a1d2e;border-radius:8px;overflow:hidden;height:24px;border:1px solid #2a2d3e">
+          <div id="uniProgressBar" style="height:100%;background:linear-gradient(90deg,#3b82f6,#10b981);transition:width 0.5s;width:0%;display:flex;align-items:center;justify-content:center">
+            <span id="uniProgressText" style="font-size:0.72em;color:#fff;font-weight:600"></span>
+          </div>
+        </div>
+        <div id="uniPhase" style="font-size:0.76em;color:#8b8fa4;margin-top:4px"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div>
+          <h3 style="color:#fbbf24;margin:0 0 6px;font-size:0.95em">&#128293; 左侧 · 短期推荐</h3>
+          <div id="uniLeftResult" style="max-height:58vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:12px;background:#1a1d2e;font-size:0.82em;line-height:1.55;color:#c4c8f0">
+            <p style="color:#6b7280">点击"开始扫描"启动统一扫描。</p>
+            <p style="color:#6b7280;font-size:0.9em">一次抓取全市场行情，分别用左侧(估值/抄底)与右侧(资金反转/突破)两套逻辑筛选，输出两份报告。</p>
+          </div>
+        </div>
+        <div>
+          <h3 style="color:#34d399;margin:0 0 6px;font-size:0.95em">&#128294; 右侧 · 交易推荐</h3>
+          <div id="uniRightResult" style="max-height:58vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:12px;background:#1a1d2e;font-size:0.82em;line-height:1.55;color:#c4c8f0">
+            <p style="color:#6b7280">右侧交易 = 确认后跟进：主力资金由流出转持续净流入 + 趋势/突破确认后入场。</p>
+            <p style="color:#6b7280;font-size:0.9em">持有2周~2-3个月，目标10%+，严格止损。</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -3399,8 +3479,14 @@ async function runStockAnalysis() {
   try {
     const r = await fetch('/api/stock/analyze', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
     const d = await r.json();
-    if (d.error) { res.innerHTML = '<p style="color:#f87171">'+d.error+'</p>'; }
-    else { res.innerHTML = _renderStockMd(d); d.symbol = sym; _cachePdfData('stockAnalysis', d); }
+    if (d.error) {
+      res.innerHTML = '<p style="color:#f87171">'+d.error+'</p>';
+      _cachePdfData('stockAnalysis', {symbol: sym, _local_error: d.error});
+    } else {
+      res.innerHTML = _renderStockMd(d);
+      d.symbol = sym;
+      _cachePdfData('stockAnalysis', d);
+    }
     st.textContent = useDs ? 'DeepSeek 分析中...' : '';
   } catch(e) { res.innerHTML = '<p style="color:#f87171">请求失败: '+e.message+'</p>'; st.textContent = ''; }
   document.getElementById('btnStockAnalyze').disabled = false;
@@ -3424,6 +3510,13 @@ async function runStockAnalysis() {
           h += '<div style="font-size:0.72em;color:#64748b;text-align:right;margin-top:8px">Model: ' + (d2.model||'') + ' | Tokens: ' + d2.usage.total_tokens + '</div>';
         }
         resDs.innerHTML = h;
+        // 将 DeepSeek 报告合并进 stockAnalysis 缓存，确保导出 PDF 时可用
+        var cached = _pdfDataCache['stockAnalysis'] || {symbol: sym};
+        cached.symbol = sym;
+        cached.deepseek_report = d2.report || '';
+        if (d2.reasoning) cached.deepseek_reasoning = d2.reasoning;
+        if (!cached.date) cached.date = new Date().toISOString().split('T')[0];
+        _cachePdfData('stockAnalysis', cached);
       }
       st.textContent = '';
     } catch(e2) {
@@ -3648,6 +3741,8 @@ async function pollScanStatus() {
     } else if (d.status === 'layer3') {
       var l3mode = d.layer3_mode === 'deepseek+local' ? 'Layer 3: &#128171; DeepSeek + 本地 LLM 判断...' : 'Layer 3: LLM综合评分...';
       bar.style.width = '90%'; txt.textContent = ''; phase.textContent = l3mode;
+    } else if (d.status === 'layer3_recheck') {
+      bar.style.width = '92%'; txt.textContent = ''; phase.textContent = 'Layer 3.5: &#128171; 深度分析复核 ' + (d.recheck_current || '') + ' (保证与深度分析一致)';
     } else if (d.status === 'comprehensive') {
       bar.style.width = '93%'; txt.textContent = ''; phase.textContent = '综合分析: ' + (d.comprehensive_current || '运行中...');
     } else if (d.status === 'deepseek') {
@@ -3686,12 +3781,14 @@ async function pollScanStatus() {
 }
 function renderScanResult(picks) {
   const el = document.getElementById('scanResult');
+  el.innerHTML = _buildScanResultHtml(picks);
+}
+function _buildScanResultHtml(picks) {
   if (!picks || picks.length === 0) {
-    el.innerHTML = '<div style="text-align:center;padding:24px">' +
+    return '<div style="text-align:center;padding:24px">' +
       '<p style="color:#fbbf24;font-size:1.1em;font-weight:600">本次扫描：暂无推荐</p>' +
       '<p style="color:#8b8fa4;font-size:0.85em;margin-top:8px">经过三层筛选，没有找到估值合理且值得买入的股票。</p>' +
       '<p style="color:#6b7280;font-size:0.8em">这是正常的 — "不推荐" 本身就是最好的建议。</p></div>';
-    return;
   }
   let h = '<div style="margin-bottom:12px"><h3 style="color:#fbbf24;margin:0 0 8px">✅ 推荐买入: ' + picks.length + ' 只</h3></div>';
   picks.forEach((p, i) => {
@@ -3716,6 +3813,11 @@ function renderScanResult(picks) {
     h += '</div>';
     if (p.buy_low && p.buy_high) h += '<div style="margin-top:6px;color:#38bdf8;font-size:0.83em">📊 建议买入区间: ¥' + p.buy_low + ' ~ ¥' + p.buy_high + '</div>';
     var judgeTag = p.judged_by === 'deepseek' ? '<span style="color:#3b82f6;font-size:0.75em;margin-left:8px">&#128300; DeepSeek判断</span>' : '<span style="color:#8b8fa4;font-size:0.75em;margin-left:8px">&#129302; 本地LLM判断</span>';
+    if (p.deepseek_verdict && p.deepseek_verdict.ok) {
+      var dv = p.deepseek_verdict;
+      var dvColor = dv.direction === '看多' ? '#22c55e' : (dv.direction === '看空' ? '#ef4444' : '#a0a4b8');
+      judgeTag += ' <span style="color:' + dvColor + ';font-size:0.75em">🔄 深度复核:' + dv.direction + '(' + (dv.confidence||0) + '%)</span>';
+    }
     if (p.reasoning) h += '<div style="margin-top:4px;color:#a3e635;font-size:0.85em">💡 ' + p.reasoning + judgeTag + '</div>';
     if (p.risk) h += '<div style="margin-top:2px;color:#f87171;font-size:0.8em">⚠️ ' + p.risk + '</div>';
     if (p.strategy) h += '<div style="margin-top:2px;color:#38bdf8;font-size:0.82em">📋 ' + p.strategy + '</div>';
@@ -3723,8 +3825,256 @@ function renderScanResult(picks) {
     if (p.deepseek) h += _renderDeepseekResult(p.deepseek, i);
     h += '</div>';
   });
-  el.innerHTML = h;
+  return h;
 }
+
+// --- Right-Side Trading Scanner ---
+let _rsPollTimer = null;
+function openRightSideModal() {
+  document.getElementById('rightSideModal').classList.add('open');
+  pollRightSideStatus();
+}
+function closeRightSideModal() {
+  document.getElementById('rightSideModal').classList.remove('open');
+  if (_rsPollTimer) { clearInterval(_rsPollTimer); _rsPollTimer = null; }
+}
+async function startRightSideScan() {
+  const st = document.getElementById('rsStatus');
+  st.textContent = '启动中...';
+  document.getElementById('btnRsStart').disabled = true;
+  document.getElementById('btnRsStop').disabled = false;
+  document.getElementById('rsProgress').style.display = 'block';
+  var useDs = document.getElementById('rsUseDeepseek').checked;
+  document.getElementById('rsResult').innerHTML = '<p style="color:#34d399">⏳ 正在扫描全市场右侧信号(资金反转+趋势确认)...' + (useDs ? ' (DeepSeek enabled)' : '') + '</p>';
+  try {
+    const r = await fetch('/api/stock/right_side/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({use_deepseek: useDs})});
+    const d = await r.json();
+    if (d.error) { st.textContent = d.error; document.getElementById('btnRsStart').disabled = false; return; }
+    st.textContent = '扫描进行中';
+    if (!_rsPollTimer) _rsPollTimer = setInterval(pollRightSideStatus, 3000);
+  } catch(e) { st.textContent = '启动失败'; document.getElementById('btnRsStart').disabled = false; }
+}
+async function stopRightSideScan() {
+  try { await fetch('/api/stock/right_side/stop', {method:'POST'}); } catch(e) {}
+  document.getElementById('rsStatus').textContent = '正在停止...';
+}
+async function pollRightSideStatus() {
+  try {
+    const r = await fetch('/api/stock/right_side/status');
+    const d = await r.json();
+    const st = document.getElementById('rsStatus');
+    const bar = document.getElementById('rsProgressBar');
+    const txt = document.getElementById('rsProgressText');
+    const phase = document.getElementById('rsPhase');
+    const prog = document.getElementById('rsProgress');
+    if (!d.status || d.status === 'idle') { return; }
+    prog.style.display = 'block';
+    bar.style.width = (d.progress || 0) + '%';
+    txt.textContent = (d.progress || 0) + '%';
+    phase.textContent = d.step || '';
+    if (d.status === 'running') {
+      st.textContent = '扫描进行中';
+      document.getElementById('btnRsStart').disabled = true;
+      document.getElementById('btnRsStop').disabled = false;
+    } else if (d.status === 'completed') {
+      bar.style.width = '100%'; txt.textContent = '完成';
+      st.textContent = '扫描完成';
+      document.getElementById('btnRsStart').disabled = false;
+      document.getElementById('btnRsStop').disabled = true;
+      if (_rsPollTimer) { clearInterval(_rsPollTimer); _rsPollTimer = null; }
+      loadRightSideResult();
+    } else if (d.status === 'failed') {
+      phase.textContent = '错误: ' + (d.error || '未知');
+      st.textContent = '扫描失败';
+      document.getElementById('btnRsStart').disabled = false;
+      document.getElementById('btnRsStop').disabled = true;
+      if (_rsPollTimer) { clearInterval(_rsPollTimer); _rsPollTimer = null; }
+    }
+  } catch(e) {}
+}
+async function loadRightSideResult() {
+  try {
+    const r = await fetch('/api/stock/right_side/result');
+    const d = await r.json();
+    if (d.error) {
+      document.getElementById('rsResult').innerHTML = '<p style="color:#ef4444">' + d.error + '</p>';
+      return;
+    }
+    renderRightSideResult(d.picks || [], d);
+  } catch(e) {
+    document.getElementById('rsResult').innerHTML = '<p style="color:#ef4444">加载结果失败: ' + e.message + '</p>';
+  }
+}
+function _escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function renderRightSideResult(picks, meta) {
+  const el = document.getElementById('rsResult');
+  el.innerHTML = _buildRightSideHtml(picks, meta);
+}
+function _buildRightSideHtml(picks, meta) {
+  if (!picks || picks.length === 0) {
+    return '<div style="text-align:center;padding:24px">' +
+      '<p style="color:#34d399;font-size:1.1em;font-weight:600">本次扫描：暂无右侧推荐</p>' +
+      '<p style="color:#8b8fa4;font-size:0.85em;margin-top:8px">今日无主力资金反转+趋势确认的右侧标的。</p>' +
+      '<p style="color:#6b7280;font-size:0.8em">右侧交易讲究耐心等待确认信号，无信号即不入场。</p></div>';
+  }
+  let h = '<div style="margin-bottom:12px"><h3 style="color:#34d399;margin:0 0 8px">✅ 右侧推荐买入: ' + picks.length + ' 只</h3>' +
+    '<span style="color:#8b8fa4;font-size:0.8em">入场类型: 右侧（资金反转+趋势确认后跟进）</span></div>';
+  picks.forEach((p, i) => {
+    var ff = p.ff_signals || {};
+    var mn3 = (ff.main_net_3d || 0) / 1e8;
+    var pct3 = ff.main_pct_3d || 0;
+    h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:12px;margin-bottom:8px">';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center">';
+    h += '<div><span style="color:#34d399;font-weight:700;font-size:1.1em">#' + (i+1) + '</span> ';
+    h += '<span style="color:#60a5fa;font-weight:600">' + _escapeHtml(p.name) + '</span> ';
+    h += '<span style="color:#8b8fa4">(' + p.symbol + ')</span></div>';
+    h += '<span style="color:#34d399;font-size:1.1em;font-weight:700">' + (p.final_score||0).toFixed(1) + '</span><span style="color:#8b8fa4;font-size:0.8em">/100</span>';
+    h += '</div>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:8px;font-size:0.85em">';
+    h += '<span>¥' + (p.price||'-') + '</span>';
+    h += '<span style="color:#34d399">资金反转: 3日净流入 ' + mn3.toFixed(2) + '亿 / 占比 ' + pct3.toFixed(2) + '%</span>';
+    if (p.price_above_ma5) h += '<span style="color:#34d399">站上MA5</span>';
+    if (p.ma20) h += '<span>MA20: ¥' + p.ma20 + '</span>';
+    h += '</div>';
+    if (p.buy_low && p.buy_high) h += '<div style="margin-top:6px;color:#38bdf8;font-size:0.83em">📊 建议买入区间: ¥' + p.buy_low + ' ~ ¥' + p.buy_high + '</div>';
+    if (p.stop_loss) h += '<div style="margin-top:4px;color:#f87171;font-size:0.83em">🛑 严格止损: ¥' + p.stop_loss + '</div>';
+    if (p.target_price) h += '<div style="margin-top:2px;color:#a3e635;font-size:0.83em">🎯 2-3个月目标: ¥' + p.target_price + '</div>';
+    var judgeTag = p.judged_by === 'deepseek' ? '<span style="color:#10b981;font-size:0.75em;margin-left:8px">🔬 DeepSeek右侧判断</span>' : '<span style="color:#8b8fa4;font-size:0.75em;margin-left:8px">🤖 本地LLM判断</span>';
+    if (p.reasoning) h += '<div style="margin-top:4px;color:#a3e635;font-size:0.85em">💡 ' + _escapeHtml(p.reasoning) + judgeTag + '</div>';
+    if (p.risk) h += '<div style="margin-top:2px;color:#f87171;font-size:0.8em">⚠️ ' + _escapeHtml(p.risk) + '</div>';
+    if (p.strategy) h += '<div style="margin-top:2px;color:#38bdf8;font-size:0.82em">📋 ' + _escapeHtml(p.strategy) + '</div>';
+    h += '</div>';
+  });
+  return h;
+}
+// --- Unified Scanner (left + right, shared data) ---
+let _uniPollTimer = null;
+function openUnifiedModal() {
+  document.getElementById('unifiedModal').classList.add('open');
+  // If a scan is already running, resume polling immediately
+  pollUnifiedStatus();
+  if (!_uniPollTimer) {
+    fetch('/api/stock/unified_scan/status').then(r => r.json()).then(d => {
+      if (d && d.status === 'running') {
+        _uniPollTimer = setInterval(pollUnifiedStatus, 3000);
+        document.getElementById('btnUniStart').disabled = true;
+        document.getElementById('btnUniStop').disabled = false;
+      } else {
+        loadUnifiedResult();
+      }
+    }).catch(() => loadUnifiedResult());
+  }
+}
+function closeUnifiedModal() {
+  document.getElementById('unifiedModal').classList.remove('open');
+  if (_uniPollTimer) { clearInterval(_uniPollTimer); _uniPollTimer = null; }
+}
+async function startUnifiedScan() {
+  const st = document.getElementById('uniStatus');
+  st.textContent = '启动中...';
+  document.getElementById('btnUniStart').disabled = true;
+  document.getElementById('btnUniStop').disabled = false;
+  document.getElementById('uniProgress').style.display = 'block';
+  var useDs = document.getElementById('uniUseDeepseek').checked;
+  document.getElementById('uniLeftResult').innerHTML = '<p style="color:#60a5fa">⏳ 共享行情抓取 + 左侧短期扫描...' + (useDs ? ' (DeepSeek enabled)' : '') + '</p>';
+  document.getElementById('uniRightResult').innerHTML = '<p style="color:#34d399">⏳ 等待左侧完成后启动右侧(资金反转)扫描...</p>';
+  // Start polling IMMEDIATELY (before the possibly-slow POST returns) to avoid UI freeze
+  if (!_uniPollTimer) _uniPollTimer = setInterval(pollUnifiedStatus, 3000);
+  try {
+    const r = await fetch('/api/stock/unified_scan/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({use_deepseek: useDs})});
+    const d = await r.json();
+    if (d.error) { st.textContent = d.error; document.getElementById('btnUniStart').disabled = false; return; }
+    st.textContent = '扫描进行中';
+  } catch(e) { st.textContent = '启动失败'; document.getElementById('btnUniStart').disabled = false; }
+}
+async function stopUnifiedScan() {
+  try { await fetch('/api/stock/unified_scan/stop', {method:'POST'}); } catch(e) {}
+  document.getElementById('uniStatus').textContent = '正在停止...';
+}
+async function pollUnifiedStatus() {
+  try {
+    const r = await fetch('/api/stock/unified_scan/status');
+    const d = await r.json();
+    const st = document.getElementById('uniStatus');
+    const bar = document.getElementById('uniProgressBar');
+    const txt = document.getElementById('uniProgressText');
+    const phase = document.getElementById('uniPhase');
+    const prog = document.getElementById('uniProgress');
+    if (!d.status || d.status === 'idle') {
+      // Backend reports no scan running — sync UI to reality
+      st.textContent = '未在运行';
+      document.getElementById('btnUniStart').disabled = false;
+      document.getElementById('btnUniStop').disabled = true;
+      return;
+    }
+    prog.style.display = 'block';
+    var pct = d.progress || 0;
+    bar.style.width = pct + '%';
+    txt.textContent = pct + '%';
+    var phaseLabel = '';
+    if (d.phase === 'market') phaseLabel = '🌐 共享行情抓取...';
+    else if (d.phase === 'left') phaseLabel = '◀ 左侧短期扫描: ' + (d.step || '');
+    else if (d.phase === 'right') phaseLabel = '▶ 右侧交易扫描: ' + (d.step || '');
+    else phaseLabel = d.step || '';
+    phase.innerHTML = phaseLabel;
+    // Live sub-status hints
+    if (d.left && d.left.status === 'layer2_in_progress') {
+      var done = d.left.analyzed_count || 0, total = d.left.layer1_count || d.left.total_stocks || 0;
+      if (total) document.getElementById('uniLeftResult').innerHTML = '<p style="color:#60a5fa">⏳ 左侧 Layer2 详细分析 ' + done + '/' + total + ' ...</p>';
+    }
+    if (d.right && d.right.status === 'running') {
+      document.getElementById('uniRightResult').innerHTML = '<p style="color:#34d399">⏳ 右侧扫描中: ' + _escapeHtml(d.right.step || '') + ' (' + (d.right.progress||0) + '%)</p>';
+    }
+    if (d.status === 'running') {
+      st.textContent = '扫描进行中';
+      document.getElementById('btnUniStart').disabled = true;
+      document.getElementById('btnUniStop').disabled = false;
+    } else if (d.status === 'done') {
+      bar.style.width = '100%'; txt.textContent = '完成';
+      st.textContent = '扫描完成';
+      document.getElementById('btnUniStart').disabled = false;
+      document.getElementById('btnUniStop').disabled = true;
+      if (_uniPollTimer) { clearInterval(_uniPollTimer); _uniPollTimer = null; }
+      loadUnifiedResult();
+    } else if (d.status === 'error') {
+      phase.innerHTML = '错误: ' + _escapeHtml(d.error || '未知');
+      st.textContent = '扫描失败';
+      document.getElementById('btnUniStart').disabled = false;
+      document.getElementById('btnUniStop').disabled = true;
+      if (_uniPollTimer) { clearInterval(_uniPollTimer); _uniPollTimer = null; }
+    } else if (d.status === 'stopped') {
+      st.textContent = '已停止';
+      document.getElementById('btnUniStart').disabled = false;
+      document.getElementById('btnUniStop').disabled = true;
+      if (_uniPollTimer) { clearInterval(_uniPollTimer); _uniPollTimer = null; }
+      loadUnifiedResult();
+    }
+  } catch(e) {}
+}
+async function loadUnifiedResult() {
+  try {
+    const r = await fetch('/api/stock/unified_scan/result');
+    const d = await r.json();
+    if (d.error) {
+      document.getElementById('uniLeftResult').innerHTML = '<p style="color:#ef4444">' + d.error + '</p>';
+      return;
+    }
+    var left = d.left || {};
+    var right = d.right || {};
+    var leftHtml = (!left || !left.top_picks) ? _buildScanResultHtml([]) : _buildScanResultHtml(left.top_picks || []);
+    var rightHtml = (!right || !right.picks) ? _buildRightSideHtml([], right) : _buildRightSideHtml(right.picks || [], right);
+    if (!left.top_picks && !left.date) leftHtml = '<p style="color:#6b7280">暂无左侧扫描结果（尚未扫描或正在运行）。</p>';
+    if (!right.picks && !right.date) rightHtml = '<p style="color:#6b7280">暂无右侧扫描结果（尚未扫描或正在运行）。</p>';
+    document.getElementById('uniLeftResult').innerHTML = leftHtml;
+    document.getElementById('uniRightResult').innerHTML = rightHtml;
+  } catch(e) {
+    document.getElementById('uniLeftResult').innerHTML = '<p style="color:#ef4444">加载结果失败: ' + e.message + '</p>';
+  }
+}
+
 function _renderDeepseekResult(ds, idx) {
   if (ds.error) {
     return '<div style="margin-top:8px;padding:8px 12px;background:#1c1113;border:1px solid #7f1d1d;border-radius:6px;font-size:0.8em;color:#f87171">DeepSeek: ' + ds.error + '</div>';

@@ -31,7 +31,8 @@ _STOCK_MODULES = [
     "model_price_predictor", "prediction_tracker", "llm_reasoning",
     "watchlist", "scanner", "long_term_scanner", "hot_sectors", "market_sentiment",
     "black_swan_detector", "china_market_data", "model_timing",
-    "backtest_engine", "midday_scanner",
+    "backtest_engine", "midday_scanner", "right_side_scanner",
+    "scan_cache", "unified_scanner",
 ]
 
 log = logging.getLogger(__name__)
@@ -157,8 +158,21 @@ def api_stock_analyze():
                 log.debug("资金流向分析 %s 失败: %s", symbol, e)
 
         if mode == "full":
-            from llm_reasoning import generate_prediction
-            result["prediction_report"] = generate_prediction(symbol, stream=False, realtime_quote=realtime, cost_price=cost_price)
+            try:
+                from llm_reasoning import generate_prediction
+                result["prediction_report"] = generate_prediction(
+                    symbol, stream=False, realtime_quote=realtime, cost_price=cost_price
+                )
+            except Exception as e:
+                log.warning("本地 Ollama 预测失败: %s", e)
+                result["prediction_report"] = (
+                    "## 本地 AI 预测不可用\n\n"
+                    f"无法连接本地 Ollama 服务 (`{_stock_config.OLLAMA_HOST}`)。\n\n"
+                    "**可能原因：**\n- Ollama 服务未启动\n- 端口 11434 被占用或防火墙拦截\n\n"
+                    "**解决方案：**\n1. 启动 Ollama 服务 (`ollama serve`)\n"
+                    "2. 或使用 DeepSeek 模式进行 AI 预测（在分析面板勾选 DeepSeek）\n\n"
+                    f"原始错误: {e}"
+                )
 
         return jsonify(result)
 
@@ -539,6 +553,141 @@ def api_stock_midday_result():
         if result:
             return jsonify(result)
         return jsonify({"error": "暂无午盘扫描结果"}), 404
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+# --- Right-Side Trading Scanner ---
+
+@stock_bp.route("/api/stock/right_side/start", methods=["POST"])
+@_with_stock_imports
+def api_stock_right_side_start():
+    """Start right-side trading scanner."""
+    try:
+        body = request.get_json(silent=True) or {}
+        use_ds = bool(body.get("use_deepseek", True))
+        from right_side_scanner import start_right_side_scan
+        result = start_right_side_scan(use_deepseek=use_ds)
+        return jsonify(result)
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/right_side/status", methods=["GET"])
+@_with_stock_imports
+def api_stock_right_side_status():
+    """Get right-side scan progress and status."""
+    try:
+        from right_side_scanner import get_right_side_scan_status
+        return jsonify(get_right_side_scan_status())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/right_side/stop", methods=["POST"])
+@_with_stock_imports
+def api_stock_right_side_stop():
+    """Stop running right-side scan."""
+    try:
+        from right_side_scanner import stop_right_side_scan
+        return jsonify(stop_right_side_scan())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/right_side/result", methods=["GET"])
+@_with_stock_imports
+def api_stock_right_side_result():
+    """Get latest right-side scan result."""
+    try:
+        from right_side_scanner import get_latest_right_side_result
+        result = get_latest_right_side_result()
+        if result:
+            return jsonify(result)
+        return jsonify({"error": "暂无右侧扫描结果"}), 404
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/right_side/dates", methods=["GET"])
+@_with_stock_imports
+def api_stock_right_side_dates():
+    """List available right-side scan dates."""
+    try:
+        from right_side_scanner import list_right_side_scan_dates
+        return jsonify({"dates": list_right_side_scan_dates()})
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/right_side/result/<date_str>", methods=["GET"])
+@_with_stock_imports
+def api_stock_right_side_result_by_date(date_str):
+    """Get right-side scan result for a specific date."""
+    try:
+        from right_side_scanner import get_right_side_result_by_date
+        result = get_right_side_result_by_date(date_str)
+        if result:
+            return jsonify(result)
+        return jsonify({"error": "该日期无右侧扫描结果"}), 404
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+# --- Unified Scanner (left short-term + right-side, shared data) ---
+
+@stock_bp.route("/api/stock/unified_scan/start", methods=["POST"])
+@_with_stock_imports
+def api_stock_unified_scan_start():
+    """Start unified scan: shared market data -> left + right reports."""
+    try:
+        body = request.get_json(silent=True) or {}
+        use_ds = bool(body.get("use_deepseek", True))
+        from unified_scanner import start_unified_scan
+        return jsonify(start_unified_scan(use_deepseek=use_ds))
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/unified_scan/status", methods=["GET"])
+@_with_stock_imports
+def api_stock_unified_scan_status():
+    """Get unified scan progress (phase + sub-scanner statuses)."""
+    try:
+        from unified_scanner import get_unified_scan_status
+        return jsonify(get_unified_scan_status())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/unified_scan/stop", methods=["POST"])
+@_with_stock_imports
+def api_stock_unified_scan_stop():
+    """Stop running unified scan."""
+    try:
+        from unified_scanner import stop_unified_scan
+        return jsonify(stop_unified_scan())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/unified_scan/result", methods=["GET"])
+@_with_stock_imports
+def api_stock_unified_scan_result():
+    """Get latest unified scan result (left + right)."""
+    try:
+        from unified_scanner import get_latest_unified_result
+        return jsonify(get_latest_unified_result())
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500

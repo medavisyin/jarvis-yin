@@ -22,6 +22,8 @@ last-updated: 2026-04-22
 | **Understand the code** | [Implementation Index](implementation/README.md) |
 | **Learn RAG concepts** | [Learning Chapters](learning/) (Ch. 1–8) |
 | **Use stock features** | [Stock Usage Guide (中文)](guides/stock-usage-guide.md) |
+| **股票推荐策略(小白)** | [Stock Strategy Guide (中文)](guides/stock-strategy-guide.md) — 左右侧交易原理与报告解读 |
+| **新增股票策略(开发)** | [New Strategy Guide (中文)](guides/stock-new-strategy-guide.md) — 插件接口规范与模板 |
 | **Learn stock investing** | [Stock Learning Track (中文)](learning/stock/) — 从零到合格投资者 |
 | **Use Telegram remote** | [Telegram Bot Guide](guides/telegram-bot-guide.md) |
 | **See the roadmap** | [Enhancement Plan](plans/2026-04-17-jarvis-next.md) |
@@ -42,6 +44,8 @@ docs/
 ├── guides/                      # User-facing guides
 │   ├── stock-usage-guide.md     # 股票使用指南 (Chinese)
 │   ├── stock-knowledge-guide.md # 股票知识入门 (Chinese)
+│   ├── stock-strategy-guide.md  # 股票推荐策略指南·小白向 (Chinese)
+│   ├── stock-new-strategy-guide.md # 新增股票策略·插件接口规范 (Chinese)
 │   └── telegram-bot-guide.md    # Telegram remote control guide
 │
 ├── implementation/              # Developer implementation docs
@@ -94,6 +98,8 @@ docs/
 |----------|-------------|
 | [股票知识入门](guides/stock-knowledge-guide.md) | A股基础、K线、技术指标、基本面、情绪分析、机器学习预测 (中文) |
 | [股票使用指南](guides/stock-usage-guide.md) | 关注列表、数据获取、分析报告、ML预测、决策参考 (中文) |
+| [股票推荐策略指南(小白)](guides/stock-strategy-guide.md) | 左侧/右侧交易原理、统一扫描入口、报告解读、交易纪律 (中文) |
+| [新增股票策略指南(开发)](guides/stock-new-strategy-guide.md) | 策略插件接口规范、模块模板、接入统一扫描器检查清单 (中文) |
 | [Telegram 远程控制](guides/telegram-bot-guide.md) | Telegram Bot 远程命令指南: 每日抓取、搜索、AI问答、股票分析 |
 
 ## Implementation Docs
