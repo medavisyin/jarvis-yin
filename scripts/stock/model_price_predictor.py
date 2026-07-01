@@ -292,6 +292,7 @@ def train_price_prediction(symbol: str) -> dict:
     predictions = {}
     wf_results = {}
     best_importances = None
+    n_features_used = None
     decay_rate = 0.002
 
     for target_name in _TARGETS:
@@ -300,15 +301,13 @@ def train_price_prediction(symbol: str) -> dict:
             continue
 
         valid = df.dropna(subset=[target_col]).copy()
-        
-        # Optimize feature selection: perform target-specific correlation filtering
-        target_cols = list(valid_cols)
-        if len(target_cols) > _MAX_FEATURES:
-            log.info("%s/%s: 特征 %d 超过上限 %d, 进行裁剪", symbol, target_name, len(target_cols), _MAX_FEATURES)
-            target_cols = _select_top_features(valid, target_cols, valid[target_col], _MAX_FEATURES)
+        y_series = valid[target_col]
 
-        X_all = valid[target_cols].replace([np.inf, -np.inf], np.nan)
-        y_all = valid[target_col].values
+        # Full feature pool; selection happens per-fold and for the final model using
+        # TRAINING data only, to avoid look-ahead leakage from future test rows.
+        pool_cols = list(valid_cols)
+        X_all = valid[pool_cols].replace([np.inf, -np.inf], np.nan)
+        y_all = y_series.values
 
         n = len(X_all)
         train_size = min(_TRAIN_WINDOW, n - _TEST_WINDOW - 1)
@@ -331,12 +330,22 @@ def train_price_prediction(symbol: str) -> dict:
                 break
             train_start = train_end - train_size
 
-            X_tr = X_all.iloc[train_start:train_end].values
+            # Per-fold feature selection on the TRAINING slice only (no look-ahead)
+            fold_cols = pool_cols
+            if len(fold_cols) > _MAX_FEATURES:
+                fold_cols = _select_top_features(
+                    X_all.iloc[train_start:train_end],
+                    pool_cols,
+                    y_series.iloc[train_start:train_end],
+                    _MAX_FEATURES,
+                )
+
+            X_tr = X_all[fold_cols].iloc[train_start:train_end].values
             y_tr = y_all[train_start:train_end]
-            X_te = X_all.iloc[test_start:test_end].values
+            X_te = X_all[fold_cols].iloc[test_start:test_end].values
             y_te = y_all[test_start:test_end]
 
-            X_tr, X_te, _ = _impute_fold(X_tr, X_te, target_cols)
+            X_tr, X_te, _ = _impute_fold(X_tr, X_te, fold_cols)
 
             # Recency Weighting for training samples (exponential decay weight)
             n_tr = len(X_tr)
@@ -373,9 +382,22 @@ def train_price_prediction(symbol: str) -> dict:
 
         final_train_end = n
         final_train_start = max(0, final_train_end - train_size)
-        X_final_raw = X_all.iloc[final_train_start:final_train_end].values
+
+        # Final-model feature selection on the final TRAINING window only — this window
+        # ends before tomorrow's prediction point, so there is no look-ahead vs the forecast.
+        final_cols = pool_cols
+        if len(final_cols) > _MAX_FEATURES:
+            log.info("%s/%s: 特征 %d 超过上限 %d, 进行裁剪", symbol, target_name, len(final_cols), _MAX_FEATURES)
+            final_cols = _select_top_features(
+                X_all.iloc[final_train_start:final_train_end],
+                pool_cols,
+                y_series.iloc[final_train_start:final_train_end],
+                _MAX_FEATURES,
+            )
+
+        X_final_raw = X_all[final_cols].iloc[final_train_start:final_train_end].values
         y_final = y_all[final_train_start:final_train_end]
-        final_df = pd.DataFrame(X_final_raw, columns=target_cols)
+        final_df = pd.DataFrame(X_final_raw, columns=final_cols)
         final_medians = final_df.median()
         final_df.fillna(final_medians, inplace=True)
 
@@ -392,8 +414,13 @@ def train_price_prediction(symbol: str) -> dict:
 
         final_model.fit(final_df.values, y_final, sample_weight=final_weights, verbose=False)
 
-        latest_raw = X_all.iloc[[-1]].copy()
-        latest_raw.fillna(final_medians, inplace=True)
+        # Predict TOMORROW using TODAY's features. The last row of df has a NaN target
+        # (it depends on the unknown next bar) but fully-available backward-looking features.
+        # Previously we predicted from X_all's last row (= df's second-to-last row), which
+        # forecast the already-realized bar while the tracker scored it against tomorrow —
+        # an off-by-one that collapsed direction accuracy toward random.
+        latest_raw = df[final_cols].iloc[[-1]].replace([np.inf, -np.inf], np.nan)
+        latest_raw = latest_raw.fillna(final_medians)
         pred_pct = float(final_model.predict(latest_raw.values)[0])
         predictions[target_name] = pred_pct  # store raw % temporarily
 
@@ -411,14 +438,15 @@ def train_price_prediction(symbol: str) -> dict:
         }
 
         if target_name == "close":
+            n_features_used = len(final_cols)
             importances = final_model.feature_importances_
             best_importances = sorted(
-                [{"name": target_cols[i], "importance": round(float(importances[i]), 4)}
-                 for i in range(len(target_cols))],
+                [{"name": final_cols[i], "importance": round(float(importances[i]), 4)}
+                 for i in range(len(final_cols))],
                 key=lambda x: x["importance"], reverse=True
             )[:15]
 
-        _save_model(symbol, target_name, final_model, target_cols)
+        _save_model(symbol, target_name, final_model, final_cols)
 
     if not predictions:
         return {"error": "所有目标训练失败", "symbol": symbol}
@@ -456,18 +484,33 @@ def train_price_prediction(symbol: str) -> dict:
 
     confidence = _compute_confidence(wf_results, change_pct)
 
+    # Direction label: a flat 0% forecast is "震荡"; a non-zero move within the model's
+    # own historical error band (signal_strength == "noise") is "方向不确定"; otherwise 看涨/看跌.
+    close_pct = change_pct.get("close", 0)
+    if close_pct == 0:
+        direction_label = "震荡"
+    elif confidence.get("signal_strength") == "noise":
+        direction_label = "方向不确定"
+    elif close_pct > 0:
+        direction_label = "看涨"
+    else:
+        direction_label = "看跌"
+
     result = {
         "symbol": symbol,
         "predictions": predictions,
         "current_close": current_close,
         "change_pct": change_pct,
+        "direction_label": direction_label,
         "confidence": confidence,
         "walk_forward": wf_results,
         "feature_importance": best_importances or [],
         "model_info": {
             "algorithm": "XGBoost Regressor (Time Weighted)",
             "train_window": min(_TRAIN_WINDOW, len(df) - _TEST_WINDOW - 1),
-            "n_features": len(valid_cols),
+            "n_features": n_features_used or len(valid_cols),
+            "n_feature_pool": len(valid_cols),
+            "wf_note": "验证指标基于逐折重选特征计算，与最终模型特征子集可能不同，仅供诊断参考。",
             "n_data_rows": len(df),
             "targets": list(predictions.keys()),
             "predicted_at": datetime.now().isoformat(),
@@ -795,9 +838,14 @@ def generate_price_report(symbol: str, result: dict | None = None) -> str:
     lines = [f"# {symbol} 明日价格预测", ""]
 
     if preds.get("close"):
-        direction = "涨" if chg.get("close", 0) > 0 else "跌" if chg.get("close", 0) < 0 else "平"
-        icon = {"涨": "🟢", "跌": "🔴", "平": "⚪"}[direction]
-        lines.append(f"> {icon} 预测方向: **{direction}** | 当前价: ¥{current}")
+        direction_label = result.get("direction_label")
+        if direction_label:
+            icon = {"看涨": "🔺", "看跌": "🔻", "震荡": "➖", "方向不确定": "❓"}.get(direction_label, "➖")
+            lines.append(f"> {icon} 预测方向: **{direction_label}** | 当前价: ¥{current}")
+        else:
+            direction = "涨" if chg.get("close", 0) > 0 else "跌" if chg.get("close", 0) < 0 else "平"
+            icon = {"涨": "🟢", "跌": "🔴", "平": "⚪"}[direction]
+            lines.append(f"> {icon} 预测方向: **{direction}** | 当前价: ¥{current}")
         lines.append("")
 
     lines.append("## 预测价格")

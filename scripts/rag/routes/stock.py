@@ -785,6 +785,7 @@ def api_stock_train_daily():
                         "name": stock.get("name", ""),
                         "predictions": result.get("predictions"),
                         "change_pct": result.get("change_pct"),
+                        "direction_label": result.get("direction_label"),
                         "current_close": result.get("current_close"),
                         "health": stats.get("health"),
                         "deepseek": result.get("deepseek"),

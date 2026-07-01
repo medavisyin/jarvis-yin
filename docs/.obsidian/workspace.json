@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "guides/stock-strategy-guide.md",
+                "file": "learning/stock/ch2-financial-statements.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "stock-strategy-guide"
+              "title": "ch2-financial-statements"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "guides/stock-strategy-guide.md",
+                "file": "learning/stock/ch2-financial-statements.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for stock-strategy-guide"
+              "title": "Backlinks for ch2-financial-statements"
             }
           },
           {
@@ -198,9 +198,10 @@
   },
   "active": "1a33da195f7729e0",
   "lastOpenFiles": [
+    "learning/stock/ch1-stock-market-basics.md",
+    "guides/stock-strategy-guide.md",
     "guides/stock-new-strategy-guide.md",
     "guides/stock-knowledge-guide.md",
-    "guides/stock-strategy-guide.md",
     "Untitled Kanban.md",
     "demo/1/jarvis-rag-slides.md",
     "demo/1/demo-script.md",

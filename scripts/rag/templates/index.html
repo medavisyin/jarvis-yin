@@ -4856,25 +4856,25 @@ function renderFullTrainReport(verifications, results, sentiment, blackSwan, agg
   if (valid.length > 0) {
     h += '<h3 style="color:#10b981;margin:12px 0 10px">&#127919; 明日价格预测</h3>';
     h += '<table style="width:100%;border-collapse:collapse;font-size:0.84em">';
-    h += '<tr style="border-bottom:1px solid #2a2d3e;color:#8b8fa4"><th style="text-align:left;padding:6px">股票</th><th>当前价</th><th>预测收盘</th><th>预测最高</th><th>预测最低</th><th>涨跌幅</th><th>健康</th></tr>';
-    results.forEach(r => {
-      if (r.error) {
-        h += '<tr style="border-bottom:1px solid #1a1d2e"><td style="padding:6px">' + r.symbol + '</td><td colspan="6" style="color:#f87171;padding:6px">' + r.error + '</td></tr>';
-        return;
-      }
+    h += '<tr style="border-bottom:1px solid #2a2d3e;color:#8b8fa4"><th style="text-align:left;padding:6px">股票</th><th>当前价</th><th>预测收盘</th><th>预测最高</th><th>预测最低</th><th>涨跌幅/方向</th><th>健康</th></tr>';
+    valid.forEach(r => {
       const p = r.predictions || {};
       const c = r.change_pct || {};
       const chgVal = c.close || 0;
       const chgColor = chgVal > 0 ? '#ef4444' : chgVal < 0 ? '#10b981' : '#8b8fa4';
       const chgSign = chgVal > 0 ? '+' : '';
       const hl = r.health || {};
+      const dirLabel = r.direction_label || '';
+      const dirColor = dirLabel === '看涨' ? '#ef4444' : dirLabel === '看跌' ? '#10b981' : '#8b8fa4';
       h += '<tr style="border-bottom:1px solid #1a1d2e">';
       h += '<td style="padding:6px;font-weight:600">' + (r.name || r.symbol) + '<br><span style="color:#8b8fa4;font-weight:400;font-size:0.85em">' + r.symbol + '</span></td>';
       h += '<td style="text-align:center;padding:6px;color:#8b8fa4">' + (r.current_close ? '&yen;'+r.current_close.toFixed(2) : '-') + '</td>';
       h += '<td style="text-align:center;padding:6px;color:#fbbf24;font-weight:600">&yen;' + (p.close||0).toFixed(2) + '</td>';
       h += '<td style="text-align:center;padding:6px;color:#ef4444">&yen;' + (p.high||0).toFixed(2) + '</td>';
       h += '<td style="text-align:center;padding:6px;color:#10b981">&yen;' + (p.low||0).toFixed(2) + '</td>';
-      h += '<td style="text-align:center;padding:6px;color:' + chgColor + ';font-weight:600">' + chgSign + chgVal.toFixed(2) + '%</td>';
+      h += '<td style="text-align:center;padding:6px;color:' + chgColor + ';font-weight:600">' + chgSign + chgVal.toFixed(2) + '%';
+      if (dirLabel) h += '<div style="font-size:0.82em;color:' + dirColor + ';font-weight:600;margin-top:2px">' + dirLabel + '</div>';
+      h += '</td>';
       h += '<td style="text-align:center;padding:6px"><span style="color:' + (hl.color||'#8b8fa4') + ';font-weight:700">' + (hl.grade||'-') + '</span></td>';
       h += '</tr>';
 
@@ -4918,15 +4918,6 @@ function renderFullTrainReport(verifications, results, sentiment, blackSwan, agg
       }
     });
     h += '</table>';
-  }
-
-  // === Section 4: Errors ===
-  const errors = results.filter(r => r.error);
-  if (errors.length > 0) {
-    h += '<div style="margin-top:12px;font-size:0.8em;color:#f87171">';
-    h += '<b>训练失败:</b> ';
-    h += errors.map(r => r.symbol + '(' + r.error + ')').join(', ');
-    h += '</div>';
   }
 
   el.innerHTML = h || '<p style="color:#6b7280">暂无结果</p>';

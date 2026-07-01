@@ -1,7 +1,7 @@
 # 预测追踪系统 — 详细功能文档
 
 **文件路径**: `scripts/stock/prediction_tracker.py`  
-**最后更新**: 2026-04-27
+**最后更新**: 2026-07-01
 
 ---
 
@@ -33,6 +33,7 @@
 ### 3.1 核心数据结构
 
 - **单条 `entry`（`record_prediction` 写入）** 字段含: `prediction_date`（与 `latest_date` 一致）、`target_date`（回填后）、`predicted_at`、`current_close`、`predicted_{close,high,low}`、`actual_*`、**误差** 与 `error_pct_*`、`direction_correct` 等。  
+  > **对齐说明（2026-07-01）**: `prediction_date = model_price_predictor` 里 `df["date"].iloc[-1]`（最新交易日）；`backfill_actuals` 取 **`date > prediction_date` 的首行** 作为"下一根"实际值。因此 `predicted_close` 必须是用 **`df` 最后一行（今日）特征** 预测"明日"的产物。2026-07-01 前预测器误用 `df` 倒数第二行特征（off-by-one），导致 `predicted_close` 实为"今日已实现收益"的预测、却被按"明日实际"评估，方向准确率塌到 ~44%。修复后两端对齐，方向准确率回到 50% 附近（市场近有效，不会显著更高）。
 - **存储位置**: `os.path.join(STOCK_DATA_DIR, symbol, "predictions_log.json")`（`config` 中 `STOCK_DATA_DIR` 为 `C:/reports/stock/data` 下默认）。与模块文件头 `C:/reports/stock/data` 的表述 **一致**（通过 config）。  
 - **列表按 `prediction_date` 字符串排序** 后保存。
 
