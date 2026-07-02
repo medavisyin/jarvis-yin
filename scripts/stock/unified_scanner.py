@@ -132,8 +132,8 @@ def _fetch_shared_market_df():
     """Fetch full A-share snapshot once, with fallbacks. Reuses both scanners' helpers."""
     _ensure_path()
     import akshare as ak
-    import right_side_scanner as rss
-    import scanner as _sc
+    rss = _safe_import("right_side_scanner")
+    _sc = _safe_import("scanner")
 
     df = None
     try:
@@ -219,12 +219,36 @@ def _ensure_stock_config():
         sys.modules.pop(m, None)
 
 
+def _safe_import(name: str, retries: int = 5):
+    """Import a stock sub-module, retrying after re-fixing config on ImportError.
+
+    The start route's `_with_stock_imports` decorator restores
+    `sys.modules['config']` to the RAG config in its `finally` — which can
+    race with this background thread's `_ensure_stock_config()` and clobber
+    config mid-import, producing
+    `ImportError: cannot import name 'STOCK_DATA_DIR' from 'config'`.
+    The clobber happens once (at start-route return); subsequent status
+    polls preserve whatever config the thread sets. So re-fixing config and
+    retrying reliably succeeds.
+    """
+    import importlib
+    last_err = None
+    for _ in range(retries):
+        _ensure_stock_config()
+        try:
+            return importlib.import_module(name)
+        except ImportError as e:
+            last_err = e
+            log.warning("导入 %s 失败 (%s), 重新修复 stock config 后重试...", name, e)
+            time.sleep(0.3)
+    raise last_err
+
+
 def _run_unified_inner(use_deepseek: bool = False):
     """Background orchestration: shared market fetch -> left scan -> right scan."""
     try:
         _ensure_path()
-        _ensure_stock_config()
-        import scan_cache
+        scan_cache = _safe_import("scan_cache")
         scan_cache.reset()
 
         # --- shared Layer 1 ------------------------------------------------
@@ -236,17 +260,11 @@ def _run_unified_inner(use_deepseek: bool = False):
             return
         log.info("统一扫描: 共享行情 %d 只股票", len(df))
 
-        # inject shared snapshot into both scanners
-        try:
-            import scanner as _sc
-            _sc.set_shared_market_df(df)
-        except Exception as e:
-            log.warning("注入 scanner 共享行情失败: %s", e)
-        try:
-            import right_side_scanner as _rss
-            _rss.set_shared_market_df(df)
-        except Exception as e:
-            log.warning("注入 right_side_scanner 共享行情失败: %s", e)
+        # Shared snapshot is passed directly into each scanner's start call
+        # (via the market_df argument) rather than via module globals — the
+        # scanners' module globals get reset whenever _safe_import re-imports
+        # the module, which previously wiped the injected df and forced a
+        # second slow akshare fetch in the right-side scan.
 
         if _stop_event.is_set():
             _set_status(status="stopped", step="已停止")
@@ -254,18 +272,17 @@ def _run_unified_inner(use_deepseek: bool = False):
 
         # --- left scan (short-term) ---------------------------------------
         _set_status(phase="left", step="启动左侧短期扫描...", progress=12)
-        _ensure_stock_config()
-        import scanner as _sc
+        _sc = _safe_import("scanner")
         # clear any prior stop signal / state
         try:
             _sc._stop_event.clear()
         except Exception:
             pass
-        started = _sc.start_scan(use_deepseek)
+        started = _sc.start_scan(use_deepseek, market_df=df)
         if not started.get("ok"):
             # maybe a lingering thread; wait briefly and retry once
             time.sleep(2)
-            started = _sc.start_scan(use_deepseek)
+            started = _sc.start_scan(use_deepseek, market_df=df)
         if started.get("ok"):
             left_st = _wait_for(_sc.get_scan_status,
                                 done_keys={"done", "completed", "error", "stopped"},
@@ -276,25 +293,24 @@ def _run_unified_inner(use_deepseek: bool = False):
 
         if _stop_event.is_set():
             _set_status(status="stopped", step="已停止")
-            _cleanup_shared_df()
             return
 
         # --- right scan (right-side) --------------------------------------
         _set_status(phase="right", step="启动右侧交易扫描...", progress=58)
-        # Re-establish stock config: status polls between left/right may have
-        # restored sys.modules['config'] to the RAG config. right_side's thread
-        # does NOT self-fix config (unlike scanner), so it must start under the
-        # stock config.
-        _ensure_stock_config()
-        import right_side_scanner as _rss
+        # right_side's thread does NOT self-fix config (unlike scanner), so it
+        # must start under the stock config. _safe_import re-fixes config and
+        # retries on ImportError — the start route's _with_stock_imports
+        # decorator can clobber sys.modules['config'] back to the RAG config
+        # mid-import right after this thread is spawned.
+        _rss = _safe_import("right_side_scanner")
         try:
             _rss._stop_event.clear()
         except Exception:
             pass
-        started_r = _rss.start_right_side_scan(use_deepseek)
+        started_r = _rss.start_right_side_scan(use_deepseek, market_df=df)
         if not started_r.get("ok"):
             time.sleep(2)
-            started_r = _rss.start_right_side_scan(use_deepseek)
+            started_r = _rss.start_right_side_scan(use_deepseek, market_df=df)
         if started_r.get("ok"):
             right_st = _wait_for(_rss.get_right_side_scan_status,
                                  done_keys={"done", "completed", "error", "stopped"},
@@ -302,8 +318,6 @@ def _run_unified_inner(use_deepseek: bool = False):
         else:
             right_st = {"status": "error", "error": started_r.get("error", "无法启动右侧扫描")}
             _set_status(right=right_st)
-
-        _cleanup_shared_df()
 
         # --- finalize ------------------------------------------------------
         final_left = _sc.get_scan_status() if _sc else None
@@ -321,20 +335,6 @@ def _run_unified_inner(use_deepseek: bool = False):
     except Exception as e:
         log.exception("统一扫描线程异常")
         _set_status(status="error", phase="error", step="异常", error=str(e))
-        _cleanup_shared_df()
-
-
-def _cleanup_shared_df():
-    try:
-        import scanner as _sc
-        _sc.clear_shared_market_df()
-    except Exception:
-        pass
-    try:
-        import right_side_scanner as _rss
-        _rss.clear_shared_market_df()
-    except Exception:
-        pass
 
 
 def get_latest_unified_result() -> dict:

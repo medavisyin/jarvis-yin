@@ -41,18 +41,28 @@ stock_bp = Blueprint("stock", __name__)
 
 
 def _with_stock_imports(fn):
-    """Decorator that swaps sys.modules['config'] to stock config for the call.
+    """Decorator that swaps sys.modules['config'] to the stock config for the call.
 
-    Also flushes cached stock modules so they re-import with the correct
-    config — prevents 'cannot import STOCK_DATA_DIR from config' when
-    a stock module was first imported with the parent scripts/config.py.
+    Only swaps the ``config`` module — does NOT pop/re-import the stock
+    sub-modules. The scan thread's ``_safe_import`` / ``_ensure_stock_config``
+    already keeps the stock modules fresh with the correct config, and
+    aggressively popping + re-importing all stock modules on EVERY request
+    raced with that background thread (import-lock contention plus concurrent
+    ``sys.modules`` mutation). That race previously made status polls hang for
+    minutes while a scan was running, and occasionally surfaced as
+    ``KeyError('right_side_scanner')`` / ``KeyError('scanner')``.
+
+    Stock modules present in ``sys.modules`` were loaded under the stock config
+    (an import that failed because the RAG config lacked ``STOCK_*`` names
+    would not have been cached), so ``from <module> import ...`` resolves via
+    the cached module without re-executing the top-level. Modules not yet
+    loaded are imported here under the swapped stock config.
     """
     import functools
 
     @functools.wraps(fn)
     def wrapper(*args, **kwargs):
         prev_config = sys.modules.get("config")
-        prev_mods = {m: sys.modules.pop(m) for m in _STOCK_MODULES if m in sys.modules}
 
         sys.modules["config"] = _stock_config
         if _stock_path not in sys.path:
@@ -60,9 +70,6 @@ def _with_stock_imports(fn):
         try:
             return fn(*args, **kwargs)
         finally:
-            for m in _STOCK_MODULES:
-                if m in sys.modules and m != "config":
-                    del sys.modules[m]
             if prev_config is not None:
                 sys.modules["config"] = prev_config
             elif "config" in sys.modules:

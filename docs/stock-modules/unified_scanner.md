@@ -1,7 +1,7 @@
 # 统一扫描编排器 (unified_scanner) — 详细功能文档
 
 **文件路径**: `scripts/stock/unified_scanner.py`
-**最后更新**: 2026-07-01
+**最后更新**: 2026-07-02
 
 ---
 
@@ -23,7 +23,9 @@
 
 ### 2.1 状态持久化到 `sys`（关键）
 
-Flask 路由的 `_with_stock_imports` 装饰器每次请求都会 `sys.modules.pop` 并重新导入本模块，模块级全局变量会被重置。若状态放在模块级，后台扫描线程跑在"孤儿"模块实例里更新自己的状态，而 status 接口读到新实例的初始 `idle` → 前端永远卡在"扫描进行中"。
+历史背景：`_with_stock_imports` 装饰器**曾经**在每次请求时 `sys.modules.pop` 并重新导入所有 stock 模块，模块级全局变量会被重置；若状态放在模块级，后台扫描线程跑在"孤儿"模块实例里更新自己的状态，而 status 接口读到新实例的初始 `idle` → 前端永远卡在"扫描进行中"。
+
+**2026-07-02 起**，`_with_stock_imports` 改为**非破坏式**——只切换 `sys.modules['config']`，不再 pop stock 子模块（见 `api-routes-impl.md`）。但**扫描线程自身的 `_safe_import` / `_ensure_stock_config` 仍会在扫描过程中 pop 并重导入 `scanner`/`right_side_scanner` 等模块**，所以模块级全局依然不可靠。因此运行期可变状态**仍必须**挂 `sys`：
 
 **解法**: 所有运行期可变状态挂 `sys`：
 - `sys._unified_status`（dict）
@@ -33,11 +35,13 @@ Flask 路由的 `_with_stock_imports` 装饰器每次请求都会 `sys.modules.p
 
 模块级名字每次重导入只 re-bind 到同一 `sys` 对象（`_init_sys_state()`）。`right_side_scanner` 用同样手法（`sys._rs_*`）。`scanner` 则用进度文件落盘。
 
-> **教训（通用规则）**：任何被 `_with_stock_imports` 重新导入的扫描器模块，运行期可变状态必须挂 `sys` 或落盘，不能放模块级全局。
+> **教训（通用规则）**：任何会被 `_safe_import` 重新导入的扫描器模块（扫描线程运行期间），运行期可变状态必须挂 `sys` 或落盘，不能放模块级全局。
 
 ### 2.2 后台线程内的 stock config 强制重载（关键）
 
-统一扫描的后台线程在 `_with_stock_imports` 装饰器 `finally` 退出后才运行，此时 `sys.modules['config']` 已被恢复成 RAG config（无 `STOCK_DATA_DIR` 等），且 stock 模块缓存被清空。若直接 `import right_side_scanner`，其顶层 `from config import STOCK_DATA_DIR` 会 `ImportError`。
+统一扫描的后台线程在 `_with_stock_imports` 装饰器 `finally` 退出后才运行，此时 `sys.modules['config']` 已被恢复成 RAG config（无 `STOCK_DATA_DIR` 等）。若直接 `import right_side_scanner`，其顶层 `from config import STOCK_DATA_DIR` 会 `ImportError`。
+
+> 注：2026-07-02 起 `_with_stock_imports` 不再清空 stock 模块缓存（只切 config），但 `finally` 仍会把 `sys.modules['config']` 改回 RAG，所以下方自修复机制依旧必要。
 
 **解法**: `_ensure_stock_config()` 在线程内用 `importlib.util.spec_from_file_location` 强制加载 stock config 到 `sys.modules['config']`，并 pop 所有 stale stock 模块。在三个时机调用：
 1. `_run_unified_inner` 线程开头
@@ -52,9 +56,11 @@ Flask 路由的 `_with_stock_imports` 装饰器每次请求都会 `sys.modules.p
 
 通过 `scan_cache` 模块（见 `scan_cache.md`）：左侧 Layer2 enrich 某只股票时把资金流向、OHLCV 写入缓存；右侧 Layer2 命中同一只股票时直接复用，未命中才抓。`_run_unified_inner` 开头 `scan_cache.reset()` 清空上次缓存。
 
-### 2.4 共享行情 DataFrame 注入
+### 2.4 共享行情 DataFrame 透传（2026-07-02 改）
 
-统一编排器抓一次全市场行情，通过 `scanner.set_shared_market_df(df)` 与 `right_side_scanner.set_shared_market_df(df)` 注入；两侧 Layer1 跳过自己的网络抓取直接用。扫描结束 `clear_shared_market_df()`。
+统一编排器抓一次全市场行情 `df`，**直接作为参数**透传给两侧扫描器：`scanner.start_scan(use_deepseek, market_df=df)` 与 `right_side_scanner.start_right_side_scan(use_deepseek, market_df=df)`；两侧 Layer1 见到非空 `market_df` 即跳过自己的网络抓取直接用。
+
+> **为什么不用模块级全局注入**：旧实现用 `set_shared_market_df(df)` 写模块级全局，但 `_safe_import` 在右扫启动前会重新 pop+导入 `right_side_scanner`，模块级 `_shared_market_df` 被重置回 `None`，导致右扫线程读到 `None` 又去跑一次没有 timeout 的 `ak.stock_zh_a_spot_em()`，表现为"卡在 右侧 Layer 1"。改成参数透传后，`df` 由编排线程的局部变量持有，重导入冲不掉。`set_shared_market_df`/`clear_shared_market_df` 函数仍保留供独立启动场景兜底，但统一扫描路径不再依赖它们，也不再需要结束时的 `_cleanup_shared_df()`。
 
 ---
 
@@ -107,7 +113,7 @@ Flask 路由的 `_with_stock_imports` 装饰器每次请求都会 `sys.modules.p
 | POST | `/api/stock/unified_scan/stop` | 停止 |
 | GET | `/api/stock/unified_scan/result` | 当日左+右结果聚合 |
 
-`unified_scanner` 与 `scan_cache` 已注册到 `_STOCK_MODULES`，受 `_with_stock_imports` 装饰器管理。
+`unified_scanner` 与 `scan_cache` 仍在 `_STOCK_MODULES` 列表中，但自 2026-07-02 起 `_with_stock_imports` **只切换 `sys.modules['config']`，不再 pop/重导入这些 stock 子模块**（避免与扫描线程的 `_safe_import` 在 `sys.modules` 上竞争，导致 status 接口在扫描期间长时间挂起）。
 
 ---
 
@@ -129,3 +135,11 @@ start_unified_scan(use_deepseek=True)
 - 两侧**顺序执行**（左完再右），未并发——避免 sys.modules config 竞争与重复 DeepSeek 并发。可探索并发执行以进一步提速。
 - 共享行情抓取失败时整体失败（两侧都不跑）；可降级为各自独立抓取。
 - 改进: 统一进度估算可基于子扫描器真实候选数加权。
+
+---
+
+## 7. 变更记录
+
+- **2026-07-02**：
+  - 共享行情改为参数透传 `start_scan(market_df=df)` / `start_right_side_scan(market_df=df)`，替代模块级全局注入（修"右扫卡在 Layer 1"——`_safe_import` 重导入会清掉模块级 `_shared_market_df`）。移除 `_cleanup_shared_df()`。
+  - `_with_stock_imports` 改为非破坏式（只切 config，不再 pop stock 子模块），消除扫描期间 status 接口与扫描线程在 `sys.modules` 上的竞争/挂起。

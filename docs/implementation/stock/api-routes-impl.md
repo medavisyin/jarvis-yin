@@ -2,7 +2,7 @@
 
 ## Overview
 
-All stock API endpoints live on Flask blueprint `stock_bp` (`scripts/rag/routes/stock.py`), registered from `scripts/rag/agent.py`. The `@_with_stock_imports` decorator swaps in `scripts/stock/config.py` as `sys.path`/`sys.modules["config"]` and clears cached stock modules before each handler.
+All stock API endpoints live on Flask blueprint `stock_bp` (`scripts/rag/routes/stock.py`), registered from `scripts/rag/agent.py`. The `@_with_stock_imports` decorator swaps in `scripts/stock/config.py` as `sys.path`/`sys.modules["config"]` for each handler. Since 2026-07-02 it is **non-destructive**: it no longer pops/deletes the cached stock sub-modules — it only swaps `sys.modules["config"]` and restores it in `finally`. This avoids racing the scan thread's `_safe_import` (which re-imports stock modules during a scan) on `sys.modules`/the import lock, which previously made status polls hang for minutes while a scan was running.
 
 ---
 
@@ -15,10 +15,10 @@ All stock API endpoints live on Flask blueprint `stock_bp` (`scripts/rag/routes/
                                     │
                                     ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  @_with_stock_imports                                                     │
+│  @_with_stock_imports (non-destructive since 2026-07-02)                │
 │  · insert scripts/stock on sys.path                                      │
-│  · sys.modules["config"] ← stock/config.py                               │
-│  · del cached stock modules (watchlist, model_*, scanner, …)             │
+│  · sys.modules["config"] ← stock/config.py (restored in finally)         │
+│  · no longer pops cached stock sub-modules                               │
 └───────────────────────────────────┬──────────────────────────────────────┘
                                     │
          ┌──────────────────────────┼───────────────────────────────┐

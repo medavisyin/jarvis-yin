@@ -106,7 +106,7 @@ def get_right_side_scan_status() -> dict:
     return status_copy
 
 
-def start_right_side_scan(use_deepseek: bool = True) -> dict:
+def start_right_side_scan(use_deepseek: bool = True, market_df=None) -> dict:
     global _scan_status
     log.info("start_right_side_scan called (use_deepseek=%s)", use_deepseek)
     with _scan_lock:
@@ -129,7 +129,7 @@ def start_right_side_scan(use_deepseek: bool = True) -> dict:
         })
         sys._rs_scan_thread = threading.Thread(
             target=_run_rs_scan_thread,
-            args=(use_deepseek,),
+            args=(use_deepseek, market_df),
             daemon=True,
             name="right-side-scanner",
         )
@@ -291,9 +291,9 @@ def _fetch_market_sina_pagination() -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 # Scan thread
 # ---------------------------------------------------------------------------
-def _run_rs_scan_thread(use_deepseek: bool):
+def _run_rs_scan_thread(use_deepseek: bool, market_df=None):
     try:
-        _run_rs_scan_inner(use_deepseek, market_df=_shared_market_df)
+        _run_rs_scan_inner(use_deepseek, market_df=market_df)
     except Exception as e:
         log.exception("右侧扫描线程发生未捕获异常:")
         with _scan_lock:

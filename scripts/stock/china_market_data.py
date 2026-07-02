@@ -187,14 +187,24 @@ def fetch_stock_fund_flow(symbol: str) -> pd.DataFrame:
 
     market = "sh" if symbol.startswith(("6", "5", "9")) else "sz"
     log.info("个股资金流向 %s: 从东方财富获取...", symbol)
-    try:
-        df = _retry(ak.stock_individual_fund_flow, stock=symbol, market=market)
-        if df is not None and not df.empty:
-            df.to_csv(cache_path, index=False, encoding="utf-8-sig")
-            log.info("个股资金流向 %s: 获取 %d 条", symbol, len(df))
-            return df
-    except Exception as e:
-        log.warning("个股资金流向 %s 获取失败: %s", symbol, e)
+    # 东方财富资金流向端点在突发请求下会主动断连(RemoteDisconnected)，用
+    # 指数退避+抖动重试 4 次，给端点恢复时间，避免扫描时大面积取数失败。
+    import random
+    last_err = None
+    for attempt in range(4):
+        try:
+            df = ak.stock_individual_fund_flow(stock=symbol, market=market)
+            if df is not None and not df.empty:
+                df.to_csv(cache_path, index=False, encoding="utf-8-sig")
+                log.info("个股资金流向 %s: 获取 %d 条", symbol, len(df))
+                return df
+            last_err = "empty response"
+        except Exception as e:
+            last_err = e
+            log.warning("个股资金流向 %s 尝试 %d/4 失败: %s", symbol, attempt + 1, e)
+        if attempt < 3:
+            time.sleep((1.5 * (2 ** attempt)) + random.uniform(0, 0.5))
+    log.warning("个股资金流向 %s 获取失败(重试4次): %s", symbol, last_err)
 
     if os.path.isfile(cache_path):
         return pd.read_csv(cache_path)

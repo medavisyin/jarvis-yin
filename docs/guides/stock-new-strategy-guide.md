@@ -23,8 +23,9 @@
 
 ```python
 # 1. 启动扫描（后台守护线程）
-def start_<name>_scan(use_deepseek: bool = True) -> dict:
-    """启动后台扫描线程；返回 {ok, message}。已运行则返回占用错误。"""
+def start_<name>_scan(use_deepseek: bool = True, market_df=None) -> dict:
+    """启动后台扫描线程；返回 {ok, message}。已运行则返回占用错误。
+    market_df: 统一扫描器透传的共享全市场 DataFrame，非空时 Layer1 跳过自己的网络抓取。"""
 
 # 2. 停止扫描
 def stop_<name>_scan() -> dict:
@@ -39,12 +40,10 @@ def get_<name>_scan_status() -> dict:
 def get_latest_<name>_result() -> dict | None: ...
 def get_<name>_result_by_date(date: str) -> dict | None: ...
 def list_<name>_scan_dates() -> list[str]: ...
-
-# 5. 统一扫描器注入共享行情（可选但推荐）
-def set_shared_market_df(df) -> None: ...   # 注入共享全市场 DataFrame
-def clear_shared_market_df() -> None: ...    # 扫描结束清理
 ```
 
+> **共享行情透传（2026-07-02 起，推荐）**：统一扫描器把一次全市场行情 `df` **直接经 `start_<name>_scan(use_deepseek, market_df=df)` 参数透传**，模块内部再把它传进扫描线程与 Layer1。**不要**用模块级全局 `set_shared_market_df` 注入——`_safe_import` 在扫描期间会 pop+重导入模块，模块级全局会被重置回 `None`，导致子扫描器回退去重新抓行情（曾引发"卡在 Layer 1"）。`set_shared_market_df`/`clear_shared_market_df` 仅在需要兼容旧式独立启动时保留，统一扫描路径不依赖。
+>
 > 命名规则：把 `<name>` 换成策略名，如 `event_scanner` → `start_event_scan` / `get_event_scan_status`。统一扫描器通过名字约定调用。
 
 ### 2.1 状态字段最小集
@@ -111,7 +110,7 @@ def _ensure_stock_config():
         sys.modules.pop(m, None)
 
 # --- 公共 API ---
-def start_<name>_scan(use_deepseek: bool = True) -> dict:
+def start_<name>_scan(use_deepseek: bool = True, market_df=None) -> dict:
     with sys._<name>_lock:
         if sys._<name>_thread and sys._<name>_thread.is_alive():
             return {"ok": False, "message": "已有扫描在运行"}
@@ -119,7 +118,8 @@ def start_<name>_scan(use_deepseek: bool = True) -> dict:
         sys._<name>_status.update({"status": "running", "progress": 0,
                                    "step": "初始化", "started_at": datetime.now().isoformat(),
                                    "error": "", "results_count": 0})
-        t = threading.Thread(target=_run_thread, args=(use_deepseek,), daemon=True)
+        t = threading.Thread(target=_run_thread, args=(use_deepseek, market_df),
+                             daemon=True)
         sys._<name>_thread = t
         t.start()
     return {"ok": True, "message": "扫描已启动"}
@@ -134,17 +134,19 @@ def get_<name>_scan_status() -> dict:
     s["running"] = bool(running)
     return s
 
-def set_shared_market_df(df): 
+def set_shared_market_df(df):
+    """旧式模块级全局注入（兼容兜底，统一扫描路径不用）。"""
     global _SHARED_MARKET_DF; _SHARED_MARKET_DF = df
-def clear_shared_market_df(): 
+def clear_shared_market_df():
     global _SHARED_MARKET_DF; _SHARED_MARKET_DF = None
 
 # --- 主逻辑 ---
-def _run_thread(use_deepseek):
+def _run_thread(use_deepseek, market_df=None):
     try:
         _ensure_stock_config()
         # TODO: Layer1 / Layer2 / Layer3
-        #   - Layer1 可用 _SHARED_MARKET_DF 跳过网络抓取
+        #   - Layer1 优先用入参 market_df 跳过网络抓取（非空时）；
+        #     不要依赖模块级 _SHARED_MARKET_DF（_safe_import 重导入会清掉它）
         #   - Layer2 enrich 命中 scan_cache 即复用（见 scan_cache.md）
         #   - 进度更新: sys._<name>_status.update({"progress": x, "step": "..."})
         #   - 停止检查: if sys._<name>_stop.is_set(): break
@@ -173,10 +175,9 @@ def list_<name>_scan_dates(): ...  # TODO
 # 1. ensure config
 _ensure_stock_config()
 import <name>_scanner as ns
-ns.set_shared_market_df(shared_df)
 
-# 2. 启动
-ns.start_<name>_scan(use_deepseek=use_deepseek)
+# 2. 启动（market_df 透传共享行情，不要用 set_shared_market_df 注入）
+ns.start_<name>_scan(use_deepseek=use_deepseek, market_df=shared_df)
 
 # 3. 轮询映射进度（复用 _wait_for）
 _wait_for(ns.get_<name>_scan_status, ("completed","failed","stopped"),
@@ -193,7 +194,7 @@ sys._unified_status["<name>"] = result
 
 ## 5. 接入 API 路由（`scripts/rag/routes/stock.py`）
 
-1. 把 `"<name>_scanner"` 加进 `_STOCK_MODULES` 列表（受 `_with_stock_imports` 管理）。
+1. （可选）把 `"<name>_scanner"` 加进 `_STOCK_MODULES` 列表做登记。**注**：自 2026-07-02 起 `_with_stock_imports` 改为非破坏式，**不再 pop/重导入 `_STOCK_MODULES` 里的模块**，所以加不加都不影响 import 正确性——该列表目前仅作模块清单用途。新模块只要在 stock config 已切换的上下文里被首次 import，就会以 stock config 缓存。
 2. （可选）新增 4 个独立路由模仿 `unified_scan`：`/api/stock/<name>_scan/{start,status,stop,result}`。
 3. 已有 `/api/stock/unified_scan/result` 会自动包含新策略（只要 `unified_scanner` 聚合时加了键）。
 
@@ -210,10 +211,10 @@ sys._unified_status["<name>"] = result
 
 - [ ] 新建 `scripts/stock/<name>_scanner.py`，实现 §2 全部函数
 - [ ] 状态挂 `sys`，线程内 `_ensure_stock_config()`
-- [ ] Layer1 支持共享 `market_df` 注入；Layer2 用 `scan_cache` 复用
+- [ ] Layer1 支持入参 `market_df`（非空时跳过抓取）；Layer2 用 `scan_cache` 复用
 - [ ] 结果落盘到 `STOCK_REPORTS_ROOT/data/<name>_scan/` + 报告目录
-- [ ] `unified_scanner._run_unified_inner` 追加编排段
-- [ ] `stock.py` 的 `_STOCK_MODULES` 追加模块名
+- [ ] `unified_scanner._run_unified_inner` 追加编排段（用 `start_<name>_scan(use_deepseek, market_df=df)` 透传）
+- [ ] （可选）`stock.py` 的 `_STOCK_MODULES` 追加模块名做登记（非破坏式装饰器下非必需）
 - [ ] （可选）新增独立 API 路由
 - [ ] 前端 `unifiedModal` 加结果栏 + `_build<Name>Html`
 - [ ] 新建 `docs/stock-modules/<name>_scanner.md`
@@ -244,7 +245,7 @@ sys._unified_status["<name>"] = result
 ```python
 # scripts/stock/strategy_registry.py（未来）
 STRATEGIES = {}  # name -> StrategySpec
-def register(name, start_fn, status_fn, stop_fn, result_fn, set_market_df_fn=None): ...
+def register(name, start_fn, status_fn, stop_fn, result_fn): ...  # start_fn 签名 (use_deepseek, market_df=None)
 def all_strategies() -> list[StrategySpec]: ...
 ```
 

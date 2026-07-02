@@ -9,8 +9,8 @@ The scanner performs a multi-layer full-market A-share scan: fetch all stocks, f
 ## Architecture
 
 ```
-start_scan(use_deepseek=False)  →  _run_scan()  [background thread]
-  └─ _run_scan_inner()
+start_scan(use_deepseek=False, market_df=None)  →  _run_scan(market_df)  [background thread]
+  └─ _run_scan_inner(market_df)
        ├── hot_sectors.get_hot_stock_set()
        ├── _layer1_quick_filter(hot_stocks)    → (candidates[], market_total)
        ├── _execute_layer2_and_3(progress, candidates)
@@ -337,7 +337,7 @@ This avoids redundant DeepSeek calls.
 
 ### B. Unified Scanner Integration
 
-`_layer1_quick_filter(hot_stocks, market_df=None)` and `_run_scan_inner(market_df=None)` accept an optional shared market DataFrame so `unified_scanner` can inject one fetch. Module exposes `set_shared_market_df` / `get_shared_market_df` / `clear_shared_market_df`. See `docs/stock-modules/unified_scanner.md` and `docs/stock-modules/scan_cache.md`.
+`_layer1_quick_filter(hot_stocks, market_df=None)` and `_run_scan_inner(market_df=None)` accept an optional shared market DataFrame. Since 2026-07-02 the unified scanner passes it **directly** via `start_scan(use_deepseek, market_df=df)` (threaded through `_run_scan(market_df)`), instead of the older module-global injection. The module still exposes `set_shared_market_df` / `get_shared_market_df` / `clear_shared_market_df` as a fallback for standalone use, but the unified path no longer relies on them. See `docs/stock-modules/unified_scanner.md` and `docs/stock-modules/scan_cache.md`.
 
 ### C. New sibling scanners
 

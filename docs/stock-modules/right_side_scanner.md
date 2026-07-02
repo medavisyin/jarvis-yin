@@ -49,12 +49,12 @@
 
 | 函数 | 作用 |
 |------|------|
-| `start_right_side_scan(use_deepseek=True)` | 启动守护线程执行 `_run_rs_scan_thread`；状态挂 `sys`。 |
+| `start_right_side_scan(use_deepseek=True, market_df=None)` | 启动守护线程执行 `_run_rs_scan_thread`；状态挂 `sys`。`market_df` 由统一扫描器透传共享行情，非空时 Layer1 跳过网络抓取。 |
 | `stop_right_side_scan()` | 置 `sys._rs_stop_event`。 |
 | `get_right_side_scan_status()` | 返回 `sys._rs_scan_status` 副本 + 线程存活标记。 |
 | `get_latest_right_side_result()` / `get_right_side_result_by_date(date)` / `list_right_side_scan_dates()` | 读结果与历史。 |
-| `set_shared_market_df(df)` / `clear_shared_market_df()` | 注入/清除统一扫描器共享的全市场 DataFrame。 |
-| `_run_rs_scan_thread(use_deepseek)` | 线程入口，调用 `_run_rs_scan_inner(use_deepseek, market_df=_shared_market_df)`。 |
+| `set_shared_market_df(df)` / `clear_shared_market_df()` | 旧式模块级全局注入/清除共享 DataFrame；**统一扫描路径已改用 `market_df` 参数透传**，这两个函数仅留作独立启动场景兜底。 |
+| `_run_rs_scan_thread(use_deepseek, market_df=None)` | 线程入口，把 `market_df` 直接转发给 `_run_rs_scan_inner`（不再读模块级 `_shared_market_df`）。 |
 | `_run_rs_scan_inner(use_deepseek, market_df=None)` | 主逻辑：Layer1 → Layer2 → Layer3 → 落盘。 |
 | `analyze_single(stock_dict)` | Layer2 单只分析：技术面 + 资金反转判定 + 复合得分。 |
 | `_build_rs_prompt` / `_parse_rs_json` / `_call_local_rs_judge` | Layer3 DeepSeek prompt 构造 / JSON 解析 / 本地 LLM 兜底。 |
@@ -138,7 +138,7 @@ start_right_side_scan(use_deepseek=True)
 # 轮询 get_right_side_scan_status() 至 status == "completed"
 ```
 
-统一扫描器会自动调用本模块（注入共享行情 + 共享 enrichment 缓存），无需单独启动。
+统一扫描器会自动调用本模块（**通过 `market_df` 参数透传共享行情** + 共享 enrichment 缓存），无需单独启动。
 
 ---
 

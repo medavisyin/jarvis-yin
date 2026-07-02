@@ -52,12 +52,12 @@
 
 | 函数 | 作用 |
 |------|------|
-| `start_scan(use_deepseek=False)` | 若无线程在跑则启动**守护线程**执行 `_run_scan`；设全局 `_use_deepseek`。 |
+| `start_scan(use_deepseek=False, market_df=None)` | 若无线程在跑则启动**守护线程**执行 `_run_scan`；设全局 `_use_deepseek`。`market_df` 由统一扫描器透传共享行情，非空时 Layer1 跳过网络抓取。 |
 | `stop_scan()` | 置 `_stop_event`，请求优雅停止。 |
 | `get_scan_status()` | 合并 `scan_progress.json` 与线程是否存活。 |
 | `get_latest_result` / `get_result_by_date` / `list_scan_dates` / `get_history` | 读结果与历史。 |
 | `update_history_performance` | 按历史推荐补充 1/3/7 日收益。 |
-| `set_shared_market_df(df)` / `get_shared_market_df()` / `clear_shared_market_df()` | **统一扫描集成（2026-07）**：注入/取/清共享全市场 DataFrame，使 Layer1 跳过网络抓取。 |
+| `set_shared_market_df(df)` / `get_shared_market_df()` / `clear_shared_market_df()` | **统一扫描集成（2026-07）**：模块级全局注入/取/清共享全市场 DataFrame。**2026-07-02 起统一扫描改用 `start_scan(market_df=df)` 参数透传**，这几个函数仅留兜底，主路径不再依赖。 |
 | `_layer1_quick_filter(hot_stocks, market_df=None)` | 全市场快筛；接受可选 `market_df` 跳过抓取，返回 `(picks, market_total)`。 |
 | `_layer2_xgb_cross_sectional(candidates, progress)` | **Layer2 主路径**：调用 `model_cross_sectional.cross_sectional_rank` 做截面 rank:pairwise 排序；失败或空结果时回退规则评分。 |
 | `_layer2_rule_scoring_all(candidates, progress)` | 规则回退：按 `LAYER2_BATCH` 分批调用 `_layer2_rule_scoring`。 |

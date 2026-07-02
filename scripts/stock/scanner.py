@@ -263,6 +263,154 @@ def _layer2_rule_scoring_all(candidates: list[dict], progress: dict) -> list[dic
     return all_scored
 
 
+def _enrich_one(stock: dict) -> dict:
+    """Per-stock enrichment: technicals, fundamentals, sentiment, fund flow.
+
+    Populates on `stock` in place: signals / rsi / overbought / tech_score,
+    fund_dimensions / fund_score, sentiment_score, ff_signals / ff_data_missing /
+    ff_score. Does NOT set score_l2 — the caller decides scoring (rule path
+    computes a weighted total; XGBoost path keeps its own score_l2).
+
+    Shared by the rule-based Layer 2 and the post-XGBoost enrichment pass so
+    that Layer 3 LLM judgments always receive real per-stock data.
+    """
+    from technical_analysis import load_ohlcv, compute_indicators, evaluate_signals
+    from fetch_market_data import fetch_daily_ohlcv, fetch_stock_news
+    from fundamental_analysis import fetch_fundamentals, score_fundamentals
+
+    sym = stock["symbol"]
+
+    tech_score = 50
+    sentiment_score = 50
+    fund_score = 50
+    signals = {}
+    rsi_val = None
+    overbought = False
+
+    try:
+        import scan_cache as _sc_ohlcv
+        if not _sc_ohlcv.ohlcv_done(sym):
+            fetch_daily_ohlcv(sym)
+            _sc_ohlcv.mark_ohlcv(sym)
+        df = load_ohlcv(sym)
+        if df is not None and len(df) >= 30:
+            df = compute_indicators(df)
+            sig = evaluate_signals(df)
+            signals = sig.get("signals", {})
+
+            bullish = sum(1 for v in signals.values() if "涨" in str(v) or "金叉" in str(v) or "突破" in str(v))
+            bearish = sum(1 for v in signals.values() if "跌" in str(v) or "死叉" in str(v) or "超卖" in str(v))
+            tech_score = (bullish - bearish) * 10 + 50
+            tech_score = max(0, min(100, tech_score))
+
+            if "RSI" in df.columns and len(df) > 0:
+                rsi_val = df["RSI"].iloc[-1]
+                if rsi_val and rsi_val > 75:
+                    overbought = True
+                    tech_score = max(0, tech_score - 20)
+    except Exception as e:
+        log.warning("  %s 技术分析失败: %s", sym, e)
+
+    try:
+        fund_data = fetch_fundamentals(sym)
+        if fund_data:
+            fs = score_fundamentals(fund_data)
+            fund_score = fs.get("total_score", 50)
+            stock["fund_dimensions"] = fs.get("dimensions", {})
+        else:
+            fund_score = 50
+    except Exception as e:
+        log.warning("  %s 基本面分析失败: %s", sym, e)
+
+    try:
+        news = fetch_stock_news(sym, limit=5)
+        if news:
+            # Weighted keyword scoring: differentiate impact levels
+            _HIGH_POS = {"超预期", "中标", "签约", "突破新高", "大幅增长", "扭亏为盈"}
+            _MID_POS = {"增长", "利好", "创新", "盈利", "分红", "回购"}
+            _LOW_POS = {"涨", "突破", "上涨"}
+            _HIGH_NEG = {"退市", "ST", "暴雷", "造假", "立案", "违规"}
+            _MID_NEG = {"亏损", "减持", "处罚", "下调", "风险"}
+            _LOW_NEG = {"跌", "下降", "利空"}
+
+            total_weight = 0
+            for a in news:
+                title = a.get("标题", "")
+                w = 0
+                if any(k in title for k in _HIGH_POS): w += 3
+                if any(k in title for k in _MID_POS):  w += 2
+                if any(k in title for k in _LOW_POS):  w += 1
+                if any(k in title for k in _HIGH_NEG): w -= 4  # negative news hits harder
+                if any(k in title for k in _MID_NEG):  w -= 2.5
+                if any(k in title for k in _LOW_NEG):  w -= 1
+                total_weight += w
+
+            max_possible = len(news) * 3
+            norm = total_weight / max(max_possible, 1)
+            sentiment_score = int(norm * 50 + 50)
+            sentiment_score = max(0, min(100, sentiment_score))
+        else:
+            sentiment_score = 50
+    except Exception as e:
+        log.warning("  %s 情绪分析失败: %s", sym, e)
+        sentiment_score = 50
+
+    ff_score = 50
+    ff_signals = {}
+    ff_data_missing = False
+    try:
+        import china_market_data as cmd
+        import scan_cache
+        cached_ff = scan_cache.get_ff(sym)
+        if cached_ff is not None:
+            ff = cached_ff
+        else:
+            ff = cmd.stock_fund_flow_signals(sym)
+            # 资金流向数据缺失时重试一次（akshare 偶发空响应）
+            if not ff or ff.get("data_days", 0) < 3:
+                time.sleep(0.3)
+                ff = cmd.stock_fund_flow_signals(sym)
+            scan_cache.set_ff(sym, ff)
+        if ff and ff.get("data_days", 0) >= 3:
+            ff_signals = ff
+            accumulating = ff.get("accumulation_signal", False)
+            main_net_3d = ff.get("main_net_3d", 0)
+            phase = ff.get("smart_money_phase", "无信号")
+            accum_score_raw = ff.get("accumulation_score", 0)
+
+            if phase == "布局期":
+                ff_score = 80 + min(accum_score_raw / 5, 15)
+            elif accumulating and main_net_3d > 0:
+                ff_score = 70 + min(main_net_3d / 1e8 * 5, 20)
+            elif phase == "拉升期":
+                ff_score = 55
+            elif phase == "出货期":
+                ff_score = 25
+            elif main_net_3d < 0:
+                ff_score = max(20, 50 + main_net_3d / 1e8 * 3)
+            ff_score = max(0, min(100, ff_score))
+        else:
+            # 资金流向数据缺失：保留中性 50 用于 L2 加权，但打标记供 Layer 3 门控
+            ff_data_missing = True
+            log.info("  %s 资金流向数据缺失(data_days<3)，标记 ff_data_missing", sym)
+    except Exception as e:
+        ff_data_missing = True
+        log.debug("  %s 资金流向失败: %s", sym, e)
+
+    stock.update({
+        "tech_score": tech_score,
+        "fund_score": round(fund_score, 1),
+        "ff_score": round(ff_score, 1),
+        "ff_signals": ff_signals,
+        "ff_data_missing": ff_data_missing,
+        "sentiment_score": sentiment_score,
+        "rsi": round(rsi_val, 1) if rsi_val else None,
+        "overbought": overbought,
+        "signals": signals,
+    })
+    return stock
+
+
 def _layer2_rule_scoring(batch: list[dict], progress: dict) -> list[dict]:
     """
     Fallback Layer 2: rule-based scoring (original implementation).
@@ -270,10 +418,6 @@ def _layer2_rule_scoring(batch: list[dict], progress: dict) -> list[dict]:
     run fundamental scoring, and quick sentiment check.
     Returns enriched candidates with scores and a buyability flag.
     """
-    from technical_analysis import load_ohlcv, compute_indicators, evaluate_signals
-    from fetch_market_data import fetch_daily_ohlcv, fetch_stock_news
-    from fundamental_analysis import fetch_fundamentals, score_fundamentals
-
     scored = []
     for stock in batch:
         if _stop_event.is_set():
@@ -282,147 +426,21 @@ def _layer2_rule_scoring(batch: list[dict], progress: dict) -> list[dict]:
         sym = stock["symbol"]
         log.info("Layer 2: 分析 %s (%s)...", sym, stock["name"])
 
-        tech_score = 50
-        sentiment_score = 50
-        fund_score = 50
-        signals = {}
-        rsi_val = None
-        overbought = False
-
-        try:
-            import scan_cache as _sc_ohlcv
-            if not _sc_ohlcv.ohlcv_done(sym):
-                fetch_daily_ohlcv(sym)
-                _sc_ohlcv.mark_ohlcv(sym)
-            df = load_ohlcv(sym)
-            if df is not None and len(df) >= 30:
-                df = compute_indicators(df)
-                sig = evaluate_signals(df)
-                signals = sig.get("signals", {})
-
-                bullish = sum(1 for v in signals.values() if "涨" in str(v) or "金叉" in str(v) or "突破" in str(v))
-                bearish = sum(1 for v in signals.values() if "跌" in str(v) or "死叉" in str(v) or "超卖" in str(v))
-                tech_score = (bullish - bearish) * 10 + 50
-                tech_score = max(0, min(100, tech_score))
-
-                if "RSI" in df.columns and len(df) > 0:
-                    rsi_val = df["RSI"].iloc[-1]
-                    if rsi_val and rsi_val > 75:
-                        overbought = True
-                        tech_score = max(0, tech_score - 20)
-        except Exception as e:
-            log.warning("  %s 技术分析失败: %s", sym, e)
-
-        try:
-            fund_data = fetch_fundamentals(sym)
-            if fund_data:
-                fs = score_fundamentals(fund_data)
-                fund_score = fs.get("total_score", 50)
-                stock["fund_dimensions"] = fs.get("dimensions", {})
-            else:
-                fund_score = 50
-        except Exception as e:
-            log.warning("  %s 基本面分析失败: %s", sym, e)
-
-        try:
-            news = fetch_stock_news(sym, limit=5)
-            if news:
-                # Weighted keyword scoring: differentiate impact levels
-                _HIGH_POS = {"超预期", "中标", "签约", "突破新高", "大幅增长", "扭亏为盈"}
-                _MID_POS = {"增长", "利好", "创新", "盈利", "分红", "回购"}
-                _LOW_POS = {"涨", "突破", "上涨"}
-                _HIGH_NEG = {"退市", "ST", "暴雷", "造假", "立案", "违规"}
-                _MID_NEG = {"亏损", "减持", "处罚", "下调", "风险"}
-                _LOW_NEG = {"跌", "下降", "利空"}
-
-                total_weight = 0
-                for a in news:
-                    title = a.get("标题", "")
-                    w = 0
-                    if any(k in title for k in _HIGH_POS): w += 3
-                    if any(k in title for k in _MID_POS):  w += 2
-                    if any(k in title for k in _LOW_POS):  w += 1
-                    if any(k in title for k in _HIGH_NEG): w -= 4  # negative news hits harder
-                    if any(k in title for k in _MID_NEG):  w -= 2.5
-                    if any(k in title for k in _LOW_NEG):  w -= 1
-                    total_weight += w
-
-                max_possible = len(news) * 3
-                norm = total_weight / max(max_possible, 1)
-                sentiment_score = int(norm * 50 + 50)
-                sentiment_score = max(0, min(100, sentiment_score))
-            else:
-                sentiment_score = 50
-        except Exception as e:
-            log.warning("  %s 情绪分析失败: %s", sym, e)
-            sentiment_score = 50
-
-        ff_score = 50
-        ff_signals = {}
-        ff_data_missing = False
-        try:
-            import china_market_data as cmd
-            import scan_cache
-            cached_ff = scan_cache.get_ff(sym)
-            if cached_ff is not None:
-                ff = cached_ff
-            else:
-                ff = cmd.stock_fund_flow_signals(sym)
-                # 资金流向数据缺失时重试一次（akshare 偶发空响应）
-                if not ff or ff.get("data_days", 0) < 3:
-                    time.sleep(0.3)
-                    ff = cmd.stock_fund_flow_signals(sym)
-                scan_cache.set_ff(sym, ff)
-            if ff and ff.get("data_days", 0) >= 3:
-                ff_signals = ff
-                accumulating = ff.get("accumulation_signal", False)
-                main_net_3d = ff.get("main_net_3d", 0)
-                phase = ff.get("smart_money_phase", "无信号")
-                accum_score_raw = ff.get("accumulation_score", 0)
-
-                if phase == "布局期":
-                    ff_score = 80 + min(accum_score_raw / 5, 15)
-                elif accumulating and main_net_3d > 0:
-                    ff_score = 70 + min(main_net_3d / 1e8 * 5, 20)
-                elif phase == "拉升期":
-                    ff_score = 55
-                elif phase == "出货期":
-                    ff_score = 25
-                elif main_net_3d < 0:
-                    ff_score = max(20, 50 + main_net_3d / 1e8 * 3)
-                ff_score = max(0, min(100, ff_score))
-            else:
-                # 资金流向数据缺失：保留中性 50 用于 L2 加权，但打标记供 Layer 3 门控
-                ff_data_missing = True
-                log.info("  %s 资金流向数据缺失(data_days<3)，标记 ff_data_missing", sym)
-        except Exception as e:
-            ff_data_missing = True
-            log.debug("  %s 资金流向失败: %s", sym, e)
+        _enrich_one(stock)
 
         hot_bonus = 5 if stock.get("is_hot") else 0
         total_score = (
-            ff_score * 0.30
-            + fund_score * 0.25
-            + tech_score * 0.20
-            + sentiment_score * 0.10
+            stock["ff_score"] * 0.30
+            + stock["fund_score"] * 0.25
+            + stock["tech_score"] * 0.20
+            + stock["sentiment_score"] * 0.10
             + stock["score_l1"] * 0.10
             + _valuation_bonus(stock.get("pe")) * 0.05
             + hot_bonus
         )
 
-        stock.update({
-            "tech_score": tech_score,
-            "fund_score": round(fund_score, 1),
-            "ff_score": round(ff_score, 1),
-            "ff_signals": ff_signals,
-            "ff_data_missing": ff_data_missing,
-            "sentiment_score": sentiment_score,
-            "hot_bonus": hot_bonus,
-            "rsi": round(rsi_val, 1) if rsi_val else None,
-            "overbought": overbought,
-            "score_l2": round(total_score, 2),
-            "signals": signals,
-        })
+        stock["hot_bonus"] = hot_bonus
+        stock["score_l2"] = round(total_score, 2)
         scored.append(stock)
 
         progress.setdefault("analyzed_count", 0)
@@ -1475,11 +1493,11 @@ def _save_results(top_picks: list[dict], all_candidates: list[dict], scan_meta: 
 # Main scan orchestration
 # ---------------------------------------------------------------------------
 
-def _run_scan():
+def _run_scan(market_df=None):
     """Execute the full 3-layer scan (runs in background thread)."""
     import traceback as _tb
     try:
-        _run_scan_inner(market_df=get_shared_market_df())
+        _run_scan_inner(market_df=market_df)
     except Exception:
         _tb.print_exc()
         try:
@@ -1629,6 +1647,33 @@ def _execute_layer2_and_3(progress: dict, candidates: list[dict], resume: bool =
         progress["status"] = "stopped"
         _save_progress(progress)
         return
+
+    # Layer 2.5: per-stock enrichment for XGBoost-ranked candidates.
+    # cross_sectional_rank only produces XGBoost scores (score_l2/xgb_rank/...);
+    # it does NOT fetch fund flow / fundamentals / technicals / signals. Without
+    # this pass, Layer 3 LLM prompts would contain no per-stock data and every
+    # verdict would default to "观望" (data missing) → 0 recommendations.
+    # The rule-based fallback path enriches inline via _layer2_rule_scoring, so
+    # only the XGBoost path needs this explicit pass.
+    if all_l2 and not _stop_event.is_set():
+        needs_enrich = any("ff_signals" not in s for s in all_l2)
+        if needs_enrich:
+            progress["status"] = "layer2_enrich"
+            progress["enriched_count"] = 0
+            _save_progress(progress)
+            log.info("Layer 2.5: 对 %d 只 XGBoost 候选补充 per-stock 富化(技术/基本面/资金流向/情绪)...", len(all_l2))
+            for i, stock in enumerate(all_l2):
+                if _stop_event.is_set():
+                    break
+                try:
+                    _enrich_one(stock)
+                except Exception as e:
+                    log.warning("  富化 %s 失败: %s", stock.get("symbol"), e)
+                progress["enriched_count"] = i + 1
+                _save_progress(progress)
+            progress["layer2_results"] = all_l2
+            _save_progress(progress)
+            log.info("Layer 2.5 富化完成")
 
     use_ds = progress.get("use_deepseek", False)
     progress["status"] = "layer3"
@@ -1809,8 +1854,13 @@ def list_scan_dates() -> list[str]:
 # Public API — start / stop / status
 # ---------------------------------------------------------------------------
 
-def start_scan(use_deepseek: bool = False) -> dict:
-    """Start a background scan. Returns status."""
+def start_scan(use_deepseek: bool = False, market_df=None) -> dict:
+    """Start a background scan. Returns status.
+
+    If ``market_df`` is supplied (a pre-fetched full A-share snapshot), the
+    Layer 1 network fetch is skipped — used by the unified scanner to share
+    one market snapshot across both left and right scans.
+    """
     global _scan_thread, _use_deepseek
 
     log.info("start_scan called (deepseek=%s)", use_deepseek)
@@ -1820,7 +1870,7 @@ def start_scan(use_deepseek: bool = False) -> dict:
 
         _use_deepseek = use_deepseek
         _stop_event.clear()
-        _scan_thread = threading.Thread(target=_run_scan, daemon=True, name="stock-scanner")
+        _scan_thread = threading.Thread(target=_run_scan, args=(market_df,), daemon=True, name="stock-scanner")
         _scan_thread.start()
         return {"ok": True, "message": "扫描已启动"}
 
