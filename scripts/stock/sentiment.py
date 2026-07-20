@@ -4,6 +4,7 @@
 读取本地缓存的新闻数据, 逐条分析情绪, 汇总为每日情绪评分.
 """
 import json
+import math
 import os
 import logging
 from datetime import datetime
@@ -110,13 +111,36 @@ def _resolve_stock_name(symbol: str, stock_name: str = "") -> str:
     return symbol
 
 
-def _aggregate_sentiment(symbol: str, stock_name: str, analyzed: list[dict]) -> dict:
-    """Aggregate per-article scores into the standard sentiment result dict.
+def _article_weight(article: dict) -> float:
+    """时效性 + 影响力加权 (Phase 1.3)."""
+    weight = 1.0
+    title = (article.get("新闻标题") or article.get("title") or "").lower()
+    pub = article.get("发布时间") or article.get("date") or ""
 
-    `analyzed` items: {"title", "score", "reason", "date"}.
-    """
-    scores = [a["score"] for a in analyzed]
-    daily_score = sum(scores) / len(scores) if scores else 0.0
+    impact_keywords = ("业绩", "预告", "减持", "增持", "监管", "立案", "重组", "收购", "分红", "停牌")
+    if any(k in title for k in impact_keywords):
+        weight *= 1.5
+
+    try:
+        if pub:
+            pub_dt = datetime.fromisoformat(str(pub).replace("Z", "+00:00")[:19])
+            hours = max(0, (datetime.now() - pub_dt.replace(tzinfo=None)).total_seconds() / 3600)
+            weight *= math.exp(-hours / 48)
+    except Exception:
+        pass
+
+    return max(0.1, weight)
+
+
+def _aggregate_sentiment(symbol: str, stock_name: str, analyzed: list[dict]) -> dict:
+    """Aggregate per-article scores with recency + impact weighting."""
+    if not analyzed:
+        scores = []
+        daily_score = 0.0
+    else:
+        weights = [_article_weight(a) for a in analyzed]
+        scores = [a["score"] for a in analyzed]
+        daily_score = float(sum(s * w for s, w in zip(scores, weights)) / sum(weights)) if weights else 0.0
 
     positive = sorted(analyzed, key=lambda x: x["score"], reverse=True)
     negative = sorted(analyzed, key=lambda x: x["score"])

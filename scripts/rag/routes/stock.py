@@ -32,7 +32,9 @@ _STOCK_MODULES = [
     "watchlist", "scanner", "long_term_scanner", "hot_sectors", "market_sentiment",
     "black_swan_detector", "china_market_data", "model_timing",
     "backtest_engine", "midday_scanner", "right_side_scanner",
-    "scan_cache", "unified_scanner",
+    "scan_cache", "unified_scanner", "valuation", "data_quality",
+    "regime_detector", "model_ensemble", "position_sizer", "backtest_strategies",
+    "network_policy", "data_prefetch",
 ]
 
 log = logging.getLogger(__name__)
@@ -118,6 +120,15 @@ def api_stock_analyze():
             from fundamental_analysis import fetch_fundamentals, generate_fundamental_report
             fetch_fundamentals(symbol)
             result["fundamental_report"] = generate_fundamental_report(symbol)
+
+        if mode in ("valuation", "full"):
+            try:
+                from valuation import compute_valuation, generate_valuation_report
+                result["valuation"] = compute_valuation(symbol)
+                result["valuation_report"] = generate_valuation_report(symbol)
+            except Exception as e:
+                log.warning("估值分析 %s 失败: %s", symbol, e)
+                result["valuation_error"] = str(e)
 
         if mode in ("sentiment", "full"):
             from sentiment import analyze_stock_sentiment, generate_sentiment_report
@@ -269,11 +280,67 @@ def api_stock_watchlist_remove(symbol):
 @stock_bp.route("/api/stock/watchlist/refresh", methods=["POST"])
 @_with_stock_imports
 def api_stock_watchlist_refresh():
-    """Refresh all watchlist data."""
+    """Refresh watchlist from local cache only (no network). Use prefetch for batch update."""
     try:
-        from watchlist import refresh_all_data
-        refresh_all_data()
-        return jsonify({"ok": True})
+        from watchlist import list_stocks
+        return jsonify({"ok": True, "stocks": list_stocks(), "note": "只读本地; 批量更新请用数据预热"})
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/prefetch/start", methods=["POST"])
+@_with_stock_imports
+def api_stock_prefetch_start():
+    try:
+        body = request.get_json(silent=True) or {}
+        resume = bool(body.get("resume", False))
+        from data_prefetch import start_prefetch
+        return jsonify(start_prefetch(resume=resume))
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/prefetch/pause", methods=["POST"])
+@_with_stock_imports
+def api_stock_prefetch_pause():
+    try:
+        from data_prefetch import pause_prefetch
+        return jsonify(pause_prefetch())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/prefetch/resume", methods=["POST"])
+@_with_stock_imports
+def api_stock_prefetch_resume():
+    try:
+        from data_prefetch import resume_prefetch
+        return jsonify(resume_prefetch())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/prefetch/stop", methods=["POST"])
+@_with_stock_imports
+def api_stock_prefetch_stop():
+    try:
+        from data_prefetch import stop_prefetch
+        return jsonify(stop_prefetch())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/prefetch/status", methods=["GET"])
+@_with_stock_imports
+def api_stock_prefetch_status():
+    try:
+        from data_prefetch import get_prefetch_status
+        return jsonify(get_prefetch_status())
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500
@@ -1098,6 +1165,87 @@ def api_stock_backtest_get(symbol):
         return jsonify({"error": str(exc)}), 500
 
 
+@stock_bp.route("/api/stock/valuation/<symbol>", methods=["GET"])
+@_with_stock_imports
+def api_stock_valuation(symbol):
+    """Valuation dashboard: peer comparison, historical percentile, simplified DCF."""
+    symbol = symbol.strip()
+    if not symbol or not symbol.isdigit():
+        return jsonify({"error": "请输入有效的股票代码 (纯数字)"}), 400
+    try:
+        from valuation import compute_valuation, generate_valuation_report
+        data = compute_valuation(symbol)
+        data["report"] = generate_valuation_report(symbol)
+        return jsonify(data)
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/regime", methods=["GET"])
+@stock_bp.route("/api/stock/regime/<symbol>", methods=["GET"])
+@_with_stock_imports
+def api_stock_regime(symbol=None):
+    """Market + optional symbol regime detection."""
+    try:
+        from regime_detector import detect_regime
+        sym = (symbol or request.args.get("symbol", "")).strip() or None
+        return jsonify(detect_regime(sym))
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/portfolio", methods=["GET"])
+@_with_stock_imports
+def api_stock_portfolio():
+    """Position sizing suggestions for watchlist."""
+    try:
+        from position_sizer import suggest_portfolio
+        capital = request.args.get("capital")
+        cap = float(capital) if capital else None
+        return jsonify(suggest_portfolio(cap))
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/drawdown", methods=["GET"])
+@_with_stock_imports
+def api_stock_drawdown():
+    """Drawdown monitor and alerts."""
+    try:
+        from prediction_tracker import monitor_drawdowns
+        return jsonify(monitor_drawdowns())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/relative-strength", methods=["GET"])
+@_with_stock_imports
+def api_stock_relative_strength():
+    """Cross-sectional relative strength ranking for watchlist."""
+    try:
+        from model_cross_sectional import watchlist_relative_strength
+        return jsonify(watchlist_relative_strength())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/backtest/strategies", methods=["GET"])
+@_with_stock_imports
+def api_stock_backtest_strategies():
+    """List available backtest strategy templates."""
+    try:
+        from backtest_strategies import list_strategies
+        return jsonify({"strategies": list_strategies()})
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
 @stock_bp.route("/api/stock/china-data", methods=["GET"])
 @_with_stock_imports
 def api_stock_china_data():
@@ -1132,11 +1280,12 @@ def api_stock_national_team():
         from china_market_data import (national_team_monitor, national_team_trend,
                                        national_team_period_stats, national_team_backfill_history,
                                        national_team_fund_signals)
-        snapshot = national_team_monitor()
+        force = request.args.get("force", "1").lower() not in ("0", "false", "no")
+        snapshot = national_team_monitor(force_refresh=force)
         backfill = national_team_backfill_history(days=90)
         trend = national_team_trend()
         period_stats = national_team_period_stats()
-        fund_signals = national_team_fund_signals()
+        fund_signals = national_team_fund_signals(force_refresh=force)
         return jsonify({"snapshot": snapshot, "trend": trend,
                         "period_stats": period_stats, "backfill": backfill,
                         "fund_signals": fund_signals})

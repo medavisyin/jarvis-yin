@@ -265,6 +265,8 @@ def _fetch_market_sina_pagination() -> pd.DataFrame:
         if items is None or not items:
             break
         for item in items:
+            # sina returns mktcap in 万元; eastmoney & akshare use 元.
+            _mktcap = item.get("mktcap")
             all_rows.append({
                 "代码": str(item.get("code", "")),
                 "名称": str(item.get("name", "")),
@@ -273,7 +275,7 @@ def _fetch_market_sina_pagination() -> pd.DataFrame:
                 "成交额": item.get("amount"),
                 "换手率": item.get("turnoverratio"),
                 "市盈率-动态": item.get("per"),
-                "总市值": item.get("mktcap"),
+                "总市值": (float(_mktcap) * 10000) if _mktcap not in (None, "", "-") else None,
             })
         page += 1
         if len(items) < 80 or page > 80:

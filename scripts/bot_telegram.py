@@ -398,6 +398,10 @@ HELP_TEXT = """Jarvis Bot Commands:
 /index — Index new briefings
 /knowledge — Refresh knowledge docs
 /stock <code> — Stock analysis
+/valuation <code> — Valuation report
+/regime [code] — Market/symbol regime
+/portfolio — Position sizing
+/backtest <code> [strategy] — Backtest (momentum/valuation_momentum/dca)
 /train — Train stock models
 /scan — Run short-term stock scanner
 /longscan — Run long-term stock scanner
@@ -640,6 +644,83 @@ async def cmd_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"{symbol}: analysis timed out after 10 min. Try /stock {symbol} again.")
     except Exception as e:
         await update.message.reply_text(f"Stock error: {e}")
+
+
+@owner_only
+async def cmd_valuation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    symbol = context.args[0] if context.args else ""
+    if not symbol:
+        await update.message.reply_text("Usage: /valuation <code>")
+        return
+    await update.message.reply_text(f"Valuation {symbol}...")
+    try:
+        r = await _agent_get(f"/api/stock/valuation/{symbol}")
+        data = r if isinstance(r, dict) else {}
+        report = data.get("report", data.get("error", "No data"))
+        await update.message.reply_text(_truncate(report))
+    except Exception as e:
+        await update.message.reply_text(f"Valuation error: {e}")
+
+
+@owner_only
+async def cmd_regime(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    symbol = context.args[0] if context.args else ""
+    try:
+        path = f"/api/stock/regime/{symbol}" if symbol else "/api/stock/regime"
+        data = await _agent_get(path)
+        m = data.get("market", {})
+        lines = [f"Market: {m.get('regime_zh', '?')} — {m.get('advice', '')}"]
+        if data.get("symbol_regime"):
+            s = data["symbol_regime"]
+            lines.append(f"{s.get('symbol')}: {s.get('regime_zh')} (ATR {s.get('atr_pct')}%)")
+        await update.message.reply_text("\n".join(lines))
+    except Exception as e:
+        await update.message.reply_text(f"Regime error: {e}")
+
+
+@owner_only
+async def cmd_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        data = await _agent_get("/api/stock/portfolio")
+        if data.get("error"):
+            await update.message.reply_text(data["error"])
+            return
+        lines = [f"Regime: {data.get('market_regime_zh')} | Cash {data.get('cash_pct')}%"]
+        for a in data.get("allocations", [])[:8]:
+            lines.append(f"  {a['symbol']} {a['weight_pct']}% (¥{a['amount']})")
+        await update.message.reply_text(_truncate("\n".join(lines)))
+    except Exception as e:
+        await update.message.reply_text(f"Portfolio error: {e}")
+
+
+@owner_only
+async def cmd_backtest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /backtest <code> [momentum|valuation_momentum|dca|timing]")
+        return
+    symbol = context.args[0]
+    strategy = context.args[1] if len(context.args) > 1 else "momentum"
+    await update.message.reply_text(f"Backtest {symbol} ({strategy})...")
+    try:
+        r = await _get_http().post(
+            f"{AGENT_URL}/api/stock/backtest/{symbol}",
+            json={"strategy": strategy, "capital": 500000},
+            timeout=httpx.Timeout(connect=10, read=300, write=30, pool=10),
+        )
+        d = r.json()
+        if d.get("error"):
+            await update.message.reply_text(d["error"])
+            return
+        text = (
+            f"{symbol} {strategy}\n"
+            f"Return: {d.get('total_return_pct')}%\n"
+            f"Sharpe: {d.get('sharpe_ratio')}\n"
+            f"MaxDD: {d.get('max_drawdown_pct')}%\n"
+            f"Win rate: {d.get('win_rate')}%"
+        )
+        await update.message.reply_text(text)
+    except Exception as e:
+        await update.message.reply_text(f"Backtest error: {e}")
 
 
 @owner_only
@@ -1011,6 +1092,10 @@ async def _run_bot():
     app.add_handler(CommandHandler("index", cmd_index))
     app.add_handler(CommandHandler("knowledge", cmd_knowledge))
     app.add_handler(CommandHandler("stock", cmd_stock))
+    app.add_handler(CommandHandler("valuation", cmd_valuation))
+    app.add_handler(CommandHandler("regime", cmd_regime))
+    app.add_handler(CommandHandler("portfolio", cmd_portfolio))
+    app.add_handler(CommandHandler("backtest", cmd_backtest))
     app.add_handler(CommandHandler("train", cmd_train))
     app.add_handler(CommandHandler("scan", cmd_scan))
     app.add_handler(CommandHandler("longscan", cmd_longscan))

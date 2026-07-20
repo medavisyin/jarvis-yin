@@ -13,11 +13,16 @@ dist/
 build/
 *.whl
 
-# Environment
+# Environment & secrets
 .env
 .venv/
 venv/
 env/
+scripts/bot_telegram.env
+scripts/rag/.global_settings.json
+
+# Runtime
+scripts/bot_telegram.pid
 
 # IDE
 .idea/
@@ -28,3 +33,4 @@ env/
 # OS
 Thumbs.db
 .DS_Store
+jarvis-start.log

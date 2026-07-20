@@ -363,3 +363,99 @@ def _safe_float(val) -> float | None:
         return round(v, 4) if not (v != v) else None  # NaN check
     except (TypeError, ValueError):
         return None
+
+
+def monitor_drawdowns(holdings: list[dict] | None = None) -> dict:
+    """
+    回撤监控 — Phase 4.3.
+
+    holdings: [{"symbol": "600519", "cost_price": 1400, "shares": 100}, ...]
+    """
+    from technical_analysis import load_ohlcv
+    from fetch_market_data import load_realtime
+
+    if holdings is None:
+        import json
+        from config import PORTFOLIO_FILE
+        if os.path.isfile(PORTFOLIO_FILE):
+            try:
+                with open(PORTFOLIO_FILE, encoding="utf-8") as f:
+                    holdings = json.load(f).get("holdings", [])
+            except Exception:
+                holdings = []
+        else:
+            from watchlist import list_stocks
+            holdings = [
+                {"symbol": s["symbol"], "cost_price": s.get("cost_price"), "name": s.get("name")}
+                for s in list_stocks()
+            ]
+
+    alerts = []
+    positions = []
+    total_value = 0.0
+    total_cost = 0.0
+
+    for h in holdings:
+        sym = h.get("symbol")
+        if not sym:
+            continue
+        cost = _safe_float(h.get("cost_price"))
+        ohlcv = load_ohlcv(sym)
+        rt = load_realtime(sym)
+        price = _safe_float(rt.get("最新价")) if rt else None
+        if price is None and ohlcv is not None and not ohlcv.empty:
+            price = _safe_float(ohlcv["close"].iloc[-1])
+        if not price or not cost:
+            continue
+
+        peak = cost
+        if ohlcv is not None and len(ohlcv) > 0:
+            peak = max(float(ohlcv["close"].max()), cost)
+
+        dd_pct = (price - peak) / peak * 100 if peak > 0 else 0
+        pnl_pct = (price - cost) / cost * 100 if cost > 0 else 0
+        shares = int(h.get("shares") or 0)
+        mv = price * shares if shares else 0
+        total_value += mv
+        total_cost += cost * shares if shares else 0
+
+        level = "ok"
+        if dd_pct <= -25:
+            level = "red"
+            alerts.append({
+                "level": "red", "symbol": sym,
+                "message": f"{sym} 回撤 {dd_pct:.1f}% — 建议评估止损",
+            })
+        elif dd_pct <= -15:
+            level = "yellow"
+            alerts.append({
+                "level": "yellow", "symbol": sym,
+                "message": f"{sym} 回撤 {dd_pct:.1f}% — 黄色预警",
+            })
+
+        positions.append({
+            "symbol": sym,
+            "name": h.get("name", sym),
+            "price": price,
+            "cost_price": cost,
+            "peak_price": round(peak, 2),
+            "drawdown_pct": round(dd_pct, 2),
+            "pnl_pct": round(pnl_pct, 2),
+            "alert_level": level,
+        })
+
+    portfolio_dd = None
+    if total_cost > 0 and total_value > 0:
+        portfolio_dd = round((total_value - total_cost) / total_cost * 100, 2)
+        if portfolio_dd <= -10:
+            alerts.append({
+                "level": "yellow", "symbol": "PORTFOLIO",
+                "message": f"组合浮亏 {portfolio_dd}% — 建议减仓",
+            })
+
+    return {
+        "positions": positions,
+        "alerts": alerts,
+        "portfolio_pnl_pct": portfolio_dd,
+        "checked_at": datetime.now().isoformat(),
+    }

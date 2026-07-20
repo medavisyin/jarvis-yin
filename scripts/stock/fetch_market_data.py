@@ -8,6 +8,7 @@ All output files are stored under STOCK_DATA_DIR/{symbol}/.
 """
 import json
 import os
+import random
 import time
 import logging
 from datetime import datetime, timedelta
@@ -17,13 +18,23 @@ import pandas as pd
 import requests
 
 from config import STOCK_DATA_DIR, STOCK_CACHE_DIR, STOCK_PROXY
+from data_quality import validate_and_persist, OHLCV_COLUMNS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
-_RETRY_DELAY = 1
-_MAX_RETRIES = 2
-_PROXIES = {"http": STOCK_PROXY, "https": STOCK_PROXY} if STOCK_PROXY else None
+DEFAULT_HISTORY_DAYS = 1825  # ~5 年交易日 (Phase 1.1)
+_RETRY_DELAY = 1.5
+_MAX_RETRIES = 4
+_AK_TIMEOUT_SEC = 30
+
+
+def _get_proxies():
+    try:
+        from network_policy import get_proxies
+        return get_proxies()
+    except Exception:
+        return {"http": STOCK_PROXY, "https": STOCK_PROXY} if STOCK_PROXY else None
 
 
 def _symbol_dir(symbol: str) -> str:
@@ -40,7 +51,7 @@ def _sina_prefix(symbol: str) -> str:
 
 
 def _retry(fn, *args, retries=_MAX_RETRIES, **kwargs):
-    """Retry wrapper for flaky network calls."""
+    """指数退避 + 抖动, 应对东方财富突发断连."""
     last_err = None
     for attempt in range(retries):
         try:
@@ -49,11 +60,19 @@ def _retry(fn, *args, retries=_MAX_RETRIES, **kwargs):
             last_err = e
             log.warning("尝试 %d/%d 失败: %s", attempt + 1, retries, e)
             if attempt < retries - 1:
-                time.sleep(_RETRY_DELAY * (attempt + 1))
+                time.sleep(_RETRY_DELAY * (2 ** attempt) + random.uniform(0, 0.5))
     raise last_err
 
 
-def _fetch_ohlcv_sina(symbol: str, datalen: int = 500) -> pd.DataFrame:
+def _save_daily_csv(df: pd.DataFrame, symbol: str) -> str:
+    """仅保存 OHLCV 列到 daily.csv, 元数据写入 daily_meta.json."""
+    out = df[[c for c in OHLCV_COLUMNS if c in df.columns]].copy()
+    csv_path = os.path.join(_symbol_dir(symbol), "daily.csv")
+    out.to_csv(csv_path, index=False, encoding="utf-8-sig")
+    return csv_path
+
+
+def _fetch_ohlcv_sina(symbol: str, datalen: int = 1500) -> pd.DataFrame:
     """通过新浪财经 API 获取日线数据 (备用方案).
 
     注意: 不支持 start_date/end_date 和复权参数, 仅返回最近 datalen 根日线 (不复权).
@@ -67,7 +86,7 @@ def _fetch_ohlcv_sina(symbol: str, datalen: int = 500) -> pd.DataFrame:
         "Referer": "https://finance.sina.com.cn",
     }
 
-    resp = requests.get(url, params=params, headers=headers, timeout=30, proxies=_PROXIES)
+    resp = requests.get(url, params=params, headers=headers, timeout=30, proxies=_get_proxies())
     resp.raise_for_status()
     data = resp.json()
 
@@ -98,6 +117,36 @@ def _fetch_ohlcv_sina(symbol: str, datalen: int = 500) -> pd.DataFrame:
     return df
 
 
+def _fetch_ohlcv_akshare(
+    symbol: str,
+    start_date: str,
+    end_date: str,
+    adjust: str,
+) -> pd.DataFrame:
+    """东财前复权日线, 带线程超时."""
+    import threading
+
+    result_holder = [None, None]
+
+    def _ak_fetch():
+        try:
+            result_holder[0] = ak.stock_zh_a_hist(
+                symbol=symbol, period="daily",
+                start_date=start_date, end_date=end_date, adjust=adjust,
+            )
+        except Exception as e:
+            result_holder[1] = e
+
+    t = threading.Thread(target=_ak_fetch, daemon=True)
+    t.start()
+    t.join(timeout=_AK_TIMEOUT_SEC)
+    if t.is_alive() or result_holder[1] or result_holder[0] is None:
+        raise TimeoutError(result_holder[1] or "akshare 超时")
+    if result_holder[0] is None or result_holder[0].empty:
+        raise ValueError(f"akshare 返回空数据: {symbol}")
+    return result_holder[0]
+
+
 def fetch_daily_ohlcv(
     symbol: str,
     start_date: str | None = None,
@@ -109,7 +158,7 @@ def fetch_daily_ohlcv(
 
     Args:
         symbol: 股票代码, e.g. "600519"
-        start_date: 起始日期 YYYYMMDD, 默认2年前
+        start_date: 起始日期 YYYYMMDD, 默认5年前
         end_date: 结束日期 YYYYMMDD, 默认今天
         adjust: 复权类型 "qfq"(前复权) / "hfq"(后复权) / ""(不复权)
 
@@ -119,38 +168,49 @@ def fetch_daily_ohlcv(
     if not end_date:
         end_date = datetime.now().strftime("%Y%m%d")
     if not start_date:
-        start_date = (datetime.now() - timedelta(days=730)).strftime("%Y%m%d")
+        start_date = (datetime.now() - timedelta(days=DEFAULT_HISTORY_DAYS)).strftime("%Y%m%d")
 
     log.info("获取 %s 日线数据 %s ~ %s (复权: %s)", symbol, start_date, end_date, adjust)
     df = None
-    try:
-        import signal
-        import threading
+    adjust_source = "qfq"
+    last_err = None
 
-        result_holder = [None, None]
+    for attempt in range(_MAX_RETRIES):
+        try:
+            df = _fetch_ohlcv_akshare(symbol, start_date, end_date, adjust)
+            adjust_source = adjust if adjust else "qfq"
+            break
+        except Exception as e:
+            last_err = e
+            log.warning("akshare 日线 %s 第 %d/%d 次失败: %s", symbol, attempt + 1, _MAX_RETRIES, e)
+            if attempt < _MAX_RETRIES - 1:
+                time.sleep(_RETRY_DELAY * (2 ** attempt) + random.uniform(0, 0.5))
 
-        def _ak_fetch():
-            try:
-                result_holder[0] = ak.stock_zh_a_hist(
-                    symbol=symbol, period="daily",
-                    start_date=start_date, end_date=end_date, adjust=adjust,
-                )
-            except Exception as e:
-                result_holder[1] = e
+    if df is None:
+        from data_quality import load_daily_meta
+        csv_path = os.path.join(_symbol_dir(symbol), "daily.csv")
+        meta = load_daily_meta(symbol)
+        if meta.get("adjust_source") == "qfq" and os.path.isfile(csv_path):
+            log.warning(
+                "akshare 全部失败 (%s), 保留已有前复权缓存 (%d 行)",
+                last_err, meta.get("row_count", "?"),
+            )
+            df = pd.read_csv(csv_path, encoding="utf-8-sig")
+            adjust_source = "qfq"
+        else:
+            log.warning(
+                "akshare 全部失败 (%s), 降级新浪财经 (非复权)",
+                last_err,
+            )
+            df = _fetch_ohlcv_sina(symbol)
+            adjust_source = "sina_raw"
 
-        t = threading.Thread(target=_ak_fetch, daemon=True)
-        t.start()
-        t.join(timeout=20)
-        if t.is_alive() or result_holder[1] or result_holder[0] is None:
-            raise TimeoutError(result_holder[1] or "akshare 超时")
-        df = result_holder[0]
-    except Exception as e1:
-        log.warning("akshare API 失败 (%s), 尝试新浪财经备用 API (注意: 备用方案不支持日期范围和复权参数)", e1)
-        df = _fetch_ohlcv_sina(symbol)
-
-    csv_path = os.path.join(_symbol_dir(symbol), "daily.csv")
-    df.to_csv(csv_path, index=False, encoding="utf-8-sig")
-    log.info("已保存 %s (%d 行)", csv_path, len(df))
+    csv_path = _save_daily_csv(df, symbol)
+    quality = validate_and_persist(df, symbol, adjust_source=adjust_source, adjust=adjust or "")
+    log.info(
+        "已保存 %s (%d 行, source=%s, quality_passed=%s)",
+        csv_path, len(df), adjust_source, quality["passed"],
+    )
     return df
 
 
@@ -162,7 +222,7 @@ def _fetch_realtime_sina(symbol: str) -> dict:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Referer": "https://finance.sina.com.cn",
     }
-    resp = requests.get(url, headers=headers, timeout=10, proxies=_PROXIES)
+    resp = requests.get(url, headers=headers, timeout=10, proxies=_get_proxies())
     resp.raise_for_status()
     text = resp.text.strip()
 
@@ -280,7 +340,7 @@ def _fetch_profile_em_survey(symbol: str) -> dict:
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
                 "Referer": "https://emweb.securities.eastmoney.com",
             },
-            timeout=15, proxies=_PROXIES,
+            timeout=15, proxies=_get_proxies(),
         )
         resp.raise_for_status()
         data = resp.json()
@@ -356,6 +416,14 @@ def update_stock_data(symbol: str) -> dict:
     try:
         df = fetch_daily_ohlcv(symbol)
         summary["daily_rows"] = len(df)
+        from data_quality import load_daily_meta, quality_report_path
+        meta = load_daily_meta(symbol)
+        summary["adjust_source"] = meta.get("adjust_source", "unknown")
+        summary["ml_safe"] = meta.get("ml_safe", False)
+        qpath = quality_report_path(symbol)
+        if os.path.isfile(qpath):
+            with open(qpath, encoding="utf-8") as f:
+                summary["data_quality"] = json.load(f)
     except Exception as e:
         summary["errors"].append(f"日线: {e}")
 

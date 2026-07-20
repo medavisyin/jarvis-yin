@@ -144,7 +144,12 @@ def run_backtest(
     if strategy == "timing":
         signals = _generate_timing_signals(symbol, ohlcv)
     else:
-        signals = _generate_ma_signals(ohlcv)
+        from backtest_strategies import get_signal_generator
+        gen = get_signal_generator(strategy)
+        if gen:
+            signals = gen(symbol, ohlcv)
+        else:
+            signals = _generate_ma_signals(ohlcv)
 
     result = _simulate(symbol, strategy, ohlcv, signals, initial_capital)
 

@@ -651,10 +651,10 @@ def market_temperature(date: str = "") -> dict:
 
 # ── 7. 大盘资金流 (Market-wide Fund Flow) ──────────────────
 
-def fetch_market_fund_flow(days: int = 60) -> pd.DataFrame:
+def fetch_market_fund_flow(days: int = 60, force_refresh: bool = False) -> pd.DataFrame:
     """获取大盘主力资金流向历史。"""
     cache_path = os.path.join(_CACHE_MARKET_FLOW, "history.csv")
-    if _cache_fresh(cache_path, max_age_hours=8):
+    if not force_refresh and _cache_fresh(cache_path, max_age_hours=8):
         df = pd.read_csv(cache_path)
         if len(df) >= days * 0.5:
             return df.tail(days)
@@ -699,13 +699,13 @@ CORE_ETF_LIST = [
 ]
 
 
-def fetch_etf_shares_sse(date: str = "") -> pd.DataFrame:
+def fetch_etf_shares_sse(date: str = "", force_refresh: bool = False) -> pd.DataFrame:
     """获取上交所ETF份额数据。尝试今日,失败后回退近5个交易日。"""
     if not date:
         date = _today_str()
 
     cache_path = os.path.join(_CACHE_NATIONAL, f"sse_latest.csv")
-    if _cache_fresh(cache_path, max_age_hours=12):
+    if not force_refresh and _cache_fresh(cache_path, max_age_hours=12):
         return pd.read_csv(cache_path)
 
     dates_to_try = [date]
@@ -732,10 +732,10 @@ def fetch_etf_shares_sse(date: str = "") -> pd.DataFrame:
     return pd.DataFrame()
 
 
-def fetch_etf_shares_szse() -> pd.DataFrame:
+def fetch_etf_shares_szse(force_refresh: bool = False) -> pd.DataFrame:
     """获取深交所ETF份额数据 (仅最新日)。"""
     cache_path = os.path.join(_CACHE_NATIONAL, f"szse_{_today_str()}.csv")
-    if _cache_fresh(cache_path, max_age_hours=12):
+    if not force_refresh and _cache_fresh(cache_path, max_age_hours=12):
         return pd.read_csv(cache_path)
 
     log.info("深交所ETF份额...")
@@ -809,8 +809,10 @@ def fetch_etf_share_history(etf_code: str, dates: list[str] = None) -> list[dict
     return history
 
 
-def national_team_monitor() -> dict:
+def national_team_monitor(force_refresh: bool = False) -> dict:
     """监控国家队核心ETF份额变化。
+
+    force_refresh: True 时跳过缓存, 用于用户手动「获取最新」。
 
     Returns:
         {
@@ -827,17 +829,19 @@ def national_team_monitor() -> dict:
             },
         }
     """
-    log.info("国家队ETF监控: 获取数据...")
+    log.info("国家队ETF监控: 获取数据... (force_refresh=%s)", force_refresh)
     result = {
         "date": _today_str(),
         "etf_snapshot": [],
         "total_broad_shares_yi": 0,
         "total_sector_shares_yi": 0,
         "signals": {"broad_total_change": "无数据", "anomalies": []},
+        "fetched_at": datetime.now().isoformat(),
+        "force_refresh": force_refresh,
     }
 
-    sse_df = fetch_etf_shares_sse()
-    szse_df = fetch_etf_shares_szse()
+    sse_df = fetch_etf_shares_sse(force_refresh=force_refresh)
+    szse_df = fetch_etf_shares_szse(force_refresh=force_refresh)
 
     broad_total = 0
     sector_total = 0
@@ -896,9 +900,22 @@ def _detect_share_anomalies(result: dict):
 
     prev_broad = prev.get("total_broad_shares_yi", 0)
     curr_broad = result["total_broad_shares_yi"]
+    prev_sector = prev.get("total_sector_shares_yi", 0)
+    curr_sector = result["total_sector_shares_yi"]
+
+    daily = {
+        "ref_date": prev.get("date"),
+        "broad_from": round(prev_broad, 2) if prev_broad else None,
+        "broad_to": round(curr_broad, 2) if curr_broad else None,
+        "sector_from": round(prev_sector, 2) if prev_sector else None,
+        "sector_to": round(curr_sector, 2) if curr_sector else None,
+        "broad_change_pct": None,
+        "sector_change_pct": None,
+    }
 
     if prev_broad > 0 and curr_broad > 0:
         change_pct = (curr_broad - prev_broad) / prev_broad * 100
+        daily["broad_change_pct"] = round(change_pct, 2)
         if change_pct > 5:
             result["signals"]["broad_total_change"] = "大幅增持"
         elif change_pct > 1:
@@ -910,6 +927,14 @@ def _detect_share_anomalies(result: dict):
         else:
             result["signals"]["broad_total_change"] = "平稳"
 
+    if prev_sector > 0 and curr_sector > 0:
+        sector_chg = (curr_sector - prev_sector) / prev_sector * 100
+        daily["sector_change_pct"] = round(sector_chg, 2)
+
+    result["daily_change"] = daily
+
+    if prev_broad > 0 and curr_broad > 0:
+        change_pct = daily["broad_change_pct"]
         prev_etfs = {e["code"]: e for e in prev.get("etf_snapshot", [])}
         for etf in result["etf_snapshot"]:
             code = etf["code"]
@@ -967,6 +992,7 @@ def _save_national_team_knowledge(snapshot: dict):
         broad = snapshot.get("total_broad_shares_yi", 0)
         sector = snapshot.get("total_sector_shares_yi", 0)
         sigs = snapshot.get("signals", {})
+        daily = snapshot.get("daily_change", {})
 
         lines = [
             f"# 国家队ETF监控报告 — {date}",
@@ -976,11 +1002,21 @@ def _save_national_team_knowledge(snapshot: dict):
             f"- 宽基ETF总份额: {broad:.1f} 亿份",
             f"- 行业ETF总份额: {sector:.1f} 亿份",
             f"- 国家队动向信号: {sigs.get('broad_total_change', '无数据')}",
+        ]
+        if daily.get("broad_change_pct") is not None:
+            ref = daily.get("ref_date", "")
+            lines.append(
+                f"- 当天宽基变化: {daily['broad_change_pct']:+.2f}%"
+                + (f" (对比 {ref})" if ref else "")
+            )
+        if daily.get("sector_change_pct") is not None:
+            lines.append(f"- 当天行业变化: {daily['sector_change_pct']:+.2f}%")
+        lines.extend([
             "",
             "## 宽基ETF份额详情",
-            "| ETF | 代码 | 跟踪指数 | 份额(亿份) | 变化 |",
-            "|-----|------|---------|-----------|------|",
-        ]
+            "| ETF | 代码 | 跟踪指数 | 份额(亿份) | 当天变化 |",
+            "|-----|------|---------|-----------|---------|",
+        ])
 
         for e in snapshot.get("etf_snapshot", []):
             if e.get("type") != "宽基":
@@ -992,8 +1028,8 @@ def _save_national_team_knowledge(snapshot: dict):
         lines.extend([
             "",
             "## 行业ETF份额详情",
-            "| ETF | 代码 | 跟踪指数 | 份额(亿份) | 变化 |",
-            "|-----|------|---------|-----------|------|",
+            "| ETF | 代码 | 跟踪指数 | 份额(亿份) | 当天变化 |",
+            "|-----|------|---------|-----------|---------|",
         ])
 
         for e in snapshot.get("etf_snapshot", []):
@@ -1262,6 +1298,7 @@ def national_team_period_stats() -> dict:
 
     today = datetime.now()
     period_defs = [
+        {"label": "当天", "key": "1d", "days": 0, "tolerance": 0, "use_prev_day": True},
         {"label": "1周", "key": "1w", "days": 7, "tolerance": 3},
         {"label": "1月", "key": "1m", "days": 30, "tolerance": 5},
         {"label": "3月", "key": "3m", "days": 90, "tolerance": 10},
@@ -1288,8 +1325,11 @@ def national_team_period_stats() -> dict:
 
     periods = []
     for pdef in period_defs:
-        target_date = (today - timedelta(days=pdef["days"])).strftime("%Y-%m-%d")
-        past_entry = _find_closest_entry(target_date, pdef["tolerance"])
+        if pdef.get("use_prev_day"):
+            past_entry = history[-2] if len(history) >= 2 else None
+        else:
+            target_date = (today - timedelta(days=pdef["days"])).strftime("%Y-%m-%d")
+            past_entry = _find_closest_entry(target_date, pdef["tolerance"])
         if not past_entry:
             periods.append({
                 "key": pdef["key"], "label": pdef["label"],
@@ -1325,8 +1365,11 @@ def national_team_period_stats() -> dict:
         etf_periods = {"code": code, "name": etf_info["name"],
                        "type": etf_info["type"], "current_yi": round(curr_yi, 2)}
         for pdef in period_defs:
-            target_date = (today - timedelta(days=pdef["days"])).strftime("%Y-%m-%d")
-            past_entry = _find_closest_entry(target_date, pdef["tolerance"])
+            if pdef.get("use_prev_day"):
+                past_entry = history[-2] if len(history) >= 2 else None
+            else:
+                target_date = (today - timedelta(days=pdef["days"])).strftime("%Y-%m-%d")
+                past_entry = _find_closest_entry(target_date, pdef["tolerance"])
             pct = None
             past_yi = None
             if past_entry:
@@ -1343,7 +1386,7 @@ def national_team_period_stats() -> dict:
     return {"periods": periods, "per_etf_periods": per_etf}
 
 
-def fetch_institution_holdings(quarter: str = "") -> pd.DataFrame:
+def fetch_institution_holdings(quarter: str = "", force_refresh: bool = False) -> pd.DataFrame:
     """获取机构持股一览 (含汇金/社保/保险等)。
 
     quarter: 格式如 "20261" 表示2026年一季报, "20254" 表示2025年年报。
@@ -1359,7 +1402,7 @@ def fetch_institution_holdings(quarter: str = "") -> pd.DataFrame:
             quarter = f"{year}{q}"
 
     cache_path = os.path.join(_CACHE_NATIONAL, f"inst_hold_{quarter}.json")
-    if _cache_fresh(cache_path, max_age_hours=72):
+    if not force_refresh and _cache_fresh(cache_path, max_age_hours=72):
         return pd.read_json(cache_path, encoding="utf-8")
 
     log.info("机构持股: %s ...", quarter)
@@ -1374,7 +1417,7 @@ def fetch_institution_holdings(quarter: str = "") -> pd.DataFrame:
     return pd.DataFrame()
 
 
-def national_team_fund_signals() -> dict:
+def national_team_fund_signals(force_refresh: bool = False) -> dict:
     """Aggregate fund flow + institution data to supplement ETF share monitoring.
 
     Returns market-wide main-force flow summary and institution holding highlights.
@@ -1382,7 +1425,7 @@ def national_team_fund_signals() -> dict:
     result = {"market_flow": None, "institution": None}
 
     try:
-        df_flow = fetch_market_fund_flow(days=10)
+        df_flow = fetch_market_fund_flow(days=10, force_refresh=force_refresh)
         if df_flow is not None and not df_flow.empty:
             net_col = None
             for c in ["主力净流入-净额", "主力净流入", "净流入"]:
@@ -1431,7 +1474,7 @@ def national_team_fund_signals() -> dict:
         log.warning("国家队资金信号-大盘资金流获取失败: %s", e)
 
     try:
-        df_inst = fetch_institution_holdings()
+        df_inst = fetch_institution_holdings(force_refresh=force_refresh)
         if df_inst is not None and not df_inst.empty:
             total = len(df_inst)
             name_col = None

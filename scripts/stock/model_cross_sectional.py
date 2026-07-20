@@ -13,6 +13,7 @@
   按申万行业分组，每组内独立排序，每行业取 Top N，避免组合过度暴露于单一行业。
 """
 import logging
+import json
 import os
 import time
 from datetime import datetime, timedelta
@@ -631,3 +632,55 @@ def _predict_and_neutralize(
 
     neutralized.sort(key=lambda x: x["xgb_score"], reverse=True)
     return neutralized
+
+
+def watchlist_relative_strength() -> dict:
+    """Phase 3.3: 自选股横截面相对强度排名."""
+    from watchlist import list_stocks
+
+    stocks = list_stocks()
+    if not stocks:
+        return {"rankings": [], "error": "自选股为空"}
+
+    rows = []
+    for s in stocks:
+        sym = s["symbol"]
+        try:
+            from technical_analysis import load_ohlcv
+            ohlcv = load_ohlcv(sym)
+            if ohlcv is None or len(ohlcv) < 25:
+                continue
+            ret20 = float(ohlcv["close"].pct_change(20).iloc[-1] * 100)
+            mom = float(ohlcv["close"].pct_change(5).iloc[-1] * 100)
+            sent = 0.0
+            sent_path = os.path.join(STOCK_DATA_DIR, sym, "sentiment.json")
+            if os.path.isfile(sent_path):
+                try:
+                    with open(sent_path, encoding="utf-8") as f:
+                        sent = float(json.load(f).get("daily_score", 0) or 0)
+                except Exception:
+                    pass
+            score = ret20 * 0.5 + mom * 0.3 + sent * 20 * 0.2
+            rows.append({
+                "symbol": sym,
+                "name": s.get("name", sym),
+                "ret_20d": round(ret20, 2),
+                "momentum_5d": round(mom, 2),
+                "sentiment": round(sent, 3),
+                "composite_score": round(score, 2),
+            })
+        except Exception as e:
+            log.debug("相对强度 %s 失败: %s", sym, e)
+
+    rows.sort(key=lambda x: x["composite_score"], reverse=True)
+    n = len(rows)
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+        r["percentile"] = round((n - i) / n * 100, 1) if n else 0
+        r["tier"] = "top20" if r["percentile"] >= 80 else "mid" if r["percentile"] >= 40 else "bottom"
+
+    return {
+        "rankings": rows,
+        "top_picks": [r for r in rows if r["tier"] == "top20"][:5],
+        "generated_at": datetime.now().isoformat(),
+    }

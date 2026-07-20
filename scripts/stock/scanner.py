@@ -1424,13 +1424,45 @@ def _generate_report(top_picks: list[dict], scan_meta: dict) -> str:
 def _index_scan_report_to_rag(report_path: str, date_str: str):
     """Index the short-term scan report into Qdrant RAG."""
     import uuid as _uuid
+    import importlib.util as _ilu
     _base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
     _rag_dir = os.path.join(_base, "rag")
     if _base not in sys.path:
         sys.path.insert(0, _base)
     if _rag_dir not in sys.path:
         sys.path.insert(0, _rag_dir)
-    from index_briefing import _get_model, _get_client, _save_snapshot, _chunk_text, COLLECTION
+
+    # index_briefing binds `SNAPSHOT_PATH` via `from config import ...` at
+    # import time. This scan runs in a background thread where concurrent
+    # @_with_stock_imports status polls swap sys.modules['config'] to the
+    # stock config (which has no SNAPSHOT_PATH), raising
+    # `cannot import name 'SNAPSHOT_PATH' from 'config'`. Force-load the RAG
+    # config for the import, then restore the prior config so the scan thread
+    # keeps its expected settings. Retry closes the small window where a poll
+    # swaps config mid-import. Once index_briefing is cached its module-level
+    # SNAPSHOT_PATH stays bound, so subsequent indexing calls are safe.
+    _rag_cfg_path = os.path.join(_base, "config.py")
+    _prev_config = sys.modules.get("config")
+    try:
+        from index_briefing import _get_model, _get_client, _save_snapshot, _chunk_text, COLLECTION
+    except ImportError:
+        last_err = None
+        for _ in range(5):
+            try:
+                _spec = _ilu.spec_from_file_location("config", _rag_cfg_path)
+                _rag_cfg = _ilu.module_from_spec(_spec)
+                _spec.loader.exec_module(_rag_cfg)
+                sys.modules["config"] = _rag_cfg
+                from index_briefing import _get_model, _get_client, _save_snapshot, _chunk_text, COLLECTION
+                break
+            except ImportError as e:
+                last_err = e
+                time.sleep(0.3)
+        else:
+            raise last_err
+    finally:
+        if _prev_config is not None:
+            sys.modules["config"] = _prev_config
     from qdrant_client.models import PointStruct
 
     with open(report_path, "r", encoding="utf-8") as f:
@@ -1927,6 +1959,9 @@ def _fetch_market_eastmoney() -> pd.DataFrame:
 
         for item in items:
             code = str(item.get("code", ""))
+            # sina returns mktcap/nmc in 万元; eastmoney & akshare use 元.
+            _mktcap = item.get("mktcap")
+            _nmc = item.get("nmc")
             all_rows.append({
                 "代码": code,
                 "名称": str(item.get("name", "")),
@@ -1940,8 +1975,8 @@ def _fetch_market_eastmoney() -> pd.DataFrame:
                 "最高": item.get("high"),
                 "最低": item.get("low"),
                 "今开": item.get("open"),
-                "总市值": item.get("mktcap"),
-                "流通市值": item.get("nmc"),
+                "总市值": (float(_mktcap) * 10000) if _mktcap not in (None, "", "-") else None,
+                "流通市值": (float(_nmc) * 10000) if _nmc not in (None, "", "-") else None,
             })
 
         page += 1

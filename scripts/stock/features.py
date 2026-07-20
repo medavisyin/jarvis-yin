@@ -35,6 +35,14 @@ def build_features(symbol: str, forward_days: int = 5, threshold: float = 2.0) -
           target = 1 (涨 > threshold%), 0 (平), -1 (跌 < -threshold%)
           target_ret = 未来N日实际收益率%
     """
+    try:
+        from data_quality import is_ml_safe
+        if not is_ml_safe(symbol):
+            log.warning("%s daily.csv 非前复权数据 (sina_raw), 跳过 ML 特征构建", symbol)
+            return None
+    except ImportError:
+        pass
+
     df = load_ohlcv(symbol)
     if df is None or len(df) < 120:
         log.warning("数据不足, 需要至少120行, %s 只有 %d 行",
@@ -57,6 +65,7 @@ def build_features(symbol: str, forward_days: int = 5, threshold: float = 2.0) -
     _add_t1_features(df)
     _add_market_mood_features(df)
     _add_chase_penalty_features(df)
+    _add_macro_features(df)
 
     _add_target(df, forward_days, threshold)
 
@@ -396,6 +405,53 @@ def _add_market_mood_features(df: pd.DataFrame):
             df.iloc[-1, df.columns.get_loc("mood_north_strength")] = nb["momentum"]
     except Exception:
         pass
+
+
+def _add_macro_features(df: pd.DataFrame):
+    """宏观背景因子 (最新值填入末行, Phase 1.2)."""
+    import json
+    import os
+    import time
+
+    from config import STOCK_CACHE_DIR
+
+    cache_path = os.path.join(STOCK_CACHE_DIR, ".macro", "indicators.json")
+    indicators = {}
+    if os.path.isfile(cache_path):
+        age = time.time() - os.path.getmtime(cache_path)
+        if age < 86400:
+            try:
+                with open(cache_path, encoding="utf-8") as f:
+                    indicators = json.load(f)
+            except Exception:
+                pass
+
+    if not indicators:
+        try:
+            import akshare as ak
+            cpi = ak.macro_china_cpi_monthly()
+            if cpi is not None and not cpi.empty:
+                indicators["cpi_yoy"] = float(cpi.iloc[-1].get("全国-同比增长", 0) or 0)
+            pmi = ak.macro_china_pmi()
+            if pmi is not None and not pmi.empty:
+                indicators["pmi"] = float(pmi.iloc[-1].get("制造业-指数", 0) or 0)
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(indicators, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            log.debug("宏观指标获取失败: %s", e)
+
+    if not indicators:
+        return
+
+    last = df.index[-1]
+    for key, val in indicators.items():
+        col = f"macro_{key}"
+        df[col] = np.nan
+        try:
+            df.at[last, col] = float(val)
+        except Exception:
+            pass
 
 
 def _add_chase_penalty_features(df: pd.DataFrame):

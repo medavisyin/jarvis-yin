@@ -768,6 +768,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
       <button type="button" class="modal-close" onclick="closeStockModal()" title="Close">&times;</button>
     </div>
     <div class="modal-content" style="padding:14px 18px;background:#0f1117">
+      <div id="stockRegimeBar" style="display:flex;gap:10px;align-items:center;margin-bottom:10px;padding:8px 12px;background:#1a1d2e;border:1px solid #2a2d3e;border-radius:8px;font-size:0.8em;color:#94a3b8">
+        <span>&#127760; 市场状态: <strong id="stockRegimeMarket" style="color:#60a5fa">加载中...</strong></span>
+        <span id="stockRegimeAdvice" style="color:#6b7280"></span>
+      </div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
         <input type="text" id="stockSymbolInput" placeholder="输入股票代码 (如 600519)" style="background:#1a1d2e;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:8px 12px;font-size:0.88em;width:180px">
         <input type="text" id="stockCostPrice" placeholder="成本价 (选填)" style="background:#1a1d2e;border:1px solid #3a3d4a;color:#fbbf24;border-radius:6px;padding:8px 12px;font-size:0.88em;width:110px" title="已持仓的成本价格，用于生成补仓建议">
@@ -777,6 +781,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" id="btnStockSent" onclick="runStockSent()" style="font-size:0.78em">情绪分析</button>
         <button type="button" class="toolbar-btn" id="btnStockXGB" onclick="runStockXGB()" style="font-size:0.78em">ML预测</button>
         <button type="button" class="toolbar-btn" id="btnStockFF" onclick="runStockFF()" style="font-size:0.78em">&#128176; 聪明钱</button>
+        <button type="button" class="toolbar-btn" id="btnStockVal" onclick="runStockValuation()" style="font-size:0.78em">&#128178; 估值</button>
+        <button type="button" class="toolbar-btn" onclick="runStockPortfolio()" style="font-size:0.78em">&#128188; 仓位</button>
+        <button type="button" class="toolbar-btn" onclick="runStockDrawdown()" style="font-size:0.78em">&#128680; 回撤</button>
+        <button type="button" class="toolbar-btn" onclick="runStockRelStrength()" style="font-size:0.78em">&#128200; 相对强度</button>
+        <button type="button" class="toolbar-btn" onclick="runStockBacktest()" style="font-size:0.78em">&#128202; 回测</button>
         <button type="button" class="toolbar-btn" id="btnStockPdf" onclick="exportStockPdf('stock_analysis','stockAnalysis')" style="font-size:0.78em">&#128196; 导出PDF</button>
         <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;cursor:pointer;margin-left:8px" title="同时使用 DeepSeek API 分析">
           <input type="checkbox" id="stockUseDeepseek" style="accent-color:#3b82f6">
@@ -809,9 +818,23 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <input type="text" id="watchlistAddName" placeholder="名称 (贵州茅台)" style="background:#1a1d2e;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:6px 10px;font-size:0.82em;width:120px">
         <input type="text" id="watchlistAddSector" placeholder="行业" style="background:#1a1d2e;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:6px 10px;font-size:0.82em;width:80px">
         <button type="button" class="send-btn" onclick="addToWatchlist()" style="padding:6px 14px;font-size:0.82em">+ 添加</button>
-        <button type="button" class="toolbar-btn" onclick="refreshWatchlist()" style="font-size:0.78em">&#8635; 刷新数据</button>
+        <button type="button" class="toolbar-btn" id="btnPrefetchStart" onclick="startPrefetch(false)" style="font-size:0.78em" title="非高峰时段手动执行：全市场快照 + 自选股逐只刷新">&#128190; 数据预热</button>
+        <button type="button" class="toolbar-btn" id="btnPrefetchPause" onclick="pausePrefetch()" style="font-size:0.78em" disabled>&#9208; 暂停</button>
+        <button type="button" class="toolbar-btn" id="btnPrefetchResume" onclick="resumePrefetch()" style="font-size:0.78em" disabled>&#9654; 继续</button>
+        <button type="button" class="toolbar-btn" id="btnPrefetchStop" onclick="stopPrefetch()" style="font-size:0.78em" disabled>&#9724; 停止</button>
+        <button type="button" class="toolbar-btn" onclick="loadWatchlist()" style="font-size:0.78em">&#8635; 刷新列表</button>
         <button type="button" class="toolbar-btn" onclick="exportStockPdf('watchlist','watchlist')" style="font-size:0.78em">&#128196; 导出PDF</button>
         <span id="watchlistStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
+      </div>
+      <div id="prefetchProgressWrap" style="display:none;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;font-size:0.75em;color:#8b8fa4;margin-bottom:4px">
+          <span id="prefetchPhase"></span>
+          <span id="prefetchPct"></span>
+        </div>
+        <div style="height:6px;background:#1a1d2e;border-radius:3px;overflow:hidden">
+          <div id="prefetchBar" style="height:100%;width:0%;background:linear-gradient(90deg,#3b82f6,#8b5cf6);transition:width 0.3s"></div>
+        </div>
+        <div id="prefetchMessage" style="font-size:0.72em;color:#64748b;margin-top:4px"></div>
       </div>
       <div id="watchlistTable" style="max-height:60vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px">
         <table style="width:100%;border-collapse:collapse;font-size:0.82em">
@@ -3438,6 +3461,24 @@ async function deleteNote(id) {
 // --- Stock Analysis ---
 function openStockModal() {
   document.getElementById('stockAnalysisModal').classList.add('open');
+  loadStockRegime();
+}
+async function loadStockRegime() {
+  try {
+    const sym = document.getElementById('stockSymbolInput').value.trim();
+    const url = sym ? '/api/stock/regime/'+sym : '/api/stock/regime';
+    const r = await fetch(url);
+    const d = await r.json();
+    const m = d.market || {};
+    document.getElementById('stockRegimeMarket').textContent = m.regime_zh || '未知';
+    document.getElementById('stockRegimeAdvice').textContent = m.advice || '';
+    if (d.symbol_regime) {
+      document.getElementById('stockRegimeAdvice').textContent +=
+        ' | 个股: ' + d.symbol_regime.regime_zh;
+    }
+  } catch(e) {
+    document.getElementById('stockRegimeMarket').textContent = '不可用';
+  }
 }
 function closeStockModal() {
   document.getElementById('stockAnalysisModal').classList.remove('open');
@@ -3530,6 +3571,82 @@ async function runStockFund() { await _runStockPartial('fundamental'); }
 async function runStockSent() { await _runStockPartial('sentiment'); }
 async function runStockXGB() { await _runStockPartial('xgboost'); }
 async function runStockFF() { await _runStockPartial('fund_flow'); }
+async function runStockValuation() { await _runStockPartial('valuation'); }
+async function runStockPortfolio() {
+  const res = document.getElementById('stockResult');
+  res.innerHTML = '<p style="color:#60a5fa">⏳ 计算仓位建议...</p>';
+  try {
+    const r = await fetch('/api/stock/portfolio');
+    const d = await r.json();
+    if (d.error) { res.innerHTML = '<p style="color:#f87171">'+d.error+'</p>'; return; }
+    let h = '# 组合仓位建议\n\n';
+    h += '> 市场: **'+(d.market_regime_zh||'')+'** — '+(d.regime_advice||'')+'\n\n';
+    h += '| 标的 | 建议仓位 | 金额 | 评分 |\n|------|---------|------|------|\n';
+    (d.allocations||[]).forEach(a => {
+      h += '| '+a.symbol+' '+a.name+' | '+a.weight_pct+'% | ¥'+a.amount+' | '+a.score+' |\n';
+    });
+    h += '\n**现金建议**: '+d.cash_pct+'% (¥'+d.cash_amount+')\n';
+    if (d.correlation && d.correlation.warnings && d.correlation.warnings.length) {
+      h += '\n## 相关性预警\n';
+      d.correlation.warnings.forEach(w => { h += '- '+w+'\n'; });
+    }
+    res.innerHTML = '<div style="white-space:pre-wrap">'+_simpleMarkdown(h)+'</div>';
+  } catch(e) { res.innerHTML = '<p style="color:#f87171">'+e.message+'</p>'; }
+}
+async function runStockDrawdown() {
+  const res = document.getElementById('stockResult');
+  res.innerHTML = '<p style="color:#60a5fa">⏳ 检查回撤...</p>';
+  try {
+    const r = await fetch('/api/stock/drawdown');
+    const d = await r.json();
+    let h = '# 回撤监控\n\n';
+    if (d.alerts && d.alerts.length) {
+      h += '## 预警\n';
+      d.alerts.forEach(a => { h += '- **'+a.level+'**: '+a.message+'\n'; });
+    } else { h += '> 暂无预警\n\n'; }
+    h += '| 标的 | 现价 | 成本 | 回撤 | 盈亏 |\n|------|------|------|------|------|\n';
+    (d.positions||[]).forEach(p => {
+      h += '| '+p.symbol+' | '+p.price+' | '+p.cost_price+' | '+p.drawdown_pct+'% | '+p.pnl_pct+'% |\n';
+    });
+    res.innerHTML = '<div style="white-space:pre-wrap">'+_simpleMarkdown(h)+'</div>';
+  } catch(e) { res.innerHTML = '<p style="color:#f87171">'+e.message+'</p>'; }
+}
+async function runStockRelStrength() {
+  const res = document.getElementById('stockResult');
+  res.innerHTML = '<p style="color:#60a5fa">⏳ 计算相对强度...</p>';
+  try {
+    const r = await fetch('/api/stock/relative-strength');
+    const d = await r.json();
+    let h = '# 自选股相对强度排名\n\n';
+    h += '| 排名 | 标的 | 20日收益 | 5日动量 | 综合分 | 分位 |\n|------|------|---------|---------|--------|------|\n';
+    (d.rankings||[]).forEach(x => {
+      h += '| '+x.rank+' | '+x.symbol+' | '+x.ret_20d+'% | '+x.momentum_5d+'% | '+x.composite_score+' | '+x.percentile+'% |\n';
+    });
+    if (d.top_picks && d.top_picks.length) {
+      h += '\n**建议关注 (前20%)**: '+d.top_picks.map(t=>t.symbol).join(', ')+'\n';
+    }
+    res.innerHTML = '<div style="white-space:pre-wrap">'+_simpleMarkdown(h)+'</div>';
+  } catch(e) { res.innerHTML = '<p style="color:#f87171">'+e.message+'</p>'; }
+}
+async function runStockBacktest() {
+  const sym = document.getElementById('stockSymbolInput').value.trim();
+  if (!sym) { showToast('请输入股票代码'); return; }
+  const res = document.getElementById('stockResult');
+  res.innerHTML = '<p style="color:#60a5fa">⏳ 回测中 (momentum策略)...</p>';
+  try {
+    const r = await fetch('/api/stock/backtest/'+sym, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({strategy:'momentum', capital:500000})});
+    const d = await r.json();
+    if (d.error) { res.innerHTML = '<p style="color:#f87171">'+d.error+'</p>'; return; }
+    let h = '# 回测报告 ('+d.strategy+')\n\n';
+    h += '- 总收益: **'+d.total_return_pct+'%**\n';
+    h += '- 年化: **'+d.annual_return_pct+'%**\n';
+    h += '- 夏普: **'+d.sharpe_ratio+'**\n';
+    h += '- 最大回撤: **'+d.max_drawdown_pct+'%**\n';
+    h += '- 胜率: **'+d.win_rate+'%**\n';
+    h += '- 交易次数: **'+d.total_trades+'**\n';
+    res.innerHTML = '<div style="white-space:pre-wrap">'+_simpleMarkdown(h)+'</div>';
+  } catch(e) { res.innerHTML = '<p style="color:#f87171">'+e.message+'</p>'; }
+}
 async function _runStockPartial(mode) {
   const sym = document.getElementById('stockSymbolInput').value.trim();
   if (!sym) { showToast('请输入股票代码'); return; }
@@ -3565,9 +3682,16 @@ function _renderStockMd(d) {
     html += '</div></div>';
   }
   let md = d.report || d.technical_report || d.fundamental_report || d.sentiment_report || '';
+  if (d.valuation_report) md += '\n\n---\n\n' + d.valuation_report;
   if (d.fund_flow_report) md += '\n\n---\n\n' + d.fund_flow_report;
   if (d.xgb_report) md += '\n\n---\n\n' + d.xgb_report;
   if (d.prediction_report) md += '\n\n---\n\n' + d.prediction_report;
+  if (d.uncertainty) {
+    html += '<div style="background:#0f172a;border:1px solid #334155;border-radius:8px;padding:10px;margin:8px 0;font-size:0.85em">';
+    html += '<span style="color:#94a3b8">模型不确定性: </span><strong style="color:#fbbf24">'+ (d.uncertainty.level_zh||d.uncertainty.level) +'</strong>';
+    if (d.uncertainty.ci_80_price) html += ' | 80%区间: ¥'+d.uncertainty.ci_80_price[0]+' ~ ¥'+d.uncertainty.ci_80_price[1];
+    html += '</div>';
+  }
   html += '<div style="white-space:pre-wrap;line-height:1.7">' + _simpleMarkdown(md) + '</div>';
   return html;
 }
@@ -3593,6 +3717,7 @@ function _simpleMarkdown(text) {
 function openWatchlistModal() {
   document.getElementById('watchlistModal').classList.add('open');
   loadWatchlist();
+  pollPrefetchStatus();
 }
 function closeWatchlistModal() {
   document.getElementById('watchlistModal').classList.remove('open');
@@ -3639,15 +3764,76 @@ async function removeFromWatchlist(sym) {
     loadWatchlist();
   } catch(e) { showToast('删除失败'); }
 }
-async function refreshWatchlist() {
-  const st = document.getElementById('watchlistStatus');
-  st.textContent = '刷新中...';
+async function refreshWatchlist() { await loadWatchlist(); }
+
+var _prefetchPollTimer = null;
+function _updatePrefetchUI(s) {
+  if (!s) return;
+  var wrap = document.getElementById('prefetchProgressWrap');
+  var running = s.running || s.status === 'running' || s.status === 'paused';
+  wrap.style.display = running || s.can_resume ? 'block' : 'none';
+  var pct = s.progress_pct || 0;
+  if (s.phase === 'market_spot') pct = Math.max(pct, 5);
+  if (s.phase === 'industry_map') pct = Math.max(pct, 10);
+  document.getElementById('prefetchBar').style.width = pct + '%';
+  document.getElementById('prefetchPct').textContent = pct + '%';
+  document.getElementById('prefetchPhase').textContent = s.phase || s.status || '';
+  document.getElementById('prefetchMessage').textContent = s.message || '';
+  document.getElementById('btnPrefetchStart').disabled = running;
+  document.getElementById('btnPrefetchPause').disabled = !running || s.status === 'paused';
+  document.getElementById('btnPrefetchResume').disabled = s.status !== 'paused' && !(s.can_resume && !running);
+  document.getElementById('btnPrefetchStop').disabled = !running;
+  var st = document.getElementById('watchlistStatus');
+  if (running) st.textContent = s.message || '预热中...';
+  else if (s.status === 'completed') { st.textContent = '预热完成'; setTimeout(function(){st.textContent='';}, 4000); loadWatchlist(); }
+}
+async function pollPrefetchStatus() {
   try {
-    await fetch('/api/stock/watchlist/refresh', {method:'POST'});
-    await loadWatchlist();
-    st.textContent = '已刷新';
-    setTimeout(()=>{st.textContent='';}, 3000);
-  } catch(e) { st.textContent = '刷新失败'; }
+    var r = await fetch('/api/stock/prefetch/status');
+    var s = await r.json();
+    _updatePrefetchUI(s);
+    if (s.running || s.status === 'paused') {
+      _prefetchPollTimer = setTimeout(pollPrefetchStatus, 2000);
+    } else {
+      _prefetchPollTimer = null;
+    }
+  } catch(e) {}
+}
+async function startPrefetch(resume) {
+  try {
+    var r = await fetch('/api/stock/prefetch/start', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({resume: !!resume})
+    });
+    var d = await r.json();
+    if (d.error) showToast(d.error); else showToast(d.message || '已开始');
+    _updatePrefetchUI(d.status || d);
+    if (!_prefetchPollTimer) pollPrefetchStatus();
+  } catch(e) { showToast('启动失败'); }
+}
+async function pausePrefetch() {
+  try {
+    var r = await fetch('/api/stock/prefetch/pause', {method:'POST'});
+    var d = await r.json();
+    _updatePrefetchUI(d.status || d);
+  } catch(e) { showToast('暂停失败'); }
+}
+async function resumePrefetch() {
+  try {
+    var r = await fetch('/api/stock/prefetch/resume', {method:'POST'});
+    var d = await r.json();
+    if (d.error) startPrefetch(true); else showToast('已继续');
+    _updatePrefetchUI(d.status || d);
+    if (!_prefetchPollTimer) pollPrefetchStatus();
+  } catch(e) { showToast('继续失败'); }
+}
+async function stopPrefetch() {
+  try {
+    var r = await fetch('/api/stock/prefetch/stop', {method:'POST'});
+    var d = await r.json();
+    _updatePrefetchUI(d.status || d);
+    showToast('已停止，可稍后继续');
+  } catch(e) { showToast('停止失败'); }
 }
 
 // --- Stock PDF Export ---
@@ -4937,7 +5123,7 @@ async function fetchNationalTeam() {
   el.innerHTML = '<p style="color:#60a5fa">&#9203; 正在从上交所/深交所获取ETF份额数据 + 回填历史数据...</p>';
   document.getElementById('btnNTFetch').disabled = true;
   try {
-    const r = await fetch('/api/stock/national-team');
+    const r = await fetch('/api/stock/national-team?force=1');
     const d = await r.json();
     if (d.error) { el.innerHTML = '<p style="color:#f87171">'+d.error+'</p>'; st.textContent = ''; document.getElementById('btnNTFetch').disabled = false; return; }
     _cachePdfData('nt', d);
@@ -4953,7 +5139,17 @@ function renderNationalTeam(d) {
   const ps = d.period_stats || {};
   const etfs = snap.etf_snapshot || [];
   const sigs = snap.signals || {};
+  const daily = snap.daily_change || {};
   let h = '';
+
+  function _chgFmt(v) {
+    if (v == null) return null;
+    return (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+  }
+  function _chgColor(v) {
+    if (v == null) return '#8b8fa4';
+    return v > 0 ? '#ef4444' : v < 0 ? '#10b981' : '#8b8fa4';
+  }
 
   var sigColor = '#8b8fa4';
   var sigLabel = sigs.broad_total_change || '无数据';
@@ -4966,10 +5162,20 @@ function renderNationalTeam(d) {
   h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:12px 16px;flex:1;min-width:180px">';
   h += '<div style="font-size:0.78em;color:#8b8fa4">宽基ETF总份额</div>';
   h += '<div style="font-size:1.6em;font-weight:700;color:#60a5fa">' + (snap.total_broad_shares_yi||0).toFixed(1) + '<span style="font-size:0.5em;color:#8b8fa4"> 亿份</span></div>';
+  if (daily.broad_change_pct != null) {
+    h += '<div style="font-size:0.82em;font-weight:600;color:' + _chgColor(daily.broad_change_pct) + ';margin-top:4px">当天 ' + _chgFmt(daily.broad_change_pct);
+    if (daily.ref_date) h += ' <span style="color:#6b7280;font-weight:400">(vs ' + daily.ref_date + ')</span>';
+    h += '</div>';
+  }
   h += '</div>';
   h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:12px 16px;flex:1;min-width:180px">';
   h += '<div style="font-size:0.78em;color:#8b8fa4">行业ETF总份额</div>';
   h += '<div style="font-size:1.6em;font-weight:700;color:#a78bfa">' + (snap.total_sector_shares_yi||0).toFixed(1) + '<span style="font-size:0.5em;color:#8b8fa4"> 亿份</span></div>';
+  if (daily.sector_change_pct != null) {
+    h += '<div style="font-size:0.82em;font-weight:600;color:' + _chgColor(daily.sector_change_pct) + ';margin-top:4px">当天 ' + _chgFmt(daily.sector_change_pct);
+    if (daily.ref_date) h += ' <span style="color:#6b7280;font-weight:400">(vs ' + daily.ref_date + ')</span>';
+    h += '</div>';
+  }
   h += '</div>';
   h += '<div style="background:#0f1117;border:1px solid ' + sigColor + ';border-radius:8px;padding:12px 16px;flex:1;min-width:180px">';
   h += '<div style="font-size:0.78em;color:#8b8fa4">国家队动向</div>';
@@ -4981,6 +5187,10 @@ function renderNationalTeam(d) {
   }
   h += '</div>';
   h += '</div>';
+
+  if (snap.fetched_at) {
+    h += '<div style="font-size:0.72em;color:#64748b;margin:-8px 0 12px">实时拉取: ' + snap.fetched_at.replace('T', ' ').slice(0, 19) + '</div>';
+  }
 
   var periods = (ps.periods || []);
   if (periods.length > 0) {
@@ -4998,14 +5208,15 @@ function renderNationalTeam(d) {
     periods.forEach(function(p) {
       var bPct = p.broad_change_pct;
       var sPct = p.sector_change_pct;
+      var isToday = p.label === '当天';
       var bStr = bPct != null ? ((bPct > 0 ? '+' : '') + bPct.toFixed(2) + '%') : 'N/A';
       var sStr = sPct != null ? ((sPct > 0 ? '+' : '') + sPct.toFixed(2) + '%') : 'N/A';
       var bColor = bPct != null ? (bPct > 0 ? '#ef4444' : bPct < 0 ? '#10b981' : '#8b8fa4') : '#8b8fa4';
       var sColor = sPct != null ? (sPct > 0 ? '#ef4444' : sPct < 0 ? '#10b981' : '#8b8fa4') : '#8b8fa4';
       var bRange = (p.broad_from != null && p.broad_to != null) ? (p.broad_from.toFixed(1) + ' \u2192 ' + p.broad_to.toFixed(1)) : '-';
       var sRange = (p.sector_from != null && p.sector_to != null) ? (p.sector_from.toFixed(1) + ' \u2192 ' + p.sector_to.toFixed(1)) : '-';
-      h += '<tr style="border-bottom:1px solid #1a1d2e">';
-      h += '<td style="padding:8px 10px;font-weight:700;color:#e0e0e0">' + p.label + '</td>';
+      h += '<tr style="border-bottom:1px solid #1a1d2e' + (isToday ? ';background:#12151f' : '') + '">';
+      h += '<td style="padding:8px 10px;font-weight:700;color:' + (isToday ? '#fbbf24' : '#e0e0e0') + '">' + p.label + '</td>';
       h += '<td style="padding:8px 10px;text-align:center;color:#8b8fa4;font-size:0.9em">' + (p.ref_date || '-') + '</td>';
       h += '<td style="padding:8px 10px;text-align:right;font-weight:700;color:' + bColor + '">' + bStr + '</td>';
       h += '<td style="padding:8px 10px;text-align:right;color:#8b8fa4;font-size:0.88em">' + bRange + '</td>';
@@ -5132,7 +5343,7 @@ function _ntTable(etfs, perEtfMap) {
   var hasPeriods = Object.keys(perEtfMap).length > 0;
   var h = '<table style="width:100%;border-collapse:collapse;font-size:0.82em">';
   h += '<tr style="border-bottom:1px solid #2a2d3e;color:#8b8fa4">';
-  h += '<th style="text-align:left;padding:5px">名称</th><th style="padding:5px">代码</th><th style="padding:5px">跟踪指数</th><th style="text-align:right;padding:5px">份额(亿份)</th><th style="text-align:right;padding:5px">变化</th>';
+  h += '<th style="text-align:left;padding:5px">名称</th><th style="padding:5px">代码</th><th style="padding:5px">跟踪指数</th><th style="text-align:right;padding:5px">份额(亿份)</th><th style="text-align:right;padding:5px;color:#fbbf24">当天</th>';
   if (hasPeriods) h += '<th style="text-align:right;padding:5px;color:#f59e0b">1周</th><th style="text-align:right;padding:5px;color:#f59e0b">1月</th><th style="text-align:right;padding:5px;color:#f59e0b">3月</th>';
   h += '</tr>';
   etfs.forEach(function(e) {
@@ -5149,9 +5360,14 @@ function _ntTable(etfs, perEtfMap) {
     h += '<td style="padding:5px;text-align:center;color:#8b8fa4">' + e.code + '</td>';
     h += '<td style="padding:5px;text-align:center;color:#8b8fa4;font-size:0.9em">' + (e.index||'') + '</td>';
     h += '<td style="padding:5px;text-align:right;font-weight:600">' + (yi != null ? yi.toFixed(1) : 'N/A') + '</td>';
+    var pe = perEtfMap[e.code] || {};
+    var dayVal = pe['1d'] != null ? pe['1d'] : chg;
+    if (dayVal != null) {
+      chgStr = (dayVal > 0 ? '+' : '') + dayVal.toFixed(1) + '%';
+      chgColor = dayVal > 0 ? '#ef4444' : dayVal < 0 ? '#10b981' : '#8b8fa4';
+    }
     h += '<td style="padding:5px;text-align:right;color:' + chgColor + ';font-weight:600">' + chgStr + '</td>';
     if (hasPeriods) {
-      var pe = perEtfMap[e.code] || {};
       ['1w','1m','3m'].forEach(function(k) {
         var v = pe[k];
         var vs = v != null ? ((v > 0 ? '+' : '') + v.toFixed(1) + '%') : '-';

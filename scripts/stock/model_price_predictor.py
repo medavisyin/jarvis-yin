@@ -519,6 +519,14 @@ def train_price_prediction(symbol: str) -> dict:
     }
 
     _save_prediction(symbol, result)
+
+    try:
+        from model_ensemble import enrich_prediction_result
+        result = enrich_prediction_result(result, symbol)
+        _save_prediction(symbol, result)
+    except Exception as e:
+        log.debug("集成不确定性附加失败: %s", e)
+
     return result
 
 

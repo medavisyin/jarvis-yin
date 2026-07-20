@@ -196,8 +196,8 @@ def _num_val(v):
 
 
 def _fetch_market_sina_pagination() -> pd.DataFrame:
-    """Robust fallback: fetch full A-share market data from Sina Market Center API with pagination retry."""
-    log.info("Layer 1: 尝试本地新浪市场中心分页备用API...")
+    """Robust fallback: fetch full A-share market data from Sina Finance remote quote API with pagination retry."""
+    log.info("Layer 1: 尝试新浪财经行情分页备用API (vip.stock.finance.sina.com.cn)...")
     url = "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php/Market_Center.getHQNodeData"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -237,6 +237,10 @@ def _fetch_market_sina_pagination() -> pd.DataFrame:
 
         for item in items:
             code = str(item.get("code", ""))
+            # sina returns mktcap/nmc in 万元; eastmoney & akshare use 元.
+            # Convert to 元 so the market-cap filter (3e9-50e9 元) works.
+            _mktcap = item.get("mktcap")
+            _nmc = item.get("nmc")
             all_rows.append({
                 "代码": code,
                 "名称": str(item.get("name", "")),
@@ -250,8 +254,8 @@ def _fetch_market_sina_pagination() -> pd.DataFrame:
                 "最高": item.get("high"),
                 "最低": item.get("low"),
                 "今开": item.get("open"),
-                "总市值": item.get("mktcap"),
-                "流通市值": item.get("nmc"),
+                "总市值": (float(_mktcap) * 10000) if _mktcap not in (None, "", "-") else None,
+                "流通市值": (float(_nmc) * 10000) if _nmc not in (None, "", "-") else None,
             })
 
         page += 1
@@ -295,30 +299,52 @@ def _run_midday_scan_inner(use_deepseek: bool):
     log.info("Layer 1: 获取全市场实时快照...")
 
     df = None
+    df_source = None
     try:
         df = ak.stock_zh_a_spot_em()
+        if df is not None and not df.empty:
+            df_source = "akshare"
     except Exception as e:
         log.warning("akshare 全市场行情失败: %s, 尝试调用东财极速直接备用API...", e)
 
     if df is None or df.empty:
         try:
             df = _fetch_market_eastmoney_direct()
+            if df is not None and not df.empty:
+                df_source = "eastmoney_direct"
         except Exception as e2:
-            log.warning("东财极速直接API也失败: %s, 尝试调用本地新浪分页备用API...", e2)
-            try:
-                df = _fetch_market_sina_pagination()
-            except Exception as e3:
-                log.error("新浪分页API也失败: %s", e3)
-                with _scan_lock:
-                    _scan_status["status"] = "failed"
-                    _scan_status["error"] = f"多路由实时行情采集（akshare + 东财直连 + 新浪分页）均宣告失败: {e3}"
-                return
+            log.warning("东财极速直接API也失败: %s, 尝试调用新浪财经分页备用API...", e2)
+
+    # Degraded-response guard: under network instability the eastmoney direct
+    # API sometimes returns a truncated ~100-row response without raising, so
+    # the sina fallback would never trigger. Treat anything under 1000 rows as
+    # degraded and try sina pagination, keeping whichever source yields more.
+    _DEGRADED_THRESHOLD = 1000
+    if df is None or df.empty or len(df) < _DEGRADED_THRESHOLD:
+        if df is not None and not df.empty:
+            log.warning(
+                "%s 仅返回 %d 只（疑似降级/截断响应），继续尝试新浪分页备用API...",
+                df_source, len(df),
+            )
+        df_sina = None
+        try:
+            df_sina = _fetch_market_sina_pagination()
+        except Exception as e3:
+            log.warning("新浪分页API失败: %s", e3)
+        if df_sina is not None and not df_sina.empty:
+            if df is None or df.empty or len(df_sina) > len(df):
+                df = df_sina
+                df_source = "sina_pagination"
 
     if df is None or df.empty:
         log.error("实时行情及备用数据均为空数据")
         _scan_status["status"] = "failed"
-        _scan_status["error"] = "实时行情及备用数据均为空数据"
+        _scan_status["error"] = "实时行情及备用数据均为空数据（akshare + 东财直连 + 新浪分页 均无可用结果）"
         return
+    if len(df) < _DEGRADED_THRESHOLD:
+        log.warning("全部行情源均返回降级结果，最终仅 %d 只（来源=%s），筛选结果可能不完整", len(df), df_source)
+    else:
+        log.info("Layer 1 行情数据源: %s, 共 %d 只", df_source, len(df))
 
     # Dynamic fallback: if "量比" is not in the columns (e.g. from fallback API), default to 1.6 to prevent KeyError and pass filter
     if "量比" not in df.columns:
