@@ -669,14 +669,14 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
             <div style="padding:6px 10px;background:#1e2030;font-size:0.75em;color:#8b8fa4;border-bottom:1px solid #2a2d3a">Analysis (English)</div>
             <div id="irTabBar" style="display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;border-bottom:1px solid #2a2d3a;background:#181a24"></div>
             <div id="irAnalysis" style="flex:1;overflow-y:auto;padding:16px 18px;font-size:0.88em;line-height:1.65;color:#c4c8f0;white-space:pre-wrap"></div>
-            <div style="padding:6px 10px;border-top:1px solid #2a2d3a;display:flex;justify-content:flex-end">
+            <div style="padding:6px 10px;border-top:1px solid #2a2d3a;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+              <button type="button" class="toolbar-btn" id="irGenerateBtn" onclick="irGenerateActiveTab()" style="font-size:0.78em">Generate</button>
               <button type="button" class="toolbar-btn" id="irContinueBtn" onclick="irContinueAnalyze()" style="font-size:0.78em;display:none">Continue</button>
             </div>
           </div>
         </div>
         <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
           <button type="button" class="toolbar-btn" id="irBackBtn" onclick="irPrevChunk()" style="font-size:0.82em" disabled>Back</button>
-          <button type="button" class="toolbar-btn" id="irAnalyzeBtn" onclick="irAnalyzeChunk()" style="font-size:0.82em">Analyze</button>
           <button type="button" class="send-btn" id="irNextBtn" onclick="irNextChunk()" style="padding:8px 18px;font-size:0.85em">Next</button>
         </div>
       </div>
@@ -1532,7 +1532,7 @@ var _IR_MAG_TABS = [
 ];
 var _irState = {
   bookId: null, bookType: 'novel', chunkIndex: 0, total: 0, nextIndex: null, prevIndex: null,
-  analyzing: false, queueRunning: false, tabPinned: false, activeKind: 'vocab',
+  analyzing: false, tabPinned: false, activeKind: 'vocab',
   tabs: _IR_NOVEL_TABS.slice(), analyses: {}
 };
 
@@ -1545,7 +1545,7 @@ function irTabsForType(bookType) {
 }
 
 function irBusy() {
-  return !!(!_irState ? false : (_irState.analyzing || _irState.queueRunning));
+  return !!(!_irState ? false : _irState.analyzing);
 }
 
 function irSetNavDisabled(disabled) {
@@ -1606,6 +1606,10 @@ function irRenderTabs() {
 }
 
 function irSelectTab(kind) {
+  if (irBusy()) {
+    showToast('Wait for generation to finish');
+    return;
+  }
   if (!kind || !_irState.analyses[kind]) return;
   _irState.activeKind = kind;
   _irState.tabPinned = true;
@@ -1618,9 +1622,7 @@ function irShowActiveAnalysis() {
   var kind = _irState.activeKind;
   var slot = _irState.analyses[kind] || irEmptyAnalysisSlot();
   if (slot.status === 'idle' && !slot.text) {
-    box.textContent = _irState.queueRunning
-      ? 'Queued — waiting for earlier tabs…'
-      : 'Click Analyze to generate tabs in order (starting with 好词好句).';
+    box.textContent = 'Click Generate on this tab to analyze (English). Cached results load when you revisit a chunk.';
     return;
   }
   if (slot.status === 'running' && !slot.text) {
@@ -1873,10 +1875,80 @@ async function irLoadChunk(chunkIndex) {
       'chunk ' + (_irState.chunkIndex + 1) + ' / ' + _irState.total + (title ? (' · ' + title) : '');
     irRenderPassage((d.chunk && d.chunk.text) || '');
     irSetNavDisabled(false);
+    await irLoadCachedAnalysis(_irState.chunkIndex);
     await irSaveProgress(_irState.chunkIndex, _irState.total);
   } catch (e) {
     document.getElementById('irPassage').textContent = e.message;
     showToast(e.message);
+  }
+}
+
+async function irLoadCachedAnalysis(chunkIndex) {
+  irResetAnalyses();
+  try {
+    var r = await fetch('/api/intensive-reading/books/' + encodeURIComponent(_irState.bookId) +
+      '/chunks/' + encodeURIComponent(chunkIndex) + '/analysis');
+    var d = await r.json().catch(function() { return {}; });
+    if (!r.ok) {
+      irRenderTabs();
+      return;
+    }
+    var tabs = d.tabs || {};
+    Object.keys(tabs).forEach(function(kind) {
+      if (!_irState.analyses[kind]) return;
+      var s = tabs[kind] || {};
+      _irState.analyses[kind] = {
+        text: s.text || '',
+        status: s.status || (s.text ? 'done' : 'idle'),
+        offset: typeof s.offset === 'number' ? s.offset : 0,
+        part: s.part || 1,
+        hasMore: !!s.hasMore,
+        genTrunc: !!s.genTrunc,
+        lastOffset: typeof s.lastOffset === 'number' ? s.lastOffset : 0,
+        error: s.error || ''
+      };
+    });
+    // Prefer first tab with content, else first tab
+    var pick = (_irState.tabs[0] && _irState.tabs[0].id) || 'vocab';
+    for (var i = 0; i < (_irState.tabs || []).length; i++) {
+      var id = _irState.tabs[i].id;
+      var slot = _irState.analyses[id];
+      if (slot && slot.text) { pick = id; break; }
+    }
+    _irState.activeKind = pick;
+    _irState.tabPinned = false;
+  } catch (e) { /* empty cache ok */ }
+  irRenderTabs();
+}
+
+async function irPersistSlot(bookId, chunkIndex, kind, slot) {
+  if (!bookId || !slot) return;
+  try {
+    var r = await fetch('/api/intensive-reading/books/' + encodeURIComponent(bookId) +
+      '/chunks/' + encodeURIComponent(chunkIndex) + '/analysis', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        kind: kind,
+        slot: {
+          text: slot.text || '',
+          status: slot.status || 'idle',
+          offset: slot.offset || 0,
+          part: slot.part || 1,
+          hasMore: !!slot.hasMore,
+          genTrunc: !!slot.genTrunc,
+          lastOffset: slot.lastOffset || 0,
+          error: slot.error || ''
+        },
+        merge: true
+      })
+    });
+    if (!r.ok) {
+      var d = await r.json().catch(function() { return {}; });
+      showToast('Cache save failed: ' + (d.error || r.status));
+    }
+  } catch (e) {
+    showToast('Cache save failed: ' + (e.message || 'network'));
   }
 }
 
@@ -1926,8 +1998,13 @@ async function irPrevChunk() {
 
 function irUpdateContinueBtn() {
   var cbtn = document.getElementById('irContinueBtn');
-  if (!cbtn) return;
+  var gbtn = document.getElementById('irGenerateBtn');
   var slot = _irState.analyses[_irState.activeKind] || irEmptyAnalysisSlot();
+  if (gbtn) {
+    gbtn.disabled = irBusy();
+    gbtn.textContent = (slot.status === 'done' || slot.text) ? 'Regenerate' : 'Generate';
+  }
+  if (!cbtn) return;
   var show = !!(slot.hasMore || slot.genTrunc) && slot.status === 'done';
   cbtn.style.display = show ? '' : 'none';
   cbtn.disabled = irBusy();
@@ -1940,45 +2017,14 @@ function irUpdateContinueBtn() {
   }
 }
 
-async function irAnalyzeChunk() {
+async function irGenerateActiveTab() {
   if (!_irState.bookId || irBusy()) return;
-  irResetAnalyses();
-  _irState.queueRunning = true;
-  _irState.tabPinned = false;
-  _irState.activeKind = (_irState.tabs[0] && _irState.tabs[0].id) || 'vocab';
-  irRenderTabs();
-  irSetNavDisabled(true);
-  var btn = document.getElementById('irAnalyzeBtn');
-  if (btn) btn.disabled = true;
-  try {
-    for (var i = 0; i < _irState.tabs.length; i++) {
-      var kind = _irState.tabs[i].id;
-      if (!_irState.tabPinned) {
-        _irState.activeKind = kind;
-        irRenderTabs();
-      }
-      await irRunAnalyzeKind(kind, { continueMode: false });
-    }
-    var done = 0, errN = 0;
-    (_irState.tabs || []).forEach(function(t) {
-      var s = _irState.analyses[t.id];
-      if (!s) return;
-      if (s.status === 'done') done++;
-      else if (s.status === 'error') errN++;
-    });
-    if (errN > 0) {
-      showToast('Analysis finished: ' + done + ' ok, ' + errN + ' failed');
-    } else {
-      showToast('All analysis tabs done (' + done + ')');
-    }
-  } catch (e) {
-    showToast('Analyze stopped: ' + (e.message || e));
-  } finally {
-    _irState.queueRunning = false;
-    if (btn) btn.disabled = false;
-    irSetNavDisabled(false);
-    irRenderTabs();
+  var kind = _irState.activeKind;
+  if (!kind || !_irState.analyses[kind]) {
+    showToast('Select a tab first');
+    return;
   }
+  await irRunAnalyzeKind(kind, { continueMode: false, persist: true });
 }
 
 async function irContinueAnalyze() {
@@ -1989,13 +2035,16 @@ async function irContinueAnalyze() {
     showToast('Nothing more to continue');
     return;
   }
-  await irRunAnalyzeKind(kind, { continueMode: true });
+  await irRunAnalyzeKind(kind, { continueMode: true, persist: true });
 }
 
 async function irRunAnalyzeKind(kind, opts) {
   if (!_irState.bookId) return;
   opts = opts || {};
   var continueMode = !!opts.continueMode;
+  var doPersist = opts.persist !== false;
+  var bookIdSnap = _irState.bookId;
+  var chunkIndexSnap = _irState.chunkIndex;
   var slot = _irState.analyses[kind] || irEmptyAnalysisSlot();
   _irState.analyses[kind] = slot;
   _irState.analyzing = true;
@@ -2003,6 +2052,8 @@ async function irRunAnalyzeKind(kind, opts) {
   slot.error = '';
   irRenderTabs();
   irSetNavDisabled(true);
+  var gbtn = document.getElementById('irGenerateBtn');
+  if (gbtn) gbtn.disabled = true;
 
   var offset = 0;
   var part = 1;
@@ -2033,8 +2084,8 @@ async function irRunAnalyzeKind(kind, opts) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        book_id: _irState.bookId,
-        chunk_index: _irState.chunkIndex,
+        book_id: bookIdSnap,
+        chunk_index: chunkIndexSnap,
         analysis_kind: kind,
         offset: offset,
         part: part,
@@ -2102,11 +2153,26 @@ async function irRunAnalyzeKind(kind, opts) {
     slot.status = 'error';
     slot.error = e.message || String(e);
     if (!slot.text) slot.text = '';
-  } finally {
-    _irState.analyzing = false;
-    if (!_irState.queueRunning) irSetNavDisabled(false);
-    irRenderTabs();
   }
+
+  // Persist while still busy so Next/Back cannot race chunkIndex.
+  if (doPersist) {
+    var slotSnap = {
+      text: slot.text || '',
+      status: slot.status || 'idle',
+      offset: slot.offset || 0,
+      part: slot.part || 1,
+      hasMore: !!slot.hasMore,
+      genTrunc: !!slot.genTrunc,
+      lastOffset: slot.lastOffset || 0,
+      error: slot.error || ''
+    };
+    await irPersistSlot(bookIdSnap, chunkIndexSnap, kind, slotSnap);
+  }
+
+  _irState.analyzing = false;
+  irSetNavDisabled(false);
+  irRenderTabs();
 }
 
 function openExplainThisModal() {

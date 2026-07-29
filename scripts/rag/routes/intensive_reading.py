@@ -19,6 +19,7 @@ for _p in (_SCRIPTS_DIR, _RAG_DIR):
 
 from config import BOOKS_ROOT, JARVIS_ROOT
 
+from intensive_reading.analysis_cache import load_chunk_analysis, save_chunk_analysis
 from intensive_reading.chunking import next_readable_index, prev_readable_index
 from intensive_reading.ingest import (
     BOOK_TYPE_MAGAZINE,
@@ -276,6 +277,64 @@ def api_get_chunk(book_id: str, chunk_index: int):
             "has_prev": prv is not None,
         }
     )
+
+
+@intensive_reading_bp.route(
+    "/api/intensive-reading/books/<book_id>/chunks/<int:chunk_index>/analysis",
+    methods=["GET"],
+)
+def api_get_chunk_analysis(book_id: str, chunk_index: int):
+    err = _require_book_id(book_id)
+    if err:
+        return err
+    if chunk_index < 0:
+        return jsonify({"error": "Invalid chunk_index"}), 400
+    meta = load_meta(_books_dir(), book_id)
+    if not meta:
+        return jsonify({"error": "Book not found"}), 404
+    try:
+        doc = load_chunk_analysis(_books_dir(), book_id, chunk_index)
+    except InvalidBookId:
+        return jsonify({"error": "Invalid book_id"}), 400
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify(doc)
+
+
+@intensive_reading_bp.route(
+    "/api/intensive-reading/books/<book_id>/chunks/<int:chunk_index>/analysis",
+    methods=["PUT"],
+)
+def api_put_chunk_analysis(book_id: str, chunk_index: int):
+    err = _require_book_id(book_id)
+    if err:
+        return err
+    if chunk_index < 0:
+        return jsonify({"error": "Invalid chunk_index"}), 400
+    meta = load_meta(_books_dir(), book_id)
+    if not meta:
+        return jsonify({"error": "Book not found"}), 404
+    data = request.get_json(silent=True) or {}
+    tabs = data.get("tabs")
+    kind = (data.get("kind") or "").strip()
+    slot = data.get("slot")
+    if tabs is None and kind and isinstance(slot, dict):
+        tabs = {kind: slot}
+    if not isinstance(tabs, dict):
+        return jsonify({"error": "tabs object (or kind+slot) required"}), 400
+    merge = data.get("merge", True)
+    try:
+        doc = save_chunk_analysis(
+            _books_dir(), book_id, chunk_index, tabs, merge=bool(merge)
+        )
+    except InvalidBookId:
+        return jsonify({"error": "Invalid book_id"}), 400
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except OSError as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to save analysis: {e}"}), 500
+    return jsonify({"ok": True, "analysis": doc})
 
 
 @intensive_reading_bp.route("/api/intensive-reading/progress", methods=["POST"])
