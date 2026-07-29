@@ -1060,9 +1060,12 @@ def _generate_segmented_narrations(
         max_chars = max(500, len(seg_content) // 2)
 
         if is_en:
-            if content_type == "world":
+            if content_type in ("world", "finance"):
+                topic = "finance/markets" if content_type == "finance" else "world"
                 system_prompt = (
-                    "You are a professional news anchor reading a news briefing.\n"
+                    f"You are a professional {topic} news anchor reading a briefing.\n"
+                    "Focus on market impact: policy, rates, tariffs, equities, corporate events.\n"
+                    "Cover US, Asia-Pacific, and China when present.\n"
                     "Single narrator, no dialogue, no role-play. State the facts in clear, concise sentences.\n"
                     "Write entirely in English.\n"
                     "No personal commentary, analysis, or predictions. No markdown.\n"
@@ -1089,16 +1092,17 @@ def _generate_segmented_narrations(
                     f"News items:\n\n{seg_content}"
                 )
         else:
-            if content_type == "world":
+            if content_type in ("world", "finance"):
                 system_prompt = (
-                    "你是一位专业的新闻播报员，正在播报新闻简报。\n"
+                    "你是一位专业的金融新闻播报员，正在播报对股市有影响的财经简报。\n"
+                    "覆盖美国、亚太、中国市场相关政策、央行、关税、行情与公司要闻。\n"
                     "单人播报，不要对话，不要分角色。用简洁清晰的句子陈述事实。\n"
-                    "全部用中文，只有人名和专有名词保留英文。\n"
+                    "全部用中文，只有人名、公司名和专有名词保留英文。\n"
                     "不要发表个人评论、分析或预测。不要用markdown。\n"
                     "不要自我介绍，不要开场白，直接播报新闻内容。"
                 )
                 user_prompt = (
-                    f"播报以下「{seg_name}」板块的新闻（约{min_chars}-{max_chars}字）。\n"
+                    f"播报以下「{seg_name}」板块的金融新闻（约{min_chars}-{max_chars}字）。\n"
                     f"对每条新闻：用1-2句话说明发生了什么、涉及谁、关键数据。\n"
                     f"不要添加评论或分析。直接报道事实。\n\n"
                     f"新闻素材：\n\n{seg_content}"

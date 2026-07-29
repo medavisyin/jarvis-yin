@@ -180,6 +180,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.68);z-index:350;display:none;
                align-items:center;justify-content:center;padding:20px}
 .modal-overlay.open{display:flex}
+@media (max-width:720px){.ir-split{grid-template-columns:1fr !important}}
+#intensiveReadingModal .modal-panel{max-width:min(1280px,96vw)!important;width:96vw;height:90vh}
+#intensiveReadingModal .ir-split{grid-template-columns:1.45fr 1fr;gap:14px}
+#irPassage{padding:18px 22px!important;font-size:1.05em!important;line-height:1.85!important;
+  color:#e8eaf2!important;white-space:normal!important;background:#12141c}
+#irPassage .ir-para{margin:0 0 1.05em;text-indent:1.6em;text-align:justify;
+  hyphens:auto;-webkit-hyphens:auto;overflow-wrap:break-word}
+#irPassage .ir-para.ir-title{text-indent:0;font-weight:600;font-size:1.12em;color:#c4c8f0;
+  margin-bottom:0.85em;line-height:1.4;text-align:left}
+#irPassage .ir-para.ir-kicker{text-indent:0;font-size:0.82em;letter-spacing:0.04em;
+  text-transform:uppercase;color:#8b8fa4;margin-bottom:0.35em;text-align:left}
+#irAnalysis{padding:16px 18px!important;line-height:1.65!important}
 .modal-panel{background:#161822;border:1px solid #2a2d3a;border-radius:12px;max-width:680px;width:100%;
              max-height:86vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.55)}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #2a2d3a}
@@ -241,14 +253,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
           </select>
         </div>
         <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f1117;border-radius:6px;border:1px solid #2a2d3e">
-          <span style="font-size:0.88em;color:#e0e0e0">&#127758; World News</span>
-          <select id="settAudioWorld" style="background:#1a1d2e;color:#a0a4b8;border:1px solid #3a3d4a;border-radius:4px;padding:4px 8px;font-size:0.85em">
-            <option value="zh">中文</option><option value="en">English</option>
-          </select>
-        </div>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f1117;border-radius:6px;border:1px solid #2a2d3e">
-          <span style="font-size:0.88em;color:#e0e0e0">&#127464;&#127475; 中国新闻</span>
-          <select id="settAudioChina" style="background:#1a1d2e;color:#a0a4b8;border:1px solid #3a3d4a;border-radius:4px;padding:4px 8px;font-size:0.85em">
+          <span style="font-size:0.88em;color:#e0e0e0">&#128200; Finance News</span>
+          <select id="settAudioFinance" style="background:#1a1d2e;color:#a0a4b8;border:1px solid #3a3d4a;border-radius:4px;padding:4px 8px;font-size:0.85em">
             <option value="zh">中文</option><option value="en">English</option>
           </select>
         </div>
@@ -339,6 +345,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" onclick="openEnglishLearning()" title="Tech English learning from AI news: phrases, demos, corrections">&#128187; Tech English</button>
         <button type="button" class="toolbar-btn" onclick="openCasualEnglish()" title="Casual English learning from world news: daily conversation, idioms">&#127758; Casual English</button>
         <button type="button" class="toolbar-btn" onclick="openAWSCert()" title="AWS Certified AI Practitioner (AIF-C01) exam preparation: teach &amp; quiz modes">&#127942; AWS AIF-C01</button>
+        <button type="button" class="toolbar-btn" onclick="openIntensiveReadingModal()" title="Intensive reading of English novels and magazines (PDF/EPUB)">&#128214; Intensive Reading</button>
         <button type="button" class="toolbar-btn" onclick="toggleNotesPanel()" title="View and manage your saved learning notes">&#128221; My Notes</button>
       </div>
     </div>
@@ -354,6 +361,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" onclick="openLongTermModal()" title="AI长期趋势推荐 (新闻+政策+贵金属分析)">&#128302; 长期推荐</button>
         <button type="button" class="toolbar-btn" onclick="openPriceTrainModal()" title="明日价格预测训练 (自选股)">&#127919; 价格预测</button>
         <button type="button" class="toolbar-btn" onclick="openNationalTeamModal()" title="国家队ETF份额监控 (汇金/社保等)">&#127961; 国家队</button>
+        <button type="button" class="toolbar-btn" onclick="openWeeklyModal()" title="周线选股: 连续3周收涨, 周一买入持有5日 + 策略回测">&#128202; 周线选股</button>
       </div>
     </div>
   </div>
@@ -621,6 +629,61 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   </div>
 </div>
 
+<div id="intensiveReadingModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="intensiveReadingTitle">
+  <div class="modal-panel" style="max-width:min(1280px,96vw);width:96vw;height:90vh">
+    <div class="modal-head">
+      <h2 id="intensiveReadingTitle">&#128214; Intensive Reading</h2>
+      <button type="button" class="modal-close" onclick="closeIntensiveReadingModal()" title="Close">&times;</button>
+    </div>
+    <div class="modal-content" style="padding:12px 16px 16px;display:flex;flex-direction:column;gap:12px;min-height:0">
+      <div id="irLibraryPane">
+        <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:12px">
+          <div style="flex:1;min-width:180px">
+            <label style="font-size:0.78em;color:#8b8fa4;display:block;margin-bottom:4px">Upload PDF / EPUB</label>
+            <input type="file" id="irFileInput" accept=".pdf,.epub,application/pdf,application/epub+zip" style="width:100%;font-size:0.82em;color:#c4c8f0">
+          </div>
+          <div>
+            <label style="font-size:0.78em;color:#8b8fa4;display:block;margin-bottom:4px">Type</label>
+            <select id="irBookType" style="background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:6px 10px;font-size:0.85em">
+              <option value="novel">Novel / Ebook</option>
+              <option value="magazine">Magazine</option>
+            </select>
+          </div>
+          <button type="button" class="send-btn" id="irUploadBtn" onclick="irUploadBook()" style="padding:8px 16px;font-size:0.85em">Upload &amp; Index</button>
+        </div>
+        <div id="irUploadStatus" style="font-size:0.8em;color:#8b8fa4;min-height:1.2em;margin-bottom:8px"></div>
+        <div id="irBookList" style="max-height:52vh;overflow-y:auto"></div>
+      </div>
+      <div id="irReaderPane" style="display:none;flex:1;min-height:0;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button type="button" class="toolbar-btn" onclick="irBackToLibrary()" style="font-size:0.78em">&#8592; Library</button>
+          <strong id="irReaderTitle" style="color:#c4c8f0;font-size:0.95em"></strong>
+          <span id="irReaderMeta" style="font-size:0.78em;color:#8b8fa4"></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1.45fr 1fr;gap:14px;flex:1;min-height:0" class="ir-split">
+          <div style="display:flex;flex-direction:column;min-height:0;border:1px solid #2a2d3a;border-radius:8px;overflow:hidden">
+            <div style="padding:6px 10px;background:#1e2030;font-size:0.75em;color:#8b8fa4;border-bottom:1px solid #2a2d3a">Passage</div>
+            <div id="irPassage" class="ir-passage"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;min-height:0;border:1px solid #2a2d3a;border-radius:8px;overflow:hidden">
+            <div style="padding:6px 10px;background:#1e2030;font-size:0.75em;color:#8b8fa4;border-bottom:1px solid #2a2d3a">Analysis (English)</div>
+            <div id="irTabBar" style="display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;border-bottom:1px solid #2a2d3a;background:#181a24"></div>
+            <div id="irAnalysis" style="flex:1;overflow-y:auto;padding:16px 18px;font-size:0.88em;line-height:1.65;color:#c4c8f0;white-space:pre-wrap"></div>
+            <div style="padding:6px 10px;border-top:1px solid #2a2d3a;display:flex;justify-content:flex-end">
+              <button type="button" class="toolbar-btn" id="irContinueBtn" onclick="irContinueAnalyze()" style="font-size:0.78em;display:none">Continue</button>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap">
+          <button type="button" class="toolbar-btn" id="irBackBtn" onclick="irPrevChunk()" style="font-size:0.82em" disabled>Back</button>
+          <button type="button" class="toolbar-btn" id="irAnalyzeBtn" onclick="irAnalyzeChunk()" style="font-size:0.82em">Analyze</button>
+          <button type="button" class="send-btn" id="irNextBtn" onclick="irNextChunk()" style="padding:8px 18px;font-size:0.85em">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="explainThisModal" class="modal-overlay" role="dialog" aria-modal="true">
   <div class="modal-panel" style="max-width:460px">
     <div class="modal-head">
@@ -822,7 +885,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" id="btnPrefetchPause" onclick="pausePrefetch()" style="font-size:0.78em" disabled>&#9208; 暂停</button>
         <button type="button" class="toolbar-btn" id="btnPrefetchResume" onclick="resumePrefetch()" style="font-size:0.78em" disabled>&#9654; 继续</button>
         <button type="button" class="toolbar-btn" id="btnPrefetchStop" onclick="stopPrefetch()" style="font-size:0.78em" disabled>&#9724; 停止</button>
-        <button type="button" class="toolbar-btn" onclick="loadWatchlist()" style="font-size:0.78em">&#8635; 刷新列表</button>
+        <button type="button" class="toolbar-btn" id="btnWatchlistRefresh" onclick="refreshWatchlist()" style="font-size:0.78em" title="联网刷新自选股行情与基础数据">&#8635; 刷新列表</button>
         <button type="button" class="toolbar-btn" onclick="exportStockPdf('watchlist','watchlist')" style="font-size:0.78em">&#128196; 导出PDF</button>
         <span id="watchlistStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
       </div>
@@ -1000,6 +1063,76 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
           <div id="uniRightResult" style="max-height:58vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:12px;background:#1a1d2e;font-size:0.82em;line-height:1.55;color:#c4c8f0">
             <p style="color:#6b7280">右侧交易 = 确认后跟进：主力资金由流出转持续净流入 + 趋势/突破确认后入场。</p>
             <p style="color:#6b7280;font-size:0.9em">持有2周~2-3个月，目标10%+，严格止损。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Weekly Selector Modal (周线选股 + 回测) -->
+<div id="weeklyModal" class="modal-overlay" role="dialog" aria-modal="true">
+  <div class="modal-panel" style="max-width:97vw;max-height:95vh;width:1080px;background:#0f1117;border:1px solid #2a2d3e">
+    <div class="modal-head" style="border-bottom:1px solid #2a2d3e">
+      <h2>&#128202; 周线选股 + 策略回测</h2>
+      <button type="button" class="modal-close" onclick="closeWeeklyModal()" title="Close">&times;</button>
+    </div>
+    <div class="modal-content" style="padding:14px 18px;background:#0f1117">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+        <!-- 选股 -->
+        <div style="border:1px solid #2a2d3e;border-radius:8px;padding:12px;background:#1a1d2e">
+          <h3 style="color:#fbbf24;margin:0 0 8px;font-size:0.95em">&#128269; 周线选股 (连续3周收涨)</h3>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+            <label style="font-size:0.78em;color:#a0a4b8">目标周五</label>
+            <input type="date" id="wkSelectDate" style="background:#0f1117;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:6px 10px;font-size:0.82em">
+            <label style="font-size:0.78em;color:#a0a4b8" title="连续收涨的周数">连涨周数</label>
+            <input type="number" id="wkSelectWeeks" value="3" min="1" max="26" step="1" style="background:#0f1117;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:6px 10px;font-size:0.82em;width:64px">
+            <label style="display:flex;align-items:center;gap:4px;font-size:0.76em;color:#a0a4b8;cursor:pointer" title="免费源没有「一次拉全市场历史周K」的API; 勾选后只对缺本地缓存的股票逐只抓短窗口周线(仍可能较慢)。推荐: 先跑数据预热, 再仅本地选股">
+              <input type="checkbox" id="wkSelectNet" style="accent-color:#f59e0b">
+              <span>联网补缺(逐只)</span>
+            </label>
+            <button type="button" class="send-btn" id="btnWkSelect" onclick="startWeeklySelect()" style="padding:7px 16px;font-size:0.82em">运行选股</button>
+            <button type="button" class="toolbar-btn" id="btnWkSelectStop" onclick="stopWeeklySelect()" style="font-size:0.76em" disabled>停止</button>
+            <span id="wkSelectStatus" style="font-size:0.76em;color:#8b8fa4;margin-left:auto"></span>
+          </div>
+          <div id="wkSelectProgress" style="display:none;margin-bottom:8px">
+            <div style="background:#0f1117;border-radius:8px;overflow:hidden;height:20px;border:1px solid #2a2d3e">
+              <div id="wkSelectProgressBar" style="height:100%;background:linear-gradient(90deg,#3b82f6,#10b981);transition:width 0.5s;width:0%;display:flex;align-items:center;justify-content:center">
+                <span id="wkSelectProgressText" style="font-size:0.7em;color:#fff;font-weight:600"></span>
+              </div>
+            </div>
+            <div id="wkSelectPhase" style="font-size:0.74em;color:#8b8fa4;margin-top:3px"></div>
+          </div>
+          <div id="wkSelectResult" style="max-height:54vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:10px;background:#0f1117;font-size:0.8em;line-height:1.5;color:#c4c8f0">
+            <p style="color:#6b7280">选择目标周五后点击"运行选股"。筛选全市场连续3周收涨的股票(剔除ST/次新股/停牌)。</p>
+          </div>
+        </div>
+        <!-- 回测 -->
+        <div style="border:1px solid #2a2d3e;border-radius:8px;padding:12px;background:#1a1d2e">
+          <h3 style="color:#34d399;margin:0 0 8px;font-size:0.95em">&#128202; 策略回测 (周一买入, 持有5日, 5%止损)</h3>
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+            <label style="font-size:0.78em;color:#a0a4b8">起</label>
+            <input type="date" id="wkBtStart" value="2023-01-01" style="background:#0f1117;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:6px 10px;font-size:0.82em">
+            <label style="font-size:0.78em;color:#a0a4b8">止</label>
+            <input type="date" id="wkBtEnd" style="background:#0f1117;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:6px 10px;font-size:0.82em">
+            <label style="font-size:0.78em;color:#a0a4b8">资金</label>
+            <input type="number" id="wkBtCapital" value="1000000" min="10000" step="10000" style="background:#0f1117;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:6px 10px;font-size:0.82em;width:110px">
+            <label style="font-size:0.78em;color:#a0a4b8" title="连续收涨的周数">连涨周数</label>
+            <input type="number" id="wkBtWeeks" value="3" min="1" max="26" step="1" style="background:#0f1117;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:6px 10px;font-size:0.82em;width:64px">
+            <button type="button" class="send-btn" id="btnWkBt" onclick="startWeeklyBacktest()" style="padding:7px 16px;font-size:0.82em">运行回测</button>
+            <button type="button" class="toolbar-btn" id="btnWkBtStop" onclick="stopWeeklyBacktest()" style="font-size:0.76em" disabled>停止</button>
+            <span id="wkBtStatus" style="font-size:0.76em;color:#8b8fa4;margin-left:auto"></span>
+          </div>
+          <div id="wkBtProgress" style="display:none;margin-bottom:8px">
+            <div style="background:#0f1117;border-radius:8px;overflow:hidden;height:20px;border:1px solid #2a2d3e">
+              <div id="wkBtProgressBar" style="height:100%;background:linear-gradient(90deg,#10b981,#34d399);transition:width 0.5s;width:0%;display:flex;align-items:center;justify-content:center">
+                <span id="wkBtProgressText" style="font-size:0.7em;color:#fff;font-weight:600"></span>
+              </div>
+            </div>
+            <div id="wkBtPhase" style="font-size:0.74em;color:#8b8fa4;margin-top:3px"></div>
+          </div>
+          <div id="wkBtResult" style="max-height:54vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:10px;background:#0f1117;font-size:0.8em;line-height:1.5;color:#c4c8f0">
+            <p style="color:#6b7280">设置区间与初始资金后点击"运行回测"。全市场回测3年可能需数十分钟(数据会缓存)。</p>
           </div>
         </div>
       </div>
@@ -1387,6 +1520,595 @@ async function toolbarJiraDaily(btn) {
   }
 }
 
+// --- Intensive Reading ---
+var _IR_NOVEL_TABS = [
+  {id:'vocab',label:'好词好句'},{id:'plot',label:'情节结构'},{id:'character',label:'人物动机'},
+  {id:'narrator',label:'叙事视角'},{id:'culture',label:'社会文化'},{id:'rhetoric',label:'修辞功能'},
+  {id:'socratic',label:'苏格拉底提问'}
+];
+var _IR_MAG_TABS = [
+  {id:'vocab',label:'好词好句'},{id:'claim_evidence',label:'论点vs论据'},{id:'stance',label:'立场与偏见'},
+  {id:'cultural_cues',label:'文化潜规则'},{id:'structure',label:'行文结构'}
+];
+var _irState = {
+  bookId: null, bookType: 'novel', chunkIndex: 0, total: 0, nextIndex: null, prevIndex: null,
+  analyzing: false, queueRunning: false, tabPinned: false, activeKind: 'vocab',
+  tabs: _IR_NOVEL_TABS.slice(), analyses: {}
+};
+
+function irEmptyAnalysisSlot() {
+  return { text: '', offset: 0, part: 1, hasMore: false, genTrunc: false, lastOffset: 0, status: 'idle', error: '' };
+}
+
+function irTabsForType(bookType) {
+  return (bookType === 'magazine') ? _IR_MAG_TABS.slice() : _IR_NOVEL_TABS.slice();
+}
+
+function irBusy() {
+  return !!(!_irState ? false : (_irState.analyzing || _irState.queueRunning));
+}
+
+function irSetNavDisabled(disabled) {
+  var next = document.getElementById('irNextBtn');
+  var back = document.getElementById('irBackBtn');
+  if (next) next.disabled = disabled || !_irState.nextIndex;
+  if (back) back.disabled = disabled || (_irState.prevIndex == null);
+}
+
+function irResetAnalyses() {
+  _irState.analyses = {};
+  (_irState.tabs || []).forEach(function(t) {
+    _irState.analyses[t.id] = irEmptyAnalysisSlot();
+  });
+  _irState.activeKind = (_irState.tabs[0] && _irState.tabs[0].id) || 'vocab';
+  _irState.tabPinned = false;
+}
+
+async function irLoadTabs(bookType) {
+  var bt = (bookType === 'magazine') ? 'magazine' : 'novel';
+  _irState.bookType = bt;
+  try {
+    var r = await fetch('/api/intensive-reading/tabs?book_type=' + encodeURIComponent(bt));
+    var d = await r.json();
+    if (r.ok && Array.isArray(d.tabs) && d.tabs.length) {
+      _irState.tabs = d.tabs.map(function(t) {
+        return { id: t.id, label: t.label || t.id };
+      });
+      return;
+    }
+  } catch (e) { /* fallback below */ }
+  _irState.tabs = irTabsForType(bt);
+}
+
+function irRenderTabs() {
+  var bar = document.getElementById('irTabBar');
+  if (!bar) return;
+  bar.innerHTML = '';
+  (_irState.tabs || []).forEach(function(t) {
+    var slot = _irState.analyses[t.id] || irEmptyAnalysisSlot();
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'toolbar-btn';
+    var active = t.id === _irState.activeKind;
+    btn.style.cssText = 'font-size:0.72em;padding:4px 8px;' +
+      (active ? 'background:#3b82f6;color:#fff;border-color:#3b82f6;' : 'background:#1e2030;');
+    var mark = '';
+    if (slot.status === 'done') mark = ' ✓';
+    else if (slot.status === 'running') mark = ' …';
+    else if (slot.status === 'error') mark = ' !';
+    btn.textContent = t.label + mark;
+    btn.dataset.kind = t.id;
+    btn.addEventListener('click', function() { irSelectTab(btn.dataset.kind); });
+    bar.appendChild(btn);
+  });
+  irShowActiveAnalysis();
+  irUpdateContinueBtn();
+}
+
+function irSelectTab(kind) {
+  if (!kind || !_irState.analyses[kind]) return;
+  _irState.activeKind = kind;
+  _irState.tabPinned = true;
+  irRenderTabs();
+}
+
+function irShowActiveAnalysis() {
+  var box = document.getElementById('irAnalysis');
+  if (!box) return;
+  var kind = _irState.activeKind;
+  var slot = _irState.analyses[kind] || irEmptyAnalysisSlot();
+  if (slot.status === 'idle' && !slot.text) {
+    box.textContent = _irState.queueRunning
+      ? 'Queued — waiting for earlier tabs…'
+      : 'Click Analyze to generate tabs in order (starting with 好词好句).';
+    return;
+  }
+  if (slot.status === 'running' && !slot.text) {
+    box.textContent = 'Generating…';
+    return;
+  }
+  if (slot.status === 'error' && !slot.text) {
+    box.textContent = 'Error: ' + (slot.error || 'failed');
+    return;
+  }
+  var msg = slot.text || '';
+  if (slot.status === 'running') msg = msg || 'Generating…';
+  if ((slot.hasMore || slot.genTrunc) && slot.status === 'done') {
+    msg += '\n\n(Truncated — click Continue for more.)';
+  }
+  if (slot.status === 'error' && slot.error) {
+    msg += (msg ? '\n\n' : '') + 'Error: ' + slot.error;
+  }
+  box.textContent = msg;
+}
+
+function openIntensiveReadingModal() {
+  document.getElementById('intensiveReadingModal').classList.add('open');
+  irShowLibrary();
+  irRefreshBooks();
+}
+function closeIntensiveReadingModal() {
+  document.getElementById('intensiveReadingModal').classList.remove('open');
+}
+function irShowLibrary() {
+  document.getElementById('irLibraryPane').style.display = 'block';
+  document.getElementById('irReaderPane').style.display = 'none';
+}
+function irShowReader() {
+  document.getElementById('irLibraryPane').style.display = 'none';
+  var pane = document.getElementById('irReaderPane');
+  pane.style.display = 'flex';
+}
+function irBackToLibrary() {
+  if (irBusy()) {
+    showToast('Wait for analysis to finish before leaving');
+    return;
+  }
+  _irState.bookId = null;
+  irShowLibrary();
+  irRefreshBooks();
+}
+
+async function irRefreshBooks() {
+  var list = document.getElementById('irBookList');
+  list.innerHTML = '<div style="color:#8b8fa4;font-size:0.85em">Loading…</div>';
+  try {
+    var r = await fetch('/api/intensive-reading/books');
+    var d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Failed to list books');
+    var books = d.books || [];
+    if (books.length === 0) {
+      list.innerHTML = '<div style="color:#8b8fa4;font-size:0.85em">No books yet. Upload a PDF or EPUB above.</div>';
+      return;
+    }
+    list.innerHTML = '';
+    books.forEach(function(b) {
+      var prog = b.progress;
+      var progStr = prog ? ('chunk ' + (prog.chunk_index + 1) + '/' + (prog.total || b.chunk_count || '?')) : 'not started';
+      var status = b.status === 'ready' ? '' : ' [' + (b.status || 'unknown') + ']';
+      var rag = b.rag_status && b.rag_status !== 'ok' ? (' · RAG:' + b.rag_status) : '';
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;padding:10px;border:1px solid #2a2d3a;border-radius:8px;margin-bottom:8px';
+      var info = document.createElement('div');
+      info.style.cssText = 'flex:1;min-width:0';
+      var title = document.createElement('div');
+      title.style.cssText = 'color:#e0e0e0;font-size:0.9em;font-weight:600';
+      title.textContent = (b.title || b.book_id || '') + status;
+      var meta = document.createElement('div');
+      meta.style.cssText = 'color:#8b8fa4;font-size:0.75em;margin-top:3px';
+      meta.textContent = (b.book_type || '') + ' · ' + (b.chunk_count || 0) + ' chunks · ' + progStr + rag;
+      info.appendChild(title);
+      info.appendChild(meta);
+      row.appendChild(info);
+      if (b.status === 'ready') {
+        var btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'send-btn';
+        btn.style.cssText = 'padding:6px 12px;font-size:0.8em';
+        btn.textContent = 'Read';
+        btn.dataset.bookId = b.book_id || '';
+        btn.addEventListener('click', function() { irOpenBook(btn.dataset.bookId); });
+        row.appendChild(btn);
+        var reBtn = document.createElement('button');
+        reBtn.type = 'button';
+        reBtn.className = 'send-btn';
+        reBtn.style.cssText = 'padding:6px 12px;font-size:0.8em;background:#3a3f55';
+        reBtn.textContent = b.rag_status === 'failed' ? 'Re-index' : 'Re-index';
+        reBtn.dataset.bookId = b.book_id || '';
+        reBtn.addEventListener('click', function() { irReindexBook(reBtn.dataset.bookId, reBtn); });
+        row.appendChild(reBtn);
+      }
+      list.appendChild(row);
+    });
+  } catch (e) {
+    list.innerHTML = '<div style="color:#f87171;font-size:0.85em">' + escHtml(e.message) + '</div>';
+  }
+}
+
+async function irUploadBook() {
+  var input = document.getElementById('irFileInput');
+  var status = document.getElementById('irUploadStatus');
+  var btn = document.getElementById('irUploadBtn');
+  if (!input.files || !input.files[0]) { showToast('Choose a PDF or EPUB first'); return; }
+  var fd = new FormData();
+  fd.append('file', input.files[0]);
+  fd.append('book_type', document.getElementById('irBookType').value);
+  btn.disabled = true;
+  status.textContent = 'Uploading and chunking into RAG… (may take a minute)';
+  try {
+    var r = await fetch('/api/intensive-reading/upload', { method: 'POST', body: fd });
+    var d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Upload failed');
+    var b = d.book || {};
+    status.textContent = 'Ready: ' + (b.title || '') + ' — ' + (b.chunk_count || 0) + ' chunks' +
+      (b.rag_chunks ? (' (RAG ' + b.rag_chunks + ')') : '') +
+      (b.rag_status && b.rag_status !== 'ok' ? (' [' + b.rag_status + ']') : '') +
+      (d.book && d.book.warning ? (' — ' + d.book.warning) : '');
+    input.value = '';
+    showToast(b.rag_status === 'failed' ? 'Book saved; RAG index failed' : 'Book indexed');
+    await irRefreshBooks();
+  } catch (e) {
+    status.textContent = e.message;
+    showToast('Upload failed: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function irReindexBook(bookId, btnEl) {
+  if (!bookId) return;
+  if (btnEl) btnEl.disabled = true;
+  showToast('Re-indexing…');
+  try {
+    var r = await fetch('/api/intensive-reading/books/' + encodeURIComponent(bookId) + '/reindex', {
+      method: 'POST'
+    });
+    var d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Re-index failed');
+    var b = d.book || {};
+    showToast('Re-indexed: ' + (b.title || bookId) + ' (' + (b.rag_chunks || 0) + ' chunks)');
+    await irRefreshBooks();
+  } catch (e) {
+    showToast('Re-index failed: ' + e.message);
+    await irRefreshBooks();
+  } finally {
+    if (btnEl) btnEl.disabled = false;
+  }
+}
+
+async function irOpenBook(bookId) {
+  try {
+    var r = await fetch('/api/intensive-reading/books/' + encodeURIComponent(bookId));
+    var meta = await r.json();
+    if (!r.ok) throw new Error(meta.error || 'Book not found');
+    if (meta.status === 'no_readable_content') {
+      showToast(meta.error || 'No readable content in this book');
+      return;
+    }
+    if (meta.status !== 'ready') {
+      showToast('Book is not ready (' + (meta.status || 'unknown') + ')');
+      return;
+    }
+    var start = 0;
+    if (meta.progress && typeof meta.progress.chunk_index === 'number') {
+      start = meta.progress.chunk_index;
+    } else if (typeof meta.first_readable_index === 'number') {
+      start = meta.first_readable_index;
+    }
+    _irState.bookId = bookId;
+    _irState.bookType = (meta.book_type === 'magazine') ? 'magazine' : 'novel';
+    await irLoadTabs(_irState.bookType);
+    irResetAnalyses();
+    document.getElementById('irReaderTitle').textContent = meta.title || bookId;
+    irShowReader();
+    irRenderTabs();
+    await irLoadChunk(start);
+  } catch (e) {
+    showToast(e.message);
+  }
+}
+
+function irRenderPassage(raw) {
+  var el = document.getElementById('irPassage');
+  if (!el) return;
+  el.innerHTML = '';
+  el.style.flex = '1';
+  el.style.overflowY = 'auto';
+  var text = (raw || '').replace(/\r\n/g, '\n').trim();
+  if (!text) {
+    el.textContent = '';
+    return;
+  }
+  var paras = text.split(/\n\s*\n/).map(function(p) {
+    return p.replace(/\n/g, ' ').replace(/[ \t]+/g, ' ').trim();
+  }).filter(Boolean);
+  if (paras.length === 0) {
+    el.textContent = text;
+    return;
+  }
+  paras.forEach(function(p, idx) {
+    var node = document.createElement('p');
+    var words = p.split(/\s+/).length;
+    // Short early lines often look like magazine section / headline
+    if (idx === 0 && words <= 8 && p.length < 80 && !/[.!?]$/.test(p)) {
+      node.className = 'ir-para ir-kicker';
+    } else if (idx <= 1 && words <= 14 && p.length < 110 && !/[.!?].*[.!?]/.test(p)) {
+      node.className = 'ir-para ir-title';
+    } else {
+      node.className = 'ir-para';
+    }
+    node.textContent = p;
+    el.appendChild(node);
+  });
+}
+
+async function irLoadChunk(chunkIndex) {
+  if (!_irState.bookId) return;
+  if (irBusy()) {
+    showToast('Wait for analysis to finish before changing chunk');
+    return;
+  }
+  irResetAnalyses();
+  irRenderTabs();
+  var pass = document.getElementById('irPassage');
+  pass.textContent = 'Loading…';
+  try {
+    var r = await fetch('/api/intensive-reading/books/' + encodeURIComponent(_irState.bookId) +
+      '/chunks/' + encodeURIComponent(chunkIndex) + '?skip_toc=1');
+    var d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Chunk not found');
+    if (d.book_type === 'magazine' || d.book_type === 'novel') {
+      if (d.book_type !== _irState.bookType) {
+        await irLoadTabs(d.book_type);
+        irResetAnalyses();
+        irRenderTabs();
+      }
+    }
+    _irState.chunkIndex = d.chunk_index;
+    _irState.total = d.total || 0;
+    _irState.nextIndex = d.next_index;
+    _irState.prevIndex = (typeof d.prev_index === 'number') ? d.prev_index : null;
+    var title = (d.chunk && d.chunk.title) ? d.chunk.title : '';
+    document.getElementById('irReaderMeta').textContent =
+      'chunk ' + (_irState.chunkIndex + 1) + ' / ' + _irState.total + (title ? (' · ' + title) : '');
+    irRenderPassage((d.chunk && d.chunk.text) || '');
+    irSetNavDisabled(false);
+    await irSaveProgress(_irState.chunkIndex, _irState.total);
+  } catch (e) {
+    document.getElementById('irPassage').textContent = e.message;
+    showToast(e.message);
+  }
+}
+
+async function irSaveProgress(chunkIndex, total) {
+  try {
+    var r = await fetch('/api/intensive-reading/progress', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ book_id: _irState.bookId, chunk_index: chunkIndex, total: total })
+    });
+    var d = await r.json().catch(function() { return {}; });
+    if (!r.ok) {
+      showToast('Progress save failed: ' + (d.error || r.status));
+      return;
+    }
+    if (d.ok === false) {
+      showToast(d.warning || 'Progress was not saved to memory');
+    }
+  } catch (e) {
+    showToast('Progress save failed: ' + (e.message || 'network error'));
+  }
+}
+
+async function irNextChunk() {
+  if (irBusy()) {
+    showToast('Wait for analysis to finish before changing chunk');
+    return;
+  }
+  if (_irState.nextIndex == null) {
+    showToast('End of book');
+    return;
+  }
+  await irLoadChunk(_irState.nextIndex);
+}
+
+async function irPrevChunk() {
+  if (irBusy()) {
+    showToast('Wait for analysis to finish before changing chunk');
+    return;
+  }
+  if (_irState.prevIndex == null) {
+    showToast('Start of book');
+    return;
+  }
+  await irLoadChunk(_irState.prevIndex);
+}
+
+function irUpdateContinueBtn() {
+  var cbtn = document.getElementById('irContinueBtn');
+  if (!cbtn) return;
+  var slot = _irState.analyses[_irState.activeKind] || irEmptyAnalysisSlot();
+  var show = !!(slot.hasMore || slot.genTrunc) && slot.status === 'done';
+  cbtn.style.display = show ? '' : 'none';
+  cbtn.disabled = irBusy();
+  if (slot.hasMore) {
+    cbtn.textContent = 'Continue (next passage part)';
+  } else if (slot.genTrunc) {
+    cbtn.textContent = 'Continue (more)';
+  } else {
+    cbtn.textContent = 'Continue';
+  }
+}
+
+async function irAnalyzeChunk() {
+  if (!_irState.bookId || irBusy()) return;
+  irResetAnalyses();
+  _irState.queueRunning = true;
+  _irState.tabPinned = false;
+  _irState.activeKind = (_irState.tabs[0] && _irState.tabs[0].id) || 'vocab';
+  irRenderTabs();
+  irSetNavDisabled(true);
+  var btn = document.getElementById('irAnalyzeBtn');
+  if (btn) btn.disabled = true;
+  try {
+    for (var i = 0; i < _irState.tabs.length; i++) {
+      var kind = _irState.tabs[i].id;
+      if (!_irState.tabPinned) {
+        _irState.activeKind = kind;
+        irRenderTabs();
+      }
+      await irRunAnalyzeKind(kind, { continueMode: false });
+    }
+    var done = 0, errN = 0;
+    (_irState.tabs || []).forEach(function(t) {
+      var s = _irState.analyses[t.id];
+      if (!s) return;
+      if (s.status === 'done') done++;
+      else if (s.status === 'error') errN++;
+    });
+    if (errN > 0) {
+      showToast('Analysis finished: ' + done + ' ok, ' + errN + ' failed');
+    } else {
+      showToast('All analysis tabs done (' + done + ')');
+    }
+  } catch (e) {
+    showToast('Analyze stopped: ' + (e.message || e));
+  } finally {
+    _irState.queueRunning = false;
+    if (btn) btn.disabled = false;
+    irSetNavDisabled(false);
+    irRenderTabs();
+  }
+}
+
+async function irContinueAnalyze() {
+  if (irBusy()) return;
+  var kind = _irState.activeKind;
+  var slot = _irState.analyses[kind];
+  if (!slot || (!slot.hasMore && !slot.genTrunc)) {
+    showToast('Nothing more to continue');
+    return;
+  }
+  await irRunAnalyzeKind(kind, { continueMode: true });
+}
+
+async function irRunAnalyzeKind(kind, opts) {
+  if (!_irState.bookId) return;
+  opts = opts || {};
+  var continueMode = !!opts.continueMode;
+  var slot = _irState.analyses[kind] || irEmptyAnalysisSlot();
+  _irState.analyses[kind] = slot;
+  _irState.analyzing = true;
+  slot.status = 'running';
+  slot.error = '';
+  irRenderTabs();
+  irSetNavDisabled(true);
+
+  var offset = 0;
+  var part = 1;
+  var previous = '';
+  var append = false;
+
+  if (!continueMode) {
+    slot.text = '';
+    slot.offset = 0;
+    slot.part = 1;
+    slot.hasMore = false;
+    slot.genTrunc = false;
+    slot.lastOffset = 0;
+  } else if (slot.hasMore) {
+    offset = slot.offset || 0;
+    part = (slot.part || 1) + 1;
+    previous = slot.text || '';
+    append = true;
+  } else {
+    offset = slot.lastOffset != null ? slot.lastOffset : 0;
+    part = slot.part || 1;
+    previous = slot.text || '';
+    append = true;
+  }
+
+  try {
+    var r = await fetch('/api/intensive-reading/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        book_id: _irState.bookId,
+        chunk_index: _irState.chunkIndex,
+        analysis_kind: kind,
+        offset: offset,
+        part: part,
+        previous_analysis: previous
+      })
+    });
+    if (!r.ok) {
+      var err = await r.json().catch(function() { return {}; });
+      throw new Error(err.error || ('HTTP ' + r.status));
+    }
+    var reader = r.body.getReader();
+    var decoder = new TextDecoder();
+    var full = '';
+    var buf = '';
+    var metaDone = null;
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      buf += decoder.decode(chunk.value, { stream: true });
+      var parts = buf.split('\n');
+      buf = parts.pop() || '';
+      for (var i = 0; i < parts.length; i++) {
+        var line = parts[i].trim();
+        if (!line.startsWith('data:')) continue;
+        var payload = line.slice(5).trim();
+        try {
+          var msg = JSON.parse(payload);
+          if (msg.type === 'token') {
+            full += msg.content || '';
+            var live = append
+              ? ((previous || '') + '\n\n---\n\n## Part ' + part + '\n\n' + full)
+              : full;
+            slot.text = live;
+            if (kind === _irState.activeKind) {
+              document.getElementById('irAnalysis').textContent = live;
+            }
+          } else if (msg.type === 'error') {
+            throw new Error(msg.content || 'Analyze failed');
+          } else if (msg.type === 'done') {
+            metaDone = msg;
+            if (msg.content) full = msg.content;
+          }
+        } catch (pe) {
+          if (!(pe instanceof SyntaxError)) throw pe;
+        }
+      }
+    }
+    if (!full.trim()) {
+      throw new Error('No analysis returned — is Ollama running?');
+    }
+    var display;
+    if (append) {
+      display = (previous || '') + '\n\n---\n\n## Part ' + part + '\n\n' + full;
+    } else {
+      display = full;
+    }
+    slot.text = display;
+    slot.lastOffset = (metaDone && typeof metaDone.offset === 'number') ? metaDone.offset : offset;
+    slot.part = (metaDone && metaDone.part) ? metaDone.part : part;
+    slot.hasMore = !!(metaDone && metaDone.has_more);
+    slot.offset = (metaDone && typeof metaDone.next_offset === 'number') ? metaDone.next_offset : offset;
+    slot.genTrunc = !!(metaDone && metaDone.gen_truncated) && !slot.hasMore;
+    slot.status = 'done';
+  } catch (e) {
+    slot.status = 'error';
+    slot.error = e.message || String(e);
+    if (!slot.text) slot.text = '';
+  } finally {
+    _irState.analyzing = false;
+    if (!_irState.queueRunning) irSetNavDisabled(false);
+    irRenderTabs();
+  }
+}
+
 function openExplainThisModal() {
   document.getElementById('explainTopic').value = '';
   document.getElementById('explainThisModal').classList.add('open');
@@ -1492,14 +2214,11 @@ async function loadDailyFetchHistory(date) {
     h += _srcBreakdown(s.ai_by_source, '#60a5fa');
     h += '</div>';
     h += '<div style="background:#1a1d2e;border-radius:8px;padding:10px 14px;border:1px solid #2a2d3e">';
-    h += '<div style="font-size:0.72em;color:#8b8fa4;text-transform:uppercase;letter-spacing:0.5px">World News</div>';
-    h += '<div style="font-size:1.3em;font-weight:700;color:#f59e0b">' + (s.world_news_items || 0) + ' <span style="font-size:0.55em;font-weight:400">items</span></div>';
-    h += _srcBreakdown(s.world_by_source, '#f59e0b');
-    h += '</div>';
-    h += '<div style="background:#1a1d2e;border-radius:8px;padding:10px 14px;border:1px solid #2a2d3e">';
-    h += '<div style="font-size:0.72em;color:#8b8fa4;text-transform:uppercase;letter-spacing:0.5px">\u4e2d\u56fd\u65b0\u95fb</div>';
-    h += '<div style="font-size:1.3em;font-weight:700;color:#ef4444">' + (s.china_news_items || 0) + ' <span style="font-size:0.55em;font-weight:400">items</span></div>';
-    h += _srcBreakdown(s.china_by_source, '#ef4444');
+    h += '<div style="font-size:0.72em;color:#8b8fa4;text-transform:uppercase;letter-spacing:0.5px">Finance News</div>';
+    h += '<div style="font-size:1.3em;font-weight:700;color:#f59e0b">' + (s.finance_news_items || 0) + ' <span style="font-size:0.55em;font-weight:400">items</span></div>';
+    var fr = s.finance_by_region || {};
+    h += '<div style="font-size:0.68em;color:#9ca3af;margin-top:4px">US ' + (fr.us||0) + ' · APAC ' + (fr.apac||0) + ' · CN ' + (fr.china||0) + '</div>';
+    h += _srcBreakdown(s.finance_by_source, '#f59e0b');
     h += '</div>';
     h += '<div style="background:#1a1d2e;border-radius:8px;padding:10px 14px;border:1px solid #2a2d3e">';
     h += '<div style="font-size:0.72em;color:#8b8fa4;text-transform:uppercase;letter-spacing:0.5px">Jira Tickets</div>';
@@ -1513,7 +2232,7 @@ async function loadDailyFetchHistory(date) {
     h += '<button type="button" onclick="recreateWikiFetch(this)" style="margin-top:6px;background:#0f2433;border:1px solid #0ea5e9;border-radius:4px;padding:2px 8px;font-size:0.7em;color:#38bdf8;cursor:pointer" title="Re-run wiki fetch + change detection for all team members">&#x1f504; Refresh &amp; Recreate</button></div>';
     h += '</div>';
     if (_dfMissingSteps.length > 0) {
-      var stepLabels = {fetch_sources:'Source Fetch',topic_dedup:'Topic Dedup',commit_report:'Commit Report',jira_daily:'Jira Report',wiki_fetch:'Wiki Fetch',world_news_merge:'World News Merge',refetch_world:'World News Fetch',world_news_translate:'World News Translate',ai_audio:'AI Audio',world_audio:'World Audio',china_audio:'\u4e2d\u56fd\u65b0\u95fb Audio'};
+      var stepLabels = {fetch_sources:'Source Fetch',topic_dedup:'Topic Dedup',commit_report:'Commit Report',jira_daily:'Jira Report',wiki_fetch:'Wiki Fetch',finance_news_merge:'Finance News Merge',refetch_finance:'Finance News Fetch',finance_news_translate:'Finance News Translate',ai_audio:'AI Audio',finance_audio:'Finance Audio'};
       h += '<div style="background:#2a1a0a;border:1px solid #d97706;border-radius:8px;padding:10px 14px;margin-bottom:14px">';
       h += '<div style="font-size:0.78em;font-weight:600;color:#f59e0b;margin-bottom:6px">Incomplete — missing steps:</div>';
       h += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
@@ -1523,7 +2242,7 @@ async function loadDailyFetchHistory(date) {
       }
       h += '</div></div>';
     }
-    if (data.has_audio || data.has_wn_audio || data.has_cn_audio) {
+    if (data.has_audio || data.has_finance_audio) {
       var _cacheBust = '?t=' + Date.now();
       h += '<div style="margin-bottom:14px">';
       if (data.has_audio) {
@@ -1535,23 +2254,14 @@ async function loadDailyFetchHistory(date) {
         h += '</div>';
         h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/ai-briefing.mp3' + _cacheBust + '"></audio>';
       }
-      if (data.has_wn_audio) {
+      if (data.has_finance_audio) {
         h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">';
-        h += '<span style="font-size:0.78em;font-weight:600;color:#f59e0b">World News Audio</span>';
-        h += _dfTranslateBtnHtml('world_audio', 'World News', 'audio_lang_world', 'background:#2a2a1a;border:1px solid #ca8a04;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fde047;cursor:pointer');
-        h += '<button type="button" onclick="recreateAudioOnly(\'world_audio\',\'World News\',this)" style="background:#2a2a1a;border:1px solid #d97706;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#f59e0b;cursor:pointer" title="Regenerate audio from existing data">&#x21bb; Recreate</button>';
-        h += '<button type="button" onclick="recreateAudio(\'world_audio\',\'World News\',this)" style="background:#1a1a0f;border:1px solid #b45309;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fcd34d;cursor:pointer" title="Re-fetch world news then recreate audio">&#x1f504; Refetch &amp; Recreate</button>';
+        h += '<span style="font-size:0.78em;font-weight:600;color:#f59e0b">Finance News Audio</span>';
+        h += _dfTranslateBtnHtml('finance_audio', 'Finance News', 'audio_lang_finance', 'background:#2a2a1a;border:1px solid #ca8a04;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fde047;cursor:pointer');
+        h += '<button type="button" onclick="recreateAudioOnly(\'finance_audio\',\'Finance News\',this)" style="background:#2a2a1a;border:1px solid #d97706;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#f59e0b;cursor:pointer" title="Regenerate audio from existing data">&#x21bb; Recreate</button>';
+        h += '<button type="button" onclick="recreateAudio(\'finance_audio\',\'Finance News\',this)" style="background:#1a1a0f;border:1px solid #b45309;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fcd34d;cursor:pointer" title="Re-fetch finance news then recreate audio">&#x1f504; Refetch &amp; Recreate</button>';
         h += '</div>';
-        h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/world-news.mp3' + _cacheBust + '"></audio>';
-      }
-      if (data.has_cn_audio) {
-        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">';
-        h += '<span style="font-size:0.78em;font-weight:600;color:#ef4444">\u4e2d\u56fd\u65b0\u95fb Audio</span>';
-        h += _dfTranslateBtnHtml('china_audio', 'China News', 'audio_lang_china', 'background:#2a1a1a;border:1px solid #f87171;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fecaca;cursor:pointer');
-        h += '<button type="button" onclick="recreateAudioOnly(\'china_audio\',\'China News\',this)" style="background:#2a1a1a;border:1px solid #ef4444;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#ef4444;cursor:pointer" title="Regenerate audio from existing data">&#x21bb; Recreate</button>';
-        h += '<button type="button" onclick="recreateAudio(\'china_audio\',\'China News\',this)" style="background:#1a0f0f;border:1px solid #b91c1c;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fca5a5;cursor:pointer" title="Re-fetch China news then recreate audio">&#x1f504; Refetch &amp; Recreate</button>';
-        h += '</div>';
-        h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/china-news.mp3' + _cacheBust + '"></audio>';
+        h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/finance-news.mp3' + _cacheBust + '"></audio>';
       }
       h += '</div>';
     }
@@ -1608,17 +2318,15 @@ async function runDailyFetchFromModal() {
           var audioHtml = '<div style="margin:10px 0;padding:12px;background:#1a1d2e;border-radius:8px;border:1px solid #2a2d3e">' +
             '<div style="font-weight:600;color:#60a5fa;margin-bottom:8px">AI Briefing Audio</div>' +
             '<audio controls style="width:100%;margin-bottom:6px" src="/api/toolbar/audio-file/' + today + '/ai-briefing.mp3"></audio>' +
-            '<div style="font-weight:600;color:#f59e0b;margin:12px 0 8px">World News Audio</div>' +
-            '<audio controls style="width:100%;margin-bottom:6px" src="/api/toolbar/audio-file/' + today + '/world-news.mp3"></audio>' +
-            '<div style="font-weight:600;color:#ef4444;margin:12px 0 8px">中国新闻 Audio</div>' +
-            '<audio controls style="width:100%;margin-bottom:6px" src="/api/toolbar/audio-file/' + today + '/china-news.mp3"></audio>' +
+            '<div style="font-weight:600;color:#f59e0b;margin:12px 0 8px">Finance News Audio</div>' +
+            '<audio controls style="width:100%;margin-bottom:6px" src="/api/toolbar/audio-file/' + today + '/finance-news.mp3"></audio>' +
             '</div>';
           var audioMsg = document.createElement('div');
           audioMsg.className = 'system-msg';
           audioMsg.innerHTML = audioHtml;
           document.getElementById('chatMessages').appendChild(audioMsg);
           scrollToBottom();
-          var summaryPrompt = 'The daily fetch pipeline just completed. Below is the full data collected today. Please provide a comprehensive daily briefing summary in the following format:\\n\\n1. **AI News Highlights** (top 5 most important items with 1-sentence each)\\n2. **World News Highlights** (top 5 items)\\n3. **Team Activity** (summarize git commits by person and key changes)\\n4. **Jira Updates** (summarize ticket activity)\\n5. **Action Items** (anything that needs attention)\\n\\nHere is the data:\\n\\n' + dailySummary;
+          var summaryPrompt = 'The daily fetch pipeline just completed. Below is the full data collected today. Please provide a comprehensive daily briefing summary in the following format:\\n\\n1. **AI News Highlights** (top 5 most important items with 1-sentence each)\\n2. **Finance News Highlights** (top market-impact items across US / APAC / China)\\n3. **Team Activity** (summarize git commits by person and key changes)\\n4. **Jira Updates** (summarize ticket activity)\\n5. **Action Items** (anything that needs attention)\\n\\nHere is the data:\\n\\n' + dailySummary;
           conversationHistory.push({role:'user', content: summaryPrompt});
           sendMessage(summaryPrompt);
         } else if (st.status === 'error') {
@@ -1755,8 +2463,8 @@ async function recreateAudio(stepName, label, btn) {
   var preSteps = [stepName];
   if (stepName === 'ai_audio') {
     preSteps = ['refetch_ai', stepName];
-  } else if (stepName === 'world_audio' || stepName === 'china_audio') {
-    preSteps = ['refetch_world', 'world_news_merge', stepName];
+  } else if (stepName === 'finance_audio') {
+    preSteps = ['refetch_finance', 'finance_news_merge', 'finance_news_translate', stepName];
   }
   _runAudioJob(preSteps, 'Refetching & recreating ' + label + ' audio', btn, '\ud83d\udd04 Refetch & Recreate');
 }
@@ -3040,8 +3748,7 @@ async function openGlobalSettings() {
     const r = await fetch('/api/settings');
     const d = await r.json();
     document.getElementById('settAudioAi').value = d.audio_lang_ai || 'zh';
-    document.getElementById('settAudioWorld').value = d.audio_lang_world || 'zh';
-    document.getElementById('settAudioChina').value = d.audio_lang_china || 'zh';
+    document.getElementById('settAudioFinance').value = d.audio_lang_finance || d.audio_lang_world || 'zh';
     document.getElementById('settAudioKnowledge').value = d.audio_lang_knowledge || 'zh';
     var masked = d.deepseek_api_key_masked || '';
     var el = document.getElementById('settDeepseekKey');
@@ -3056,8 +3763,7 @@ function closeGlobalSettings() { document.getElementById('globalSettingsModal').
 async function saveGlobalSettings() {
   const body = {
     audio_lang_ai: document.getElementById('settAudioAi').value,
-    audio_lang_world: document.getElementById('settAudioWorld').value,
-    audio_lang_china: document.getElementById('settAudioChina').value,
+    audio_lang_finance: document.getElementById('settAudioFinance').value,
     audio_lang_knowledge: document.getElementById('settAudioKnowledge').value,
   };
   try {
@@ -3764,7 +4470,31 @@ async function removeFromWatchlist(sym) {
     loadWatchlist();
   } catch(e) { showToast('删除失败'); }
 }
-async function refreshWatchlist() { await loadWatchlist(); }
+async function refreshWatchlist() {
+  var st = document.getElementById('watchlistStatus');
+  var btn = document.getElementById('btnWatchlistRefresh');
+  try {
+    if (st) st.textContent = '联网刷新中...';
+    if (btn) btn.disabled = true;
+    const r = await fetch('/api/stock/watchlist/refresh', {method: 'POST'});
+    const d = await r.json();
+    if (!r.ok || d.error) {
+      showToast(d.error || '刷新失败');
+      if (st) st.textContent = '';
+      return;
+    }
+    if (st) {
+      st.textContent = '刷新完成';
+      setTimeout(function() { if (st.textContent === '刷新完成') st.textContent = ''; }, 3000);
+    }
+    await loadWatchlist();
+  } catch (e) {
+    showToast('刷新失败');
+    if (st) st.textContent = '';
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
 
 var _prefetchPollTimer = null;
 function _updatePrefetchUI(s) {
@@ -4259,6 +4989,200 @@ async function loadUnifiedResult() {
   } catch(e) {
     document.getElementById('uniLeftResult').innerHTML = '<p style="color:#ef4444">加载结果失败: ' + e.message + '</p>';
   }
+}
+
+// --- Weekly Selector (周线选股 + 回测) ---
+var _wkSelectTimer = null;
+var _wkBtTimer = null;
+function openWeeklyModal() {
+  var d = new Date();
+  var fri = new Date(d - (d.getDay() - 5 + 7) % 7 * 86400000);
+  document.getElementById('wkSelectDate').value = fri.toISOString().slice(0,10);
+  document.getElementById('wkBtEnd').value = d.toISOString().slice(0,10);
+  document.getElementById('weeklyModal').classList.add('open');
+  fetch('/api/stock/weekly/select/status').then(r=>r.json()).then(s=>{
+    if (s && s.status === 'running') { startWeeklySelectPoll(); }
+  }).catch(()=>{});
+  fetch('/api/stock/weekly/backtest/status').then(r=>r.json()).then(s=>{
+    if (s && s.status === 'running') { startWeeklyBtPoll(); }
+  }).catch(()=>{});
+}
+function closeWeeklyModal() {
+  document.getElementById('weeklyModal').classList.remove('open');
+  if (_wkSelectTimer) { clearInterval(_wkSelectTimer); _wkSelectTimer = null; }
+  if (_wkBtTimer) { clearInterval(_wkBtTimer); _wkBtTimer = null; }
+}
+async function startWeeklySelect() {
+  var date = document.getElementById('wkSelectDate').value;
+  var weeks = parseInt(document.getElementById('wkSelectWeeks').value) || 3;
+  var allowNet = document.getElementById('wkSelectNet').checked;
+  document.getElementById('wkSelectStatus').textContent = '启动中...';
+  document.getElementById('btnWkSelect').disabled = true;
+  document.getElementById('btnWkSelectStop').disabled = false;
+  document.getElementById('wkSelectProgress').style.display = 'block';
+  document.getElementById('wkSelectResult').innerHTML = allowNet
+    ? '<p style="color:#f59e0b">联网补缺中: 免费源无「一次拉全市场历史周K」接口, 只能对缺缓存股票逐只抓短窗口周线; 有本地缓存的仍秒级跳过。建议先用「数据预热」。</p>'
+    : '<p style="color:#60a5fa">扫描本地缓存周线 (连涨 ' + weeks + ' 周, 通常数分钟内完成)...</p>';
+  if (!_wkSelectTimer) _wkSelectTimer = setInterval(pollWeeklySelect, 2000);
+  try {
+    const r = await fetch('/api/stock/weekly/select', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({date:date, weeks:weeks, allow_network:allowNet})});
+    const d = await r.json();
+    if (d.error) { document.getElementById('wkSelectStatus').textContent = d.error; document.getElementById('btnWkSelect').disabled = false; document.getElementById('btnWkSelectStop').disabled = true; return; }
+    document.getElementById('wkSelectStatus').textContent = '选股进行中';
+  } catch(e) { document.getElementById('wkSelectStatus').textContent = '启动失败'; document.getElementById('btnWkSelect').disabled = false; }
+}
+async function stopWeeklySelect() {
+  try { await fetch('/api/stock/weekly/select/stop', {method:'POST'}); } catch(e) {}
+  document.getElementById('wkSelectStatus').textContent = '正在停止...';
+}
+function startWeeklySelectPoll() {
+  document.getElementById('btnWkSelect').disabled = true;
+  document.getElementById('btnWkSelectStop').disabled = false;
+  document.getElementById('wkSelectProgress').style.display = 'block';
+  if (!_wkSelectTimer) _wkSelectTimer = setInterval(pollWeeklySelect, 2000);
+}
+async function pollWeeklySelect() {
+  try {
+    const r = await fetch('/api/stock/weekly/select/status');
+    const d = await r.json();
+    var st = document.getElementById('wkSelectStatus');
+    var bar = document.getElementById('wkSelectProgressBar');
+    var txt = document.getElementById('wkSelectProgressText');
+    var phase = document.getElementById('wkSelectPhase');
+    var prog = document.getElementById('wkSelectProgress');
+    if (!d.status || d.status === 'idle') { st.textContent = '未在运行'; document.getElementById('btnWkSelect').disabled = false; document.getElementById('btnWkSelectStop').disabled = true; return; }
+    prog.style.display = 'block';
+    var pct = d.progress || 0;
+    bar.style.width = pct + '%'; txt.textContent = pct + '%';
+    phase.textContent = d.step || '';
+    if (d.status === 'running') { st.textContent = '选股进行中'; }
+    else if (d.status === 'done') { bar.style.width='100%'; txt.textContent='完成'; st.textContent='选股完成'; document.getElementById('btnWkSelect').disabled=false; document.getElementById('btnWkSelectStop').disabled=true; if (_wkSelectTimer){clearInterval(_wkSelectTimer);_wkSelectTimer=null;} loadWeeklySelectResult(); }
+    else if (d.status === 'error') { st.textContent='选股失败'; phase.textContent='错误: '+(d.step||'未知'); document.getElementById('btnWkSelect').disabled=false; document.getElementById('btnWkSelectStop').disabled=true; if (_wkSelectTimer){clearInterval(_wkSelectTimer);_wkSelectTimer=null;} }
+    else if (d.status === 'stopped') { st.textContent='已停止'; document.getElementById('btnWkSelect').disabled=false; document.getElementById('btnWkSelectStop').disabled=true; if (_wkSelectTimer){clearInterval(_wkSelectTimer);_wkSelectTimer=null;} }
+  } catch(e) {}
+}
+async function loadWeeklySelectResult() {
+  try {
+    const r = await fetch('/api/stock/weekly/select/result');
+    const d = await r.json();
+    if (d.error) { document.getElementById('wkSelectResult').innerHTML = '<p style="color:#6b7280">' + d.error + '</p>'; return; }
+    var picks = d.picks || [];
+    var wk = d.weeks || 3;
+    var h = '<div style="margin-bottom:8px;color:#a0a4b8;font-size:0.86em">目标周五: <b style="color:#fbbf24">' + (d.target||'') + '</b> · 连涨 ' + wk + ' 周 · 全市场 ' + (d.universe_total||0) + ' 只 · 入选 <b style="color:#34d399">' + (d.count||0) + '</b> 只';
+    if (d.skipped_no_data != null) h += ' · 无缓存跳过 ' + d.skipped_no_data;
+    if (d.allow_network === false) h += ' · <span style="color:#60a5fa">仅本地缓存</span>';
+    h += '</div>';
+    if (!picks.length) { h += '<p style="color:#6b7280">该周五无连续 ' + wk + ' 周收涨的股票。</p>'; }
+    else {
+      var th = '<th style="text-align:left;padding:5px">代码</th><th>名称</th><th>周收盘</th>';
+      for (var k=1;k<=wk;k++) th += '<th>周' + k + '</th>';
+      th += '<th>累计</th>';
+      h += '<table style="width:100%;border-collapse:collapse;font-size:0.82em"><thead><tr style="color:#8b8fa4;border-bottom:1px solid #2a2d3e">' + th + '</tr></thead><tbody>';
+      picks.forEach(function(p){
+        var rets = p.returns||[];
+        var cum = rets.reduce(function(a,b){return a+(b||0);},0).toFixed(2);
+        var tds = '<td style="padding:5px;color:#60a5fa">' + p.symbol + '</td><td style="text-align:center">' + _escapeHtml(p.name||'') + '</td><td style="text-align:center">' + (p.week_close||'') + '</td>';
+        for (var k=0;k<wk;k++) tds += '<td style="text-align:center;color:#34d399">' + (rets[k]!=null?rets[k]+'%':'') + '</td>';
+        tds += '<td style="text-align:center;color:#fbbf24;font-weight:600">' + cum + '%</td>';
+        h += '<tr style="border-bottom:1px solid #1f2230">' + tds + '</tr>';
+      });
+      h += '</tbody></table>';
+    }
+    document.getElementById('wkSelectResult').innerHTML = h;
+  } catch(e) { document.getElementById('wkSelectResult').innerHTML = '<p style="color:#ef4444">加载失败: '+e.message+'</p>'; }
+}
+async function startWeeklyBacktest() {
+  var start = document.getElementById('wkBtStart').value || '2023-01-01';
+  var end = document.getElementById('wkBtEnd').value || new Date().toISOString().slice(0,10);
+  var cap = parseFloat(document.getElementById('wkBtCapital').value) || 1000000;
+  var weeks = parseInt(document.getElementById('wkBtWeeks').value) || 3;
+  document.getElementById('wkBtStatus').textContent = '启动中...';
+  document.getElementById('btnWkBt').disabled = true;
+  document.getElementById('btnWkBtStop').disabled = false;
+  document.getElementById('wkBtProgress').style.display = 'block';
+  document.getElementById('wkBtResult').innerHTML = '<p style="color:#34d399">回测进行中 (连涨 ' + weeks + ' 周), 全市场扫描可能较慢...</p>';
+  if (!_wkBtTimer) _wkBtTimer = setInterval(pollWeeklyBacktest, 2000);
+  try {
+    const r = await fetch('/api/stock/weekly/backtest', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({start_date:start, end_date:end, capital:cap, weeks:weeks})});
+    const d = await r.json();
+    if (d.error) { document.getElementById('wkBtStatus').textContent = d.error; document.getElementById('btnWkBt').disabled = false; document.getElementById('btnWkBtStop').disabled = true; return; }
+    document.getElementById('wkBtStatus').textContent = '回测进行中';
+  } catch(e) { document.getElementById('wkBtStatus').textContent = '启动失败'; document.getElementById('btnWkBt').disabled = false; }
+}
+async function stopWeeklyBacktest() {
+  try { await fetch('/api/stock/weekly/backtest/stop', {method:'POST'}); } catch(e) {}
+  document.getElementById('wkBtStatus').textContent = '正在停止...';
+}
+function startWeeklyBtPoll() {
+  document.getElementById('btnWkBt').disabled = true;
+  document.getElementById('btnWkBtStop').disabled = false;
+  document.getElementById('wkBtProgress').style.display = 'block';
+  if (!_wkBtTimer) _wkBtTimer = setInterval(pollWeeklyBacktest, 2000);
+}
+async function pollWeeklyBacktest() {
+  try {
+    const r = await fetch('/api/stock/weekly/backtest/status');
+    const d = await r.json();
+    var st = document.getElementById('wkBtStatus');
+    var bar = document.getElementById('wkBtProgressBar');
+    var txt = document.getElementById('wkBtProgressText');
+    var phase = document.getElementById('wkBtPhase');
+    var prog = document.getElementById('wkBtProgress');
+    if (!d.status || d.status === 'idle') { st.textContent = '未在运行'; document.getElementById('btnWkBt').disabled = false; document.getElementById('btnWkBtStop').disabled = true; return; }
+    prog.style.display = 'block';
+    var pct = d.progress || 0;
+    bar.style.width = pct + '%'; txt.textContent = pct + '%';
+    phase.textContent = d.step || '';
+    if (d.status === 'running') { st.textContent = '回测进行中'; }
+    else if (d.status === 'done') { bar.style.width='100%'; txt.textContent='完成'; st.textContent='回测完成'; document.getElementById('btnWkBt').disabled=false; document.getElementById('btnWkBtStop').disabled=true; if (_wkBtTimer){clearInterval(_wkBtTimer);_wkBtTimer=null;} loadWeeklyBtResult(); }
+    else if (d.status === 'error') { st.textContent='回测失败'; phase.textContent='错误: '+(d.step||'未知'); document.getElementById('btnWkBt').disabled=false; document.getElementById('btnWkBtStop').disabled=true; if (_wkBtTimer){clearInterval(_wkBtTimer);_wkBtTimer=null;} }
+    else if (d.status === 'stopped') { st.textContent='已停止'; document.getElementById('btnWkBt').disabled=false; document.getElementById('btnWkBtStop').disabled=true; if (_wkBtTimer){clearInterval(_wkBtTimer);_wkBtTimer=null;} }
+  } catch(e) {}
+}
+async function loadWeeklyBtResult() {
+  try {
+    const r = await fetch('/api/stock/weekly/backtest/result');
+    const d = await r.json();
+    if (d.error) { document.getElementById('wkBtResult').innerHTML = '<p style="color:#6b7280">' + d.error + '</p>'; return; }
+    var m = d.metrics || {};
+    var h = '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px">';
+    function card(label, val, color){ return '<div style="border:1px solid #2a2d3e;border-radius:8px;padding:8px;background:#1a1d2e"><div style="font-size:0.72em;color:#8b8fa4">' + label + '</div><div style="font-size:1.05em;font-weight:700;color:' + (color||'#c4c8f0') + '">' + val + '</div></div>'; }
+    var trColor = (m.total_return_pct||0) >= 0 ? '#34d399' : '#f87171';
+    h += card('总收益率', (m.total_return_pct||0).toFixed(2)+'%', trColor);
+    h += card('年化收益率', (m.annual_return_pct||0).toFixed(2)+'%', trColor);
+    h += card('最大回撤', (m.max_drawdown_pct||0).toFixed(2)+'%', '#f87171');
+    h += card('夏普比率', (m.sharpe_ratio||0).toFixed(3), '#fbbf24');
+    h += card('胜率', (m.win_rate_pct||0).toFixed(2)+'%', '#60a5fa');
+    h += card('盈亏比', (m.profit_factor||0).toFixed(3), '#a78bfa');
+    h += card('总交易次数', (m.total_trades||0), '#c4c8f0');
+    h += card('平均每笔收益', (m.avg_return_pct||0).toFixed(2)+'%', '#34d399');
+    h += '</div>';
+    h += '<div style="font-size:0.78em;color:#8b8fa4;margin-bottom:6px">连涨 ' + (d.weeks||3) + ' 周 · 初始资金 ' + (d.initial_capital||0) + ' → 期末 ' + (d.final_capital||0) + ' · 区间 ' + (d.start||'') + ' ~ ' + (d.end||'') + '</div>';
+    h += '<div style="margin-bottom:8px"><div style="font-size:0.8em;color:#a0a4b8;margin-bottom:4px">权益曲线</div>' + _wkEquitySvg(d.equity_curve||[]) + '</div>';
+    var trades = d.trades || [];
+    h += '<details style="margin-top:6px"><summary style="cursor:pointer;color:#a78bfa;font-size:0.82em">交易明细 (' + trades.length + ' 笔)</summary>';
+    h += '<div style="max-height:30vh;overflow-y:auto;margin-top:6px"><table style="width:100%;border-collapse:collapse;font-size:0.78em"><thead><tr style="color:#8b8fa4;border-bottom:1px solid #2a2d3e"><th style="text-align:left;padding:4px">买入日</th><th>卖出日</th><th>代码</th><th>名称</th><th>买价</th><th>卖价</th><th>收益</th><th>原因</th></tr></thead><tbody>';
+    trades.slice(0,300).forEach(function(t){
+      var rc = (t.return_pct||0) >= 0 ? '#34d399' : '#f87171';
+      h += '<tr style="border-bottom:1px solid #1f2230"><td style="padding:4px">' + (t.entry_date||'') + '</td><td style="text-align:center">' + (t.exit_date||'') + '</td><td style="text-align:center;color:#60a5fa">' + (t.symbol||'') + '</td><td style="text-align:center">' + _escapeHtml(t.name||'') + '</td><td style="text-align:center">' + (t.entry_price||'') + '</td><td style="text-align:center">' + (t.exit_price||'') + '</td><td style="text-align:center;color:' + rc + '">' + (t.return_pct||0) + '%</td><td style="text-align:center;color:#8b8fa4">' + (t.reason||'') + '</td></tr>';
+    });
+    h += '</tbody></table></div></details>';
+    document.getElementById('wkBtResult').innerHTML = h;
+  } catch(e) { document.getElementById('wkBtResult').innerHTML = '<p style="color:#ef4444">加载失败: '+e.message+'</p>'; }
+}
+function _wkEquitySvg(curve) {
+  if (!curve || curve.length < 2) return '<div style="font-size:0.78em;color:#6b7280">无权益曲线数据</div>';
+  var W = 460, H = 120, pad = 6;
+  var vals = curve.map(function(p){ return p.equity; });
+  var minV = Math.min.apply(null, vals), maxV = Math.max.apply(null, vals);
+  if (maxV === minV) { maxV = minV + 1; }
+  var n = vals.length;
+  var pts = vals.map(function(v, i){
+    var x = pad + (W - 2*pad) * (i/(n-1));
+    var y = H - pad - (H - 2*pad) * ((v - minV)/(maxV - minV));
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  return '<svg width="100%" viewBox="0 0 ' + W + ' ' + H + '" style="border:1px solid #2a2d3e;border-radius:6px;background:#0f1117"><polyline points="' + pts + '" fill="none" stroke="#34d399" stroke-width="1.6"/></svg>';
 }
 
 function _renderDeepseekResult(ds, idx) {

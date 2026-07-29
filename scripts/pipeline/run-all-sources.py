@@ -223,13 +223,27 @@ async def main():
         else:
             print(f"  Confluence indexed in {confluence_seconds}s")
 
-    world_news_script = os.path.join(SCRIPT_DIR, "run-world-news.py")
-    if os.path.isfile(world_news_script):
-        print("\n=== Phase 5: World News Fetch ===")
+    finance_news_script = os.path.join(SCRIPT_DIR, "run-finance-news.py")
+    if os.path.isfile(finance_news_script):
+        print("\n=== Phase 5: Finance News Fetch ===")
         t = time.monotonic()
-        world_news_dir = os.path.join(output_dir, "world-news")
-        os.makedirs(world_news_dir, exist_ok=True)
-        cmd = [sys.executable, world_news_script, "--output-dir", world_news_dir]
+        finance_news_dir = os.path.join(output_dir, "finance-news")
+        os.makedirs(finance_news_dir, exist_ok=True)
+        leaf = os.path.basename(os.path.abspath(output_dir))
+        if len(leaf) == 10 and leaf[4] == "-" and leaf[7] == "-":
+            report_date = leaf
+        else:
+            from datetime import datetime as _dt
+            report_date = _dt.now().strftime("%Y-%m-%d")
+        cmd = [
+            sys.executable,
+            finance_news_script,
+            "--output-dir",
+            finance_news_dir,
+            "--no-translate",
+            "--report-date",
+            report_date,
+        ]
         if args.proxy:
             cmd.extend(["--proxy", args.proxy])
         proc = await asyncio.create_subprocess_exec(
@@ -243,20 +257,20 @@ async def main():
                 proc.kill()
             except Exception:
                 pass
-            print(f"  Warning: World news fetch timed out after 180s")
+            print(f"  Warning: Finance news fetch timed out after 180s")
             stdout, stderr = b"", b""
-        world_news_seconds = round(time.monotonic() - t, 2)
+        finance_news_seconds = round(time.monotonic() - t, 2)
         out = stdout.decode("utf-8", errors="replace").strip()
         if out:
             for line in out.split("\n"):
                 print(f"  {line}")
         if proc.returncode and proc.returncode != 0:
             err = stderr.decode("utf-8", errors="replace").strip()
-            print(f"  Warning: World news fetch failed (exit {proc.returncode})")
+            print(f"  Warning: Finance news fetch failed (exit {proc.returncode})")
             if err:
                 print(f"  {err[:200]}")
         else:
-            print(f"  World news fetched in {world_news_seconds}s")
+            print(f"  Finance news fetched in {finance_news_seconds}s")
 
     grand_total = round(time.monotonic() - grand_t0, 2)
 

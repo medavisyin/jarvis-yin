@@ -32,27 +32,45 @@ except ImportError:
     requests = None
 
 SOURCE_NAME = "china-news"
-OUTPUT_DIR = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.getcwd(), "_world_news_tmp")
+OUTPUT_DIR = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.getcwd(), "_finance_news_tmp")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 }
 
 CATEGORY_MAP = {
-    "politics": "politics",
-    "finance": "economics",
-    "economy": "economics",
-    "business": "economics",
-    "policy": "politics",
-    "technology": "technology",
+    "politics": "policy",
+    "finance": "markets",
+    "economy": "macro",
+    "business": "markets",
+    "policy": "policy",
+    "technology": "corporate",
 }
+
+# Hot-search gate: only keep finance/policy-relevant social trending
+_HOT_KEEP = re.compile(
+    r"经济|股市|股指|基金|银行|房贷|房价|消费|贸易|关税|制裁|央行|降准|降息|加息|"
+    r"证券|期货|汇率|人民币|财报|IPO|并购|监管|证监会|国务院|政策|财政|通胀|"
+    r"芯片|半导体|华为|出口管制|美联储|美股|港股|A股|熔断",
+)
+_HOT_DROP = re.compile(r"明星|恋情|婚礼|综艺|影视|娱乐|足球|篮球|美食|旅游")
 
 SINA_ROLL_API = "https://feed.mix.sina.com.cn/api/roll/get"
 
 SINA_CHANNELS = [
-    ("politics", "2510", 20),
-    ("finance", "2509", 25),
+    ("finance", "2509", 30),
+    ("politics", "2510", 15),
 ]
+
+
+def keep_china_hot_item(title: str) -> bool:
+    """Return True if a Weibo/Toutiao hot title is finance/policy relevant."""
+    t = (title or "").strip()
+    if not t:
+        return False
+    if _HOT_DROP.search(t):
+        return False
+    return bool(_HOT_KEEP.search(t))
 
 
 def _today_str():
@@ -70,12 +88,17 @@ def _load_previous_titles() -> set[str]:
     try:
         parent = os.path.dirname(os.path.dirname(OUTPUT_DIR))
         yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-        prev_path = os.path.join(parent, yesterday, "world-news", f"{SOURCE_NAME}.json")
-        if os.path.isfile(prev_path):
+        candidates = [
+            os.path.join(parent, yesterday, "finance-news", f"{SOURCE_NAME}.json"),
+            os.path.join(parent, yesterday, "world-news", f"{SOURCE_NAME}.json"),
+        ]
+        for prev_path in candidates:
+            if not os.path.isfile(prev_path):
+                continue
             with open(prev_path, encoding="utf-8") as f:
                 data = json.load(f)
             titles = {item["title"][:50].lower() for item in data.get("items", []) if item.get("title")}
-            print(f"  Cross-day dedup: loaded {len(titles)} titles from {yesterday}")
+            print(f"  Cross-day dedup: loaded {len(titles)} titles from {yesterday} ({prev_path})")
             return titles
     except Exception as e:
         print(f"  Cross-day dedup load failed (non-fatal): {e}")
@@ -114,9 +137,11 @@ def fetch_sina_roll() -> list[dict]:
                 if ctime and ctime.isdigit():
                     date_str = datetime.fromtimestamp(int(ctime)).strftime("%Y-%m-%d %H:%M")
 
-                mapped_cat = CATEGORY_MAP.get(category, "politics")
+                mapped_cat = CATEGORY_MAP.get(category, "policy")
                 if any(k in title for k in ["政策", "国务院", "总书记", "外交", "军事", "制裁"]):
-                    mapped_cat = "politics"
+                    mapped_cat = "policy"
+                elif any(k in title for k in ["央行", "降准", "利率", "股市", "证券"]):
+                    mapped_cat = "macro" if "央行" in title or "降准" in title else "markets"
 
                 items.append({
                     "title": title,
@@ -183,7 +208,7 @@ def _parse_rss_feed(url: str, category: str, source_tag: str,
                 "date": entry.get("published", ""),
                 "summary": summary,
                 "summary_zh": summary,
-                "category": CATEGORY_MAP.get(category, "economics"),
+                "category": CATEGORY_MAP.get(category, "markets"),
                 "points": [],
                 "_source_tag": source_tag,
             })
@@ -214,17 +239,16 @@ def fetch_weibo_hot() -> list[dict]:
 
         for entry in hot_list[:15]:
             word = entry.get("word", "").strip()
-            if not word:
+            if not word or not keep_china_hot_item(word):
                 continue
             label_name = entry.get("label_name", "")
             note = entry.get("note", "").strip()
-            mid = entry.get("mid", "")
 
-            cat = "politics"
-            if any(k in word for k in ["经济", "股", "基金", "银行", "房", "消费", "贸易", "关税"]):
-                cat = "economics"
+            cat = "policy"
+            if any(k in word for k in ["经济", "股", "基金", "银行", "房", "消费", "贸易", "关税", "熔断"]):
+                cat = "markets"
             elif any(k in word for k in ["科技", "AI", "芯片", "数据", "互联网", "手机", "华为"]):
-                cat = "technology"
+                cat = "corporate"
 
             url = f"https://s.weibo.com/weibo?q=%23{word}%23" if word else ""
 
@@ -284,7 +308,7 @@ def fetch_cls_telegraph() -> list[dict]:
                 "date": date_str,
                 "summary": summary if summary != title else "",
                 "summary_zh": summary if summary != title else "",
-                "category": "economics",
+                "category": "markets",
                 "points": [],
                 "_source_tag": "cls",
             })
@@ -318,17 +342,17 @@ def fetch_toutiao_trending() -> list[dict]:
 
         for hot in hot_list[:15]:
             title = hot.get("Title", "").strip()
-            if not title:
+            if not title or not keep_china_hot_item(title):
                 continue
             url = hot.get("Url", "")
             if not url and hot.get("ClusterIdStr"):
                 url = f"https://www.toutiao.com/trending/{hot['ClusterIdStr']}/"
 
-            cat = "politics"
-            if any(k in title for k in ["经济", "股", "基金", "银行", "房", "消费", "贸易"]):
-                cat = "economics"
+            cat = "policy"
+            if any(k in title for k in ["经济", "股", "基金", "银行", "房", "消费", "贸易", "熔断"]):
+                cat = "markets"
             elif any(k in title for k in ["科技", "AI", "芯片", "数据", "互联网"]):
-                cat = "technology"
+                cat = "corporate"
 
             items.append({
                 "title": title,
@@ -351,14 +375,14 @@ def main():
     t0 = time.monotonic()
     timing = {}
 
-    print(f"[{SOURCE_NAME}] Fetching Chinese political/financial news...")
+    print(f"[{SOURCE_NAME}] Fetching Chinese finance/policy news...")
 
     prev_titles = _load_previous_titles()
 
     t = time.monotonic()
     sina_items = fetch_sina_roll()
     timing["sina"] = round(time.monotonic() - t, 2)
-    print(f"  Sina (politics+finance): {len(sina_items)} items ({timing['sina']}s)")
+    print(f"  Sina (finance+politics): {len(sina_items)} items ({timing['sina']}s)")
 
     t = time.monotonic()
     people_items = fetch_people_daily_rss()
@@ -373,12 +397,12 @@ def main():
     t = time.monotonic()
     toutiao_items = fetch_toutiao_trending()
     timing["toutiao"] = round(time.monotonic() - t, 2)
-    print(f"  Toutiao trending: {len(toutiao_items)} items ({timing['toutiao']}s)")
+    print(f"  Toutiao (finance-gated): {len(toutiao_items)} items ({timing['toutiao']}s)")
 
     t = time.monotonic()
     weibo_items = fetch_weibo_hot()
     timing["weibo"] = round(time.monotonic() - t, 2)
-    print(f"  Weibo hot: {len(weibo_items)} items ({timing['weibo']}s)")
+    print(f"  Weibo (finance-gated): {len(weibo_items)} items ({timing['weibo']}s)")
 
     all_items = (sina_items + people_items + cls_items
                  + toutiao_items + weibo_items)
@@ -400,8 +424,8 @@ def main():
     if cross_day_skipped:
         print(f"  Cross-day dedup removed {cross_day_skipped} stale articles")
 
-    # Sort: today's articles first, then by source diversity
-    source_order = {"toutiao": 0, "cls": 1, "weibo": 2, "sina": 3, "people": 4}
+    # Sort: today's articles first; prefer CLS/Sina finance over social
+    source_order = {"cls": 0, "sina": 1, "people": 2, "toutiao": 3, "weibo": 4}
     deduped.sort(key=lambda x: (
         0 if _is_today(x.get("date", "")) else 1,
         source_order.get(x.get("_source_tag", ""), 9),

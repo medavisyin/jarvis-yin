@@ -124,6 +124,8 @@ init_memory_store(
 )
 
 app = Flask(__name__)
+# Cap multipart uploads (Intensive Reading books, etc.)
+app.config["MAX_CONTENT_LENGTH"] = 80 * 1024 * 1024
 
 
 
@@ -512,12 +514,21 @@ def _fetch_article_content(title: str, session_id: str) -> str:
 
         return "\n\n---\n\n".join(parts) if parts else ""
     elif session_id == _LEARNING_SESSION_IDS.get("casual_english"):
+        try:
+            _pipeline = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "pipeline"))
+            if _pipeline not in sys.path:
+                sys.path.insert(0, _pipeline)
+            from finance_news_paths import finance_news_data_path as _fn_path
+        except Exception:
+            _fn_path = None
         for d_offset in range(7):
             dt = (datetime.now() - timedelta(days=d_offset)).strftime("%Y-%m-%d")
-            wn_path = os.path.join(REPORTS_ROOT, dt, "world-news", "world-news-data.json")
-            if not os.path.isfile(wn_path):
-                wn_path = os.path.join(REPORTS_ROOT, dt, "world-news-data.json")
-            if os.path.isfile(wn_path):
+            wn_path = _fn_path(REPORTS_ROOT, dt) if _fn_path else None
+            if not wn_path:
+                wn_path = os.path.join(REPORTS_ROOT, dt, "world-news", "world-news-data.json")
+                if not os.path.isfile(wn_path):
+                    wn_path = os.path.join(REPORTS_ROOT, dt, "world-news-data.json")
+            if wn_path and os.path.isfile(wn_path):
                 try:
                     with open(wn_path, "r", encoding="utf-8") as f:
                         wdata = json.load(f)
@@ -1133,16 +1144,27 @@ _SETTINGS_FILE = os.path.join(os.path.dirname(__file__), ".global_settings.json"
 
 _GLOBAL_SETTINGS_DEFAULTS = {
     "audio_lang_ai": "zh",
-    "audio_lang_world": "zh",
-    "audio_lang_china": "zh",
+    "audio_lang_finance": "zh",
     "audio_lang_knowledge": "zh",
     "deepseek_api_key": "",
 }
 
 
+def _migrate_audio_lang_finance(settings: dict, saved: dict) -> dict:
+    """Copy legacy world/china lang into finance only when finance was never saved."""
+    if "audio_lang_finance" not in saved:
+        settings["audio_lang_finance"] = (
+            saved.get("audio_lang_world")
+            or saved.get("audio_lang_china")
+            or "zh"
+        )
+    return settings
+
+
 def _load_settings() -> dict:
     """Load settings from disk, merging with defaults."""
     settings = dict(_GLOBAL_SETTINGS_DEFAULTS)
+    saved = {}
     if os.path.isfile(_SETTINGS_FILE):
         try:
             with open(_SETTINGS_FILE, "r", encoding="utf-8") as f:
@@ -1150,7 +1172,7 @@ def _load_settings() -> dict:
             settings.update(saved)
         except Exception:
             pass
-    return settings
+    return _migrate_audio_lang_finance(settings, saved)
 
 
 def _save_settings(settings: dict):
@@ -1571,6 +1593,10 @@ app.register_blueprint(daily_fetch_bp)
 # Stock routes (Blueprint)
 from routes.stock import stock_bp
 app.register_blueprint(stock_bp)
+
+# Intensive Reading (PDF/EPUB)
+from routes.intensive_reading import intensive_reading_bp
+app.register_blueprint(intensive_reading_bp)
 
 
 # ===================================================================

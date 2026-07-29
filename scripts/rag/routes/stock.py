@@ -34,7 +34,7 @@ _STOCK_MODULES = [
     "backtest_engine", "midday_scanner", "right_side_scanner",
     "scan_cache", "unified_scanner", "valuation", "data_quality",
     "regime_detector", "model_ensemble", "position_sizer", "backtest_strategies",
-    "network_policy", "data_prefetch",
+    "network_policy", "data_prefetch", "weekly_selector",
 ]
 
 log = logging.getLogger(__name__)
@@ -280,10 +280,12 @@ def api_stock_watchlist_remove(symbol):
 @stock_bp.route("/api/stock/watchlist/refresh", methods=["POST"])
 @_with_stock_imports
 def api_stock_watchlist_refresh():
-    """Refresh watchlist from local cache only (no network). Use prefetch for batch update."""
+    """Refresh all watchlist data from network, then return latest prices."""
     try:
-        from watchlist import list_stocks
-        return jsonify({"ok": True, "stocks": list_stocks(), "note": "只读本地; 批量更新请用数据预热"})
+        from watchlist import refresh_all_data, get_watchlist_with_prices
+        refresh_all_data()
+        stocks = get_watchlist_with_prices()
+        return jsonify({"ok": True, "stocks": stocks})
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500
@@ -1289,6 +1291,113 @@ def api_stock_national_team():
         return jsonify({"snapshot": snapshot, "trend": trend,
                         "period_stats": period_stats, "backfill": backfill,
                         "fund_signals": fund_signals})
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+# --- Weekly Stock Selector (周线选股 + 策略回测) ---
+
+@stock_bp.route("/api/stock/weekly/select", methods=["POST"])
+@_with_stock_imports
+def api_stock_weekly_select():
+    """Start weekly stock selection (3 consecutive up weeks)."""
+    try:
+        body = request.get_json(silent=True) or {}
+        date_str = body.get("date")
+        weeks = body.get("weeks", 3)
+        allow_network = bool(body.get("allow_network", False))
+        from weekly_selector import select_weekly
+        return jsonify(select_weekly(date_str, weeks=weeks, allow_network=allow_network))
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/weekly/select/status", methods=["GET"])
+@_with_stock_imports
+def api_stock_weekly_select_status():
+    try:
+        from weekly_selector import get_select_status
+        return jsonify(get_select_status())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/weekly/select/result", methods=["GET"])
+@_with_stock_imports
+def api_stock_weekly_select_result():
+    try:
+        from weekly_selector import get_select_result
+        res = get_select_result()
+        if res:
+            return jsonify(res)
+        return jsonify({"error": "暂无选股结果"}), 404
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/weekly/select/stop", methods=["POST"])
+@_with_stock_imports
+def api_stock_weekly_select_stop():
+    try:
+        from weekly_selector import stop_select
+        return jsonify(stop_select())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/weekly/backtest", methods=["POST"])
+@_with_stock_imports
+def api_stock_weekly_backtest():
+    """Start weekly strategy backtest."""
+    try:
+        body = request.get_json(silent=True) or {}
+        start_date = body.get("start_date", "2023-01-01")
+        end_date = body.get("end_date", datetime.now().strftime("%Y-%m-%d"))
+        capital = body.get("capital", 1000000)
+        weeks = body.get("weeks", 3)
+        from weekly_selector import backtest_weekly
+        return jsonify(backtest_weekly(start_date, end_date, capital, weeks=weeks))
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/weekly/backtest/status", methods=["GET"])
+@_with_stock_imports
+def api_stock_weekly_backtest_status():
+    try:
+        from weekly_selector import get_bt_status
+        return jsonify(get_bt_status())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/weekly/backtest/result", methods=["GET"])
+@_with_stock_imports
+def api_stock_weekly_backtest_result():
+    try:
+        from weekly_selector import get_bt_result
+        res = get_bt_result()
+        if res:
+            return jsonify(res)
+        return jsonify({"error": "暂无回测结果"}), 404
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/weekly/backtest/stop", methods=["POST"])
+@_with_stock_imports
+def api_stock_weekly_backtest_stop():
+    try:
+        from weekly_selector import stop_backtest
+        return jsonify(stop_backtest())
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500

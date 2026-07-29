@@ -63,8 +63,7 @@ def _get_global_settings() -> dict:
 
 _AUDIO_STEP_LANG_KEYS = {
     "ai_audio": "audio_lang_ai",
-    "world_audio": "audio_lang_world",
-    "china_audio": "audio_lang_china",
+    "finance_audio": "audio_lang_finance",
 }
 
 _AUDIO_EXCLUDE_SOURCES = {"Arxiv AI", "Arxiv Machine Learning"}
@@ -267,12 +266,22 @@ def _ingest_ai_news_to_learning(output_dir: str, date_str: str) -> int:
 _daily_fetch_jobs: dict[str, dict] = {}
 
 
-def _check_wn_translated(output_dir: str) -> bool:
-    wn_path = os.path.join(output_dir, "world-news", "world-news-data.json")
-    if not os.path.isfile(wn_path):
+def _finance_news_json_path(date_dir: str) -> str | None:
+    """Prefer finance-news data; fall back to legacy world-news paths."""
+    pipeline = os.path.join(_SCRIPTS_DIR, "pipeline")
+    if pipeline not in sys.path:
+        sys.path.insert(0, pipeline)
+    from finance_news_paths import finance_news_json_for_date_dir
+
+    return finance_news_json_for_date_dir(date_dir)
+
+
+def _check_finance_translated(output_dir: str) -> bool:
+    fn_path = _finance_news_json_path(output_dir)
+    if not fn_path:
         return False
     try:
-        with open(wn_path, "r", encoding="utf-8") as f:
+        with open(fn_path, "r", encoding="utf-8") as f:
             return json.load(f).get("translated", False)
     except Exception:
         return False
@@ -311,25 +320,25 @@ def _resolve_briefing_data_file(output_dir: str) -> str | None:
     return None
 
 
-def _count_world_news_items(date_dir: str) -> tuple[int, int]:
-    """Return (international_count, china_count) from world-news-data.json."""
-    wn_count = cn_count = 0
-    wn_file = os.path.join(date_dir, "world-news", "world-news-data.json")
-    if not os.path.isfile(wn_file):
-        return wn_count, cn_count
+def _count_finance_news_items(date_dir: str) -> dict[str, int]:
+    """Return region counts from finance-news-data.json (legacy world-news OK)."""
+    counts = {"total": 0, "us": 0, "apac": 0, "china": 0, "global": 0}
+    fn_file = _finance_news_json_path(date_dir)
+    if not fn_file:
+        return counts
     try:
-        with open(wn_file, "r", encoding="utf-8") as f:
+        with open(fn_file, "r", encoding="utf-8") as f:
             wd = json.load(f)
-        _CHINA_TAG = "中国新闻"
         for c in wd.get("categories") or []:
             for it in c.get("items") or []:
-                if _CHINA_TAG in (it.get("source") or ""):
-                    cn_count += 1
-                else:
-                    wn_count += 1
+                counts["total"] += 1
+                region = (it.get("region") or "global").lower()
+                if region not in counts:
+                    region = "global"
+                counts[region] += 1
     except Exception:
         pass
-    return wn_count, cn_count
+    return counts
 
 
 def _run_daily_fetch(
@@ -368,8 +377,7 @@ def _run_daily_fetch(
             "fetch_sources": lambda: _count_briefing_items(output_dir) > 0,
             "topic_dedup": lambda: os.path.isfile(os.path.join(output_dir, "briefing-data-filtered.json")),
             "ai_audio": lambda: os.path.isfile(os.path.join(output_dir, "ai-briefing.mp3")),
-            "world_audio": lambda: os.path.isfile(os.path.join(output_dir, "world-news.mp3")),
-            "china_audio": lambda: os.path.isfile(os.path.join(output_dir, "china-news.mp3")),
+            "finance_audio": lambda: os.path.isfile(os.path.join(output_dir, "finance-news.mp3")),
             "commit_report": lambda: any(
                 f.startswith("commit-report-") and f.endswith(".md")
                 for f in os.listdir(output_dir)
@@ -381,7 +389,7 @@ def _run_daily_fetch(
                 f.startswith("wiki-fetch-") and f.endswith(".md")
                 for f in os.listdir(output_dir)
             ) if os.path.isdir(output_dir) else False,
-            "world_news_translate": lambda: _check_wn_translated(output_dir),
+            "finance_news_translate": lambda: _check_finance_translated(output_dir),
         }
         check_fn = checks.get(step_name)
         if check_fn and check_fn():
@@ -393,7 +401,7 @@ def _run_daily_fetch(
     try:
         job["status"] = "fetching"
         if _should_run("fetch_sources") and not _already_done("fetch_sources"):
-            job["step"] = "Running AI + world news fetchers..."
+            job["step"] = "Running AI + finance news fetchers..."
             try:
                 run_all = os.path.join(scripts_dir, "pipeline", "run-all-sources.py")
                 cmd = ["python", run_all, "--output-dir", output_dir]
@@ -667,7 +675,7 @@ def _run_daily_fetch(
 
         job["step"] = "Building daily summary..."
         ai_key_points = ""
-        world_key_points = ""
+        finance_key_points = ""
         try:
             data_file = os.path.join(output_dir, "briefing-data-filtered.json")
             if not os.path.exists(data_file):
@@ -685,27 +693,23 @@ def _run_daily_fetch(
                             items_list.append(f"- [{src_name}] {it.get('title', 'Untitled')}")
                 ai_key_points = "\n".join(items_list[:15]) if items_list else "No AI news items"
 
-            wn_file = os.path.join(output_dir, "world-news", "world-news-data.json")
-            if os.path.exists(wn_file):
+            fn_file = _finance_news_json_path(output_dir)
+            if fn_file:
                 import json as _json
-                with open(wn_file, "r", encoding="utf-8") as wf:
+                with open(fn_file, "r", encoding="utf-8") as wf:
                     wdata = _json.load(wf)
-                wn_items = []
+                fn_items = []
                 cats = wdata.get("categories") or []
                 if isinstance(cats, list):
                     for cat_block in cats:
                         cat_name = cat_block.get("label") or cat_block.get("category", "")
-                        for it in (cat_block.get("items") or [])[:2]:
-                            title = it.get("title", "")
+                        for it in (cat_block.get("items") or [])[:3]:
+                            title = it.get("title_zh") or it.get("title", "")
+                            region = it.get("region", "")
                             if title:
-                                wn_items.append(f"- [{cat_name}] {title}")
-                elif isinstance(cats, dict):
-                    for cat_name, cat_items in cats.items():
-                        for it in (cat_items if isinstance(cat_items, list) else [])[:2]:
-                            title = it.get("title", "")
-                            if title:
-                                wn_items.append(f"- [{cat_name}] {title}")
-                world_key_points = "\n".join(wn_items[:12]) if wn_items else "No world news items"
+                                tag = f"{cat_name}/{region}" if region else cat_name
+                                fn_items.append(f"- [{tag}] {title}")
+                finance_key_points = "\n".join(fn_items[:15]) if fn_items else "No finance news items"
         except Exception:
             pass
 
@@ -716,8 +720,8 @@ def _run_daily_fetch(
         summary_parts.append(ai_key_points or "No data")
         summary_parts.append("")
 
-        summary_parts.append("## World News Key Points")
-        summary_parts.append(world_key_points or "No data")
+        summary_parts.append("## Finance News Key Points")
+        summary_parts.append(finance_key_points or "No data")
         summary_parts.append("")
 
         summary_parts.append("## Git Commits (Last 24h)")
@@ -812,104 +816,85 @@ def _run_daily_fetch(
             except Exception as e:
                 steps.append({"step": "ai_audio", "exit_code": 1, "output": str(e)[:300]})
 
-        # --- Refetch World News sources (for Recreate with fresh data) ---
-        if _should_run("refetch_world"):
-            job["step"] = "Re-fetching world news sources..."
+        # --- Refetch Finance News sources (for Recreate with fresh data) ---
+        if _should_run("refetch_finance"):
+            job["step"] = "Re-fetching finance news sources..."
             try:
-                wn_dir = os.path.join(output_dir, "world-news")
-                os.makedirs(wn_dir, exist_ok=True)
-                wn_script = os.path.join(scripts_dir, "pipeline", "run-world-news.py")
-                r_wn = sp.run(
-                    ["python", wn_script, "--output-dir", wn_dir, "--no-translate"],
+                fn_dir = os.path.join(output_dir, "finance-news")
+                os.makedirs(fn_dir, exist_ok=True)
+                fn_script = os.path.join(scripts_dir, "pipeline", "run-finance-news.py")
+                r_fn = sp.run(
+                    ["python", fn_script, "--output-dir", fn_dir, "--no-translate",
+                     "--report-date", today],
                     capture_output=True, text=False, timeout=900, cwd=scripts_dir
                 )
-                stdout_wn = r_wn.stdout.decode("utf-8", errors="replace") if r_wn.stdout else ""
-                steps.append({"step": "refetch_world", "exit_code": r_wn.returncode, "output": stdout_wn[-500:]})
+                stdout_fn = r_fn.stdout.decode("utf-8", errors="replace") if r_fn.stdout else ""
+                steps.append({"step": "refetch_finance", "exit_code": r_fn.returncode, "output": stdout_fn[-500:]})
             except Exception as e:
-                steps.append({"step": "refetch_world", "exit_code": 1, "output": str(e)[:300]})
+                steps.append({"step": "refetch_finance", "exit_code": 1, "output": str(e)[:300]})
 
-        # --- Translate world news to Chinese (separate step to avoid timeout) ---
-        if _should_run("world_news_translate") and not _already_done("world_news_translate"):
-            wn_dir = os.path.join(output_dir, "world-news")
-            wn_merged_path = os.path.join(wn_dir, "world-news-data.json")
-            if os.path.isfile(wn_merged_path):
-                job["step"] = "Translating world news to Chinese..."
+        # --- Ensure finance-news-data.json exists (merge recovery) ---
+        if _should_run("finance_news_merge"):
+            fn_dir = os.path.join(output_dir, "finance-news")
+            fn_merged_path = os.path.join(fn_dir, "finance-news-data.json")
+            if os.path.isdir(fn_dir) and not os.path.isfile(fn_merged_path):
+                source_jsons = [f for f in os.listdir(fn_dir)
+                                if f.endswith(".json") and f != "finance-news-timing.json"]
+                if source_jsons:
+                    job["step"] = "Merging finance news sources..."
+                    try:
+                        merge_script = os.path.join(_SCRIPTS_DIR, "pipeline", "run-finance-news.py")
+                        fn_merge_cmd = [sys.executable, merge_script,
+                                        "--output-dir", fn_dir, "--no-fetch", "--no-translate",
+                                        "--report-date", today]
+                        proc = sp.run(fn_merge_cmd, capture_output=True, text=True, timeout=120,
+                                      cwd=os.path.dirname(merge_script))
+                        steps.append({"step": "finance_news_merge", "exit_code": proc.returncode,
+                                      "output": (proc.stdout or "")[-200:]})
+                    except Exception as e:
+                        steps.append({"step": "finance_news_merge", "exit_code": 1, "output": str(e)[:300]})
+                else:
+                    steps.append({"step": "finance_news_merge", "exit_code": -1,
+                                  "output": "No per-source JSON files to merge"})
+            elif os.path.isfile(fn_merged_path):
+                steps.append({"step": "finance_news_merge", "exit_code": 0, "output": "Already merged"})
+            else:
+                steps.append({"step": "finance_news_merge", "exit_code": -1,
+                              "output": "finance-news directory missing"})
+
+        # --- Translate finance news to Chinese (separate step to avoid timeout) ---
+        if _should_run("finance_news_translate") and not _already_done("finance_news_translate"):
+            fn_dir = os.path.join(output_dir, "finance-news")
+            fn_merged_path = os.path.join(fn_dir, "finance-news-data.json")
+            if os.path.isfile(fn_merged_path):
+                job["step"] = "Translating finance news to Chinese..."
                 try:
-                    with open(wn_merged_path, "r", encoding="utf-8") as f:
-                        wn_data = json.load(f)
-                    if not wn_data.get("translated"):
+                    with open(fn_merged_path, "r", encoding="utf-8") as f:
+                        fn_data = json.load(f)
+                    if not fn_data.get("translated"):
                         import importlib.util
-                        _wn_spec = importlib.util.spec_from_file_location(
-                            "run_world_news",
-                            os.path.join(scripts_dir, "pipeline", "run-world-news.py"))
-                        _wn_mod = importlib.util.module_from_spec(_wn_spec)
-                        _wn_spec.loader.exec_module(_wn_mod)
-                        wn_data = _wn_mod.translate_news_to_chinese(wn_data)
-                        with open(wn_merged_path, "w", encoding="utf-8") as f:
-                            json.dump(wn_data, f, ensure_ascii=False, indent=2)
-                        steps.append({"step": "world_news_translate", "exit_code": 0,
+                        _fn_spec = importlib.util.spec_from_file_location(
+                            "run_finance_news",
+                            os.path.join(scripts_dir, "pipeline", "run-finance-news.py"))
+                        _fn_mod = importlib.util.module_from_spec(_fn_spec)
+                        _fn_spec.loader.exec_module(_fn_mod)
+                        fn_data = _fn_mod.translate_news_to_chinese(fn_data)
+                        with open(fn_merged_path, "w", encoding="utf-8") as f:
+                            json.dump(fn_data, f, ensure_ascii=False, indent=2)
+                        steps.append({"step": "finance_news_translate", "exit_code": 0,
                                       "output": "Translation complete"})
                     else:
-                        steps.append({"step": "world_news_translate", "exit_code": 0,
+                        steps.append({"step": "finance_news_translate", "exit_code": 0,
                                       "output": "Already translated"})
                 except Exception as e:
-                    steps.append({"step": "world_news_translate", "exit_code": 1,
+                    steps.append({"step": "finance_news_translate", "exit_code": 1,
                                   "output": str(e)[:300]})
             else:
-                steps.append({"step": "world_news_translate", "exit_code": -1,
-                              "output": "No world-news-data.json to translate"})
+                steps.append({"step": "finance_news_translate", "exit_code": -1,
+                              "output": "No finance-news-data.json to translate"})
 
-        # --- Ensure world-news-data.json exists (merge recovery) ---
-        if _should_run("world_news_merge"):
-            wn_dir = os.path.join(output_dir, "world-news")
-            wn_merged_path = os.path.join(wn_dir, "world-news-data.json")
-            if os.path.isdir(wn_dir) and not os.path.isfile(wn_merged_path):
-                source_jsons = [f for f in os.listdir(wn_dir)
-                                if f.endswith(".json") and f != "world-news-timing.json"]
-                if source_jsons:
-                    job["step"] = "Merging world news sources..."
-                    try:
-                        merge_script = os.path.join(_SCRIPTS_DIR, "pipeline", "run-world-news.py")
-                        wn_merge_cmd = [sys.executable, merge_script,
-                                        "--output-dir", wn_dir, "--no-fetch", "--no-translate"]
-                        has_no_fetch = False
-                        try:
-                            help_proc = sp.run([sys.executable, merge_script, "--help"],
-                                               capture_output=True, text=True, timeout=10)
-                            has_no_fetch = "--no-fetch" in (help_proc.stdout or "")
-                        except Exception:
-                            pass
-
-                        if has_no_fetch:
-                            proc = sp.run(wn_merge_cmd, capture_output=True, text=True, timeout=120,
-                                          cwd=os.path.dirname(merge_script))
-                            steps.append({"step": "world_news_merge", "exit_code": proc.returncode,
-                                          "output": (proc.stdout or "")[-200:]})
-                        else:
-                            sys.path.insert(0, os.path.dirname(merge_script))
-                            from importlib import import_module
-                            try:
-                                wn_mod = import_module("run-world-news".replace("-", "_"))
-                            except ModuleNotFoundError:
-                                import importlib.util
-                                spec = importlib.util.spec_from_file_location("run_world_news", merge_script)
-                                wn_mod = importlib.util.module_from_spec(spec)
-                                spec.loader.exec_module(wn_mod)
-                            merged = wn_mod.merge_news(wn_dir)
-                            import json as _jm
-                            with open(wn_merged_path, "w", encoding="utf-8") as mf:
-                                _jm.dump(merged, mf, ensure_ascii=False, indent=2)
-                            steps.append({"step": "world_news_merge", "exit_code": 0,
-                                          "output": f"Merged {merged.get('total_items', 0)} items from {len(source_jsons)} sources"})
-                    except Exception as e:
-                        steps.append({"step": "world_news_merge", "exit_code": 1, "output": str(e)[:300]})
-            else:
-                steps.append({"step": "world_news_merge", "exit_code": 0, "output": "Already merged"})
-
-        # --- Audio generation: World News + China News (split by source) ---
-        _CHINA_SOURCE_TAG = "中国新闻"
-
-        def _pick_wn_text(it, prefer_zh):
+        # --- Audio generation: single Finance News briefing ---
+        def _pick_fn_text(it, prefer_zh):
             if prefer_zh:
                 title = it.get("title_zh") or it.get("title", "")
                 summary_text = it.get("summary_zh") or it.get("summary", "") or it.get("description", "")
@@ -918,96 +903,65 @@ def _run_daily_fetch(
                 summary_text = it.get("summary", "") or it.get("description", "")
             return title, summary_text
 
-        def _build_audio_segments(categories, source_filter, prefer_zh, max_per_cat=4):
-            """Build narration segments from categories, filtering by source."""
+        def _build_finance_audio_segments(categories, prefer_zh, items_per_segment=10):
+            """Build narration segments from all finance items (chunked for LLM context)."""
             segs = []
             if not isinstance(categories, list):
                 return segs
             for cat_block in categories:
-                cat_name = cat_block.get("label") or cat_block.get("category", "")
+                cat_name = cat_block.get("label") or cat_block.get("category", "") or "Finance"
                 parts = []
+                chunk_idx = 1
                 for it in (cat_block.get("items") or []):
-                    src = it.get("source", "")
-                    if not source_filter(src):
+                    title, summary_text = _pick_fn_text(it, prefer_zh)
+                    if not title:
                         continue
-                    title, summary_text = _pick_wn_text(it, prefer_zh)
-                    if title:
-                        parts.append(f"{title}\n{summary_text}")
-                    if len(parts) >= max_per_cat:
-                        break
+                    region = it.get("region") or ""
+                    prefix = f"[{region}] " if region else ""
+                    parts.append(f"{prefix}{title}\n{summary_text}")
+                    if len(parts) >= items_per_segment:
+                        label = cat_name if chunk_idx == 1 else f"{cat_name} ({chunk_idx})"
+                        segs.append({"name": label, "content": "\n\n".join(parts)})
+                        parts = []
+                        chunk_idx += 1
                 if parts:
-                    segs.append({"name": cat_name or "News", "content": "\n\n".join(parts)})
+                    label = cat_name if chunk_idx == 1 else f"{cat_name} ({chunk_idx})"
+                    segs.append({"name": label, "content": "\n\n".join(parts)})
             return segs
 
-        if _should_run("world_audio") and not _already_done("world_audio"):
-            job["step"] = "Generating world news audio..."
+        if _should_run("finance_audio") and not _already_done("finance_audio"):
+            job["step"] = "Generating finance news audio..."
             try:
-                wn_file = os.path.join(output_dir, "world-news", "world-news-data.json")
-                if os.path.exists(wn_file):
+                fn_file = os.path.join(output_dir, "finance-news", "finance-news-data.json")
+                if not os.path.exists(fn_file):
+                    fn_file = _finance_news_json_path(output_dir) or ""
+                if fn_file and os.path.exists(fn_file):
                     import json as _json
-                    with open(wn_file, "r", encoding="utf-8") as wf:
-                        wdata = _json.load(wf)
-                    categories = wdata.get("categories") or []
-
-                    wn_segments = _build_audio_segments(
-                        categories,
-                        source_filter=lambda s: _CHINA_SOURCE_TAG not in s,
-                        prefer_zh=True,
-                        max_per_cat=8,
-                    )
-                    if wn_segments:
-                        wn_lang = _resolve_audio_lang("world_audio", gs, lang_overrides)
-                        job["step"] = f"Generating world narration ({len(wn_segments)} segments, {wn_lang})..."
-                        narrations_wn = _generate_segmented_narrations(wn_segments, "world", lang=wn_lang)
-                        if narrations_wn:
-                            total_chars = sum(len(n) for n in narrations_wn)
-                            wn_mp3 = os.path.join(output_dir, "world-news.mp3")
-                            _tts_segments_to_mp3(narrations_wn, wn_mp3, voice=tts_voice_for_lang(wn_lang))
-                            steps.append({"step": "world_audio", "exit_code": 0,
-                                          "output": f"Generated world-news.mp3 ({len(narrations_wn)} segments, {total_chars} chars)"})
+                    with open(fn_file, "r", encoding="utf-8") as wf:
+                        fdata = _json.load(wf)
+                    categories = fdata.get("categories") or []
+                    prefer_zh = _resolve_audio_lang("finance_audio", gs, lang_overrides) == "zh"
+                    fn_segments = _build_finance_audio_segments(categories, prefer_zh=prefer_zh)
+                    if fn_segments:
+                        fn_lang = _resolve_audio_lang("finance_audio", gs, lang_overrides)
+                        job["step"] = f"Generating finance narration ({len(fn_segments)} segments, {fn_lang})..."
+                        narrations_fn = _generate_segmented_narrations(fn_segments, "finance", lang=fn_lang)
+                        if narrations_fn:
+                            total_chars = sum(len(n) for n in narrations_fn)
+                            fn_mp3 = os.path.join(output_dir, "finance-news.mp3")
+                            _tts_segments_to_mp3(narrations_fn, fn_mp3, voice=tts_voice_for_lang(fn_lang))
+                            warn = fdata.get("warnings") or []
+                            warn_note = f"; warnings={warn}" if warn else ""
+                            steps.append({"step": "finance_audio", "exit_code": 0,
+                                          "output": f"Generated finance-news.mp3 ({len(narrations_fn)} segments, {total_chars} chars){warn_note}"})
                         else:
-                            steps.append({"step": "world_audio", "exit_code": 1, "output": "World narration failed"})
+                            steps.append({"step": "finance_audio", "exit_code": 1, "output": "Finance narration failed"})
                     else:
-                        steps.append({"step": "world_audio", "exit_code": -1, "output": "No international news content"})
+                        steps.append({"step": "finance_audio", "exit_code": -1, "output": "No finance news content"})
                 else:
-                    steps.append({"step": "world_audio", "exit_code": -1, "output": "No world news data file found"})
+                    steps.append({"step": "finance_audio", "exit_code": -1, "output": "No finance news data file found"})
             except Exception as e:
-                steps.append({"step": "world_audio", "exit_code": 1, "output": str(e)[:300]})
-
-        if _should_run("china_audio") and not _already_done("china_audio"):
-            job["step"] = "Generating Chinese news audio..."
-            try:
-                wn_file = os.path.join(output_dir, "world-news", "world-news-data.json")
-                if os.path.exists(wn_file):
-                    import json as _json
-                    with open(wn_file, "r", encoding="utf-8") as wf:
-                        wdata = _json.load(wf)
-                    categories = wdata.get("categories") or []
-
-                    cn_segments = _build_audio_segments(
-                        categories,
-                        source_filter=lambda s: _CHINA_SOURCE_TAG in s,
-                        prefer_zh=True,
-                        max_per_cat=15,
-                    )
-                    if cn_segments:
-                        cn_lang = _resolve_audio_lang("china_audio", gs, lang_overrides)
-                        job["step"] = f"Generating China narration ({len(cn_segments)} segments, {cn_lang})..."
-                        narrations_cn = _generate_segmented_narrations(cn_segments, "world", lang=cn_lang)
-                        if narrations_cn:
-                            total_chars = sum(len(n) for n in narrations_cn)
-                            cn_mp3 = os.path.join(output_dir, "china-news.mp3")
-                            _tts_segments_to_mp3(narrations_cn, cn_mp3, voice=tts_voice_for_lang(cn_lang))
-                            steps.append({"step": "china_audio", "exit_code": 0,
-                                          "output": f"Generated china-news.mp3 ({len(narrations_cn)} segments, {total_chars} chars)"})
-                        else:
-                            steps.append({"step": "china_audio", "exit_code": 1, "output": "China narration failed"})
-                    else:
-                        steps.append({"step": "china_audio", "exit_code": -1, "output": "No Chinese news content"})
-                else:
-                    steps.append({"step": "china_audio", "exit_code": -1, "output": "No world news data file found"})
-            except Exception as e:
-                steps.append({"step": "china_audio", "exit_code": 1, "output": str(e)[:300]})
+                steps.append({"step": "finance_audio", "exit_code": 1, "output": str(e)[:300]})
 
         job["status"] = "done"
         job["step"] = "Complete"
@@ -1101,10 +1055,7 @@ def api_daily_fetch_history():
 
     ai_count = 0
     ai_by_source: dict[str, int] = {}
-    wn_count = 0
-    wn_by_source: dict[str, int] = {}
-    cn_count = 0
-    cn_by_source: dict[str, int] = {}
+    finance_by_source: dict[str, int] = {}
     jira_tickets = 0
     confluence_pages = 0
 
@@ -1123,26 +1074,16 @@ def api_daily_fetch_history():
         except Exception:
             pass
 
-    _CHINA_TAG = "中国新闻"
-    wn_file = os.path.join(date_dir, "world-news", "world-news-data.json")
-    if os.path.isfile(wn_file):
+    fn_counts = _count_finance_news_items(date_dir)
+    fn_file = _finance_news_json_path(date_dir)
+    if fn_file:
         try:
-            with open(wn_file, "r", encoding="utf-8") as f:
+            with open(fn_file, "r", encoding="utf-8") as f:
                 wd = json.load(f)
-            cats = wd.get("categories") or []
-            if isinstance(cats, list):
-                for c in cats:
-                    for it in (c.get("items") or []):
-                        src_label = it.get("source", "")
-                        if _CHINA_TAG in src_label:
-                            cn_count += 1
-                            cn_by_source[src_label] = cn_by_source.get(src_label, 0) + 1
-                        else:
-                            wn_count += 1
-                            wn_by_source[src_label] = wn_by_source.get(src_label, 0) + 1
-            elif isinstance(cats, dict):
-                for v in cats.values():
-                    wn_count += len(v) if isinstance(v, list) else 0
+            for c in wd.get("categories") or []:
+                for it in (c.get("items") or []):
+                    src_label = it.get("source") or "Finance"
+                    finance_by_source[src_label] = finance_by_source.get(src_label, 0) + 1
         except Exception:
             pass
 
@@ -1179,8 +1120,7 @@ def api_daily_fetch_history():
                 break
 
     has_audio = os.path.isfile(os.path.join(date_dir, "ai-briefing.mp3"))
-    has_wn_audio = os.path.isfile(os.path.join(date_dir, "world-news.mp3"))
-    has_cn_audio = os.path.isfile(os.path.join(date_dir, "china-news.mp3"))
+    has_finance_audio = os.path.isfile(os.path.join(date_dir, "finance-news.mp3"))
     has_pdf = os.path.isfile(os.path.join(date_dir, "ai-briefing.pdf"))
 
     has_sources = os.path.isfile(os.path.join(date_dir, "briefing-data.json"))
@@ -1188,14 +1128,14 @@ def api_daily_fetch_history():
     has_commit = any(f.startswith("commit-report-") and f.endswith(".md") for f in os.listdir(date_dir)) if os.path.isdir(date_dir) else False
     has_jira = os.path.isfile(jira_file)
     has_wiki = any(f.startswith("wiki-fetch-") and f.endswith(".md") for f in os.listdir(date_dir)) if os.path.isdir(date_dir) else False
-    has_wn_data = os.path.isfile(wn_file)
+    has_fn_data = bool(fn_file)
 
-    wn_dir = os.path.join(date_dir, "world-news")
-    has_wn_source_jsons = False
-    if os.path.isdir(wn_dir) and not has_wn_data:
-        has_wn_source_jsons = any(
-            f.endswith(".json") and f != "world-news-timing.json" and f != "world-news-data.json"
-            for f in os.listdir(wn_dir)
+    fn_dir = os.path.join(date_dir, "finance-news")
+    has_fn_source_jsons = False
+    if os.path.isdir(fn_dir) and not has_fn_data:
+        has_fn_source_jsons = any(
+            f.endswith(".json") and f != "finance-news-timing.json" and f != "finance-news-data.json"
+            for f in os.listdir(fn_dir)
         )
 
     has_filtered_items = False
@@ -1211,7 +1151,7 @@ def api_daily_fetch_history():
             pass
 
     has_briefing_items = ai_count > 0 or _count_briefing_items(date_dir) > 0
-    has_wn_items = (wn_count + cn_count) > 0
+    has_fn_items = fn_counts.get("total", 0) > 0
 
     missing_steps = []
     if not has_sources or not has_briefing_items:
@@ -1224,28 +1164,25 @@ def api_daily_fetch_history():
         missing_steps.append("jira_daily")
     if not has_wiki:
         missing_steps.append("wiki_fetch")
-    if has_wn_source_jsons and not has_wn_data:
-        missing_steps.append("world_news_merge")
-    if not has_wn_items and (has_wn_data or has_wn_source_jsons):
-        missing_steps.append("refetch_world")
-    if has_wn_items and has_wn_data:
+    if has_fn_source_jsons and not has_fn_data:
+        missing_steps.append("finance_news_merge")
+    if not has_fn_items and (has_fn_data or has_fn_source_jsons):
+        missing_steps.append("refetch_finance")
+    # Translate step only opens finance-news/finance-news-data.json — do not
+    # demand it for legacy-only world-news days.
+    finance_canonical = os.path.join(date_dir, "finance-news", "finance-news-data.json")
+    if has_fn_items and os.path.isfile(finance_canonical):
         try:
-            with open(wn_file, "r", encoding="utf-8") as _wf:
-                _wn_check = json.load(_wf)
-            if not _wn_check.get("translated"):
-                missing_steps.append("world_news_translate")
+            with open(finance_canonical, "r", encoding="utf-8") as _wf:
+                _fn_check = json.load(_wf)
+            if not _fn_check.get("translated"):
+                missing_steps.append("finance_news_translate")
         except Exception:
             pass
     if has_briefing_items and not has_audio:
         missing_steps.append("ai_audio")
-    if has_wn_data and not has_wn_audio and wn_count > 0:
-        missing_steps.append("world_audio")
-    elif not has_wn_data and has_wn_source_jsons and not has_wn_audio:
-        missing_steps.append("world_audio")
-    if has_wn_data and not has_cn_audio and cn_count > 0:
-        missing_steps.append("china_audio")
-    elif not has_wn_data and has_wn_source_jsons and not has_cn_audio:
-        missing_steps.append("china_audio")
+    if (has_fn_data or has_fn_source_jsons) and not has_finance_audio:
+        missing_steps.append("finance_audio")
     date_dirs = sorted(
         [d for d in os.listdir(REPORTS_ROOT)
          if os.path.isdir(os.path.join(REPORTS_ROOT, d)) and d[:4].isdigit()],
@@ -1255,8 +1192,7 @@ def api_daily_fetch_history():
     gs = _get_global_settings()
     audio_langs = {
         "audio_lang_ai": gs.get("audio_lang_ai", "zh"),
-        "audio_lang_world": gs.get("audio_lang_world", "zh"),
-        "audio_lang_china": gs.get("audio_lang_china", "zh"),
+        "audio_lang_finance": gs.get("audio_lang_finance") or gs.get("audio_lang_world") or "zh",
     }
 
     return jsonify({
@@ -1266,17 +1202,20 @@ def api_daily_fetch_history():
         "stats": {
             "ai_items": ai_count,
             "ai_by_source": ai_by_source,
-            "world_news_items": wn_count,
-            "world_by_source": wn_by_source,
-            "china_news_items": cn_count,
-            "china_by_source": cn_by_source,
+            "finance_news_items": fn_counts.get("total", 0),
+            "finance_by_region": {
+                "us": fn_counts.get("us", 0),
+                "apac": fn_counts.get("apac", 0),
+                "china": fn_counts.get("china", 0),
+                "global": fn_counts.get("global", 0),
+            },
+            "finance_by_source": finance_by_source,
             "jira_tickets": jira_tickets,
             "confluence_pages": confluence_pages,
             "wiki_pages": wiki_pages,
         },
         "has_audio": has_audio,
-        "has_wn_audio": has_wn_audio,
-        "has_cn_audio": has_cn_audio,
+        "has_finance_audio": has_finance_audio,
         "has_pdf": has_pdf,
         "missing_steps": missing_steps,
         "available_dates": date_dirs,
@@ -1530,27 +1469,34 @@ def _has_cjk_chars(text: str) -> bool:
 
 
 def _load_recent_world_news_titles() -> list[dict]:
-    """Load recent world news titles for casual English learning.
+    """Load recent finance/world news titles for casual English learning.
     Filters out non-English (CJK) articles since this channel focuses on English practice."""
     items = []
+    try:
+        _pipeline = os.path.normpath(os.path.join(_SCRIPTS_DIR, "pipeline"))
+        if _pipeline not in sys.path:
+            sys.path.insert(0, _pipeline)
+        from finance_news_paths import finance_news_data_path
+    except Exception:
+        finance_news_data_path = None
+
     for d_offset in range(7):
         dt = (datetime.now() - timedelta(days=d_offset)).strftime("%Y-%m-%d")
-        wn_path = os.path.join(REPORTS_ROOT, dt, "world-news", "world-news-data.json")
-        if not os.path.isfile(wn_path):
-            wn_path = os.path.join(REPORTS_ROOT, dt, "world-news-data.json")
-        if os.path.isfile(wn_path):
-            try:
-                with open(wn_path, "r", encoding="utf-8") as f:
-                    wdata = json.load(f)
-                for cat in wdata.get("categories", []):
-                    cat_name = cat.get("label", cat.get("category", "General"))
-                    for article in cat.get("items", cat.get("articles", [])):
-                        t = article.get("title", "").strip()
-                        if t and len(items) < 50 and not _has_cjk_chars(t):
-                            items.append({"title": t, "category": cat_name,
-                                          "summary": article.get("summary", "")[:200]})
-            except Exception as exc:
-                logging.warning("Failed to load world news from %s: %s", wn_path, exc)
+        wn_path = finance_news_data_path(REPORTS_ROOT, dt) if finance_news_data_path else None
+        if not wn_path:
+            continue
+        try:
+            with open(wn_path, "r", encoding="utf-8") as f:
+                wdata = json.load(f)
+            for cat in wdata.get("categories", []):
+                cat_name = cat.get("label", cat.get("category", "General"))
+                for article in cat.get("items", cat.get("articles", [])):
+                    t = article.get("title", "").strip()
+                    if t and len(items) < 50 and not _has_cjk_chars(t):
+                        items.append({"title": t, "category": cat_name,
+                                      "summary": article.get("summary", "")[:200]})
+        except Exception as exc:
+            logging.warning("Failed to load finance/world news from %s: %s", wn_path, exc)
     return items
 
 

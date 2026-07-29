@@ -16,6 +16,21 @@ logger = logging.getLogger(__name__)
 
 MAX_MEMORY_CONTEXT_CHARS = 1500
 
+# Progress facts for Intensive Reading must not pollute chat context.
+_EXCLUDED_FACT_KINDS = frozenset({"intensive_reading_progress"})
+
+
+def _is_injectable_memory(mem: MemoryEntry) -> bool:
+    meta = mem.metadata or {}
+    kind = meta.get("kind")
+    if kind and kind in _EXCLUDED_FACT_KINDS:
+        return False
+    return True
+
+
+def _filter_memories(memories: list[MemoryEntry]) -> list[MemoryEntry]:
+    return [m for m in memories if _is_injectable_memory(m)]
+
 
 def load_session_context(session_id: str = "",
                          recent_query: str = "") -> str:
@@ -28,16 +43,16 @@ def load_session_context(session_id: str = "",
         all_facts = get_all_memories(memory_type=MemoryType.FACT.value)
         corrections = get_all_memories(memory_type=MemoryType.CORRECTION.value)
         combined = sorted(
-            all_facts + corrections,
+            _filter_memories(all_facts) + corrections,
             key=lambda m: m.timestamp,
             reverse=True,
         )[:5]
     else:
-        combined = search_memories(
+        combined = _filter_memories(search_memories(
             query=recent_query,
-            top_k=5,
+            top_k=8,
             min_score=0.3,
-        )
+        ))[:5]
 
     if not combined:
         return ""
@@ -51,7 +66,7 @@ def query_memories_for_context(query: str, include_patterns: bool = True) -> str
     Called by the pipeline when RAG confidence is LOW/MEDIUM to augment
     context with past knowledge.
     """
-    memories = search_memories(query=query, top_k=5, min_score=0.35)
+    memories = _filter_memories(search_memories(query=query, top_k=8, min_score=0.35))[:5]
 
     pattern_text = ""
     if include_patterns:

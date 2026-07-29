@@ -80,8 +80,7 @@ flowchart LR
 | Key | Purpose |
 |-----|---------|
 | `audio_lang_ai` | Daily Fetch AI briefing MP3 language (`zh`/`en`) |
-| `audio_lang_world` | World (non-China) news MP3 |
-| `audio_lang_china` | China-tagged news MP3 |
+| `audio_lang_finance` | Finance news MP3 (replaces former `audio_lang_world` / `audio_lang_china`) |
 | `audio_lang_knowledge` | Reserved in defaults; Audio Knowledge uses per-request `language` |
 | `deepseek_api_key` | Cloud API secret |
 

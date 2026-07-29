@@ -1,8 +1,5 @@
 """
-Fetch top world news from Reuters via RSS (preferred) or Playwright scraping.
-
-Tries RSS feeds first (fast, no anti-bot issues). Falls back to Playwright
-scraping if RSS feeds are unavailable or return no items.
+Fetch markets/business news from Reuters via RSS (preferred) or Playwright scraping.
 
 Usage: python fetch-reuters.py [output-dir]
 Output: <output-dir>/reuters.json
@@ -21,29 +18,29 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, ".."))
 from proxy_strategy import get_proxy_for_playwright, get_proxy_for_httpx
 
 SOURCE_NAME = "reuters"
-MAX_ITEMS = 3
-DRILL_DOWN_COUNT = 2
+MAX_ITEMS = 10
+DRILL_DOWN_COUNT = 3
 OUTPUT_DIR = sys.argv[1] if len(sys.argv) > 1 else "."
 
 RSS_FEEDS = [
-    ("world", "https://www.reuters.com/arc/outboundfeeds/newsletter-rss/world/"),
     ("business", "https://www.reuters.com/arc/outboundfeeds/newsletter-rss/business/"),
+    ("markets", "https://www.reuters.com/arc/outboundfeeds/newsletter-rss/markets/"),
+    ("world", "https://www.reuters.com/arc/outboundfeeds/newsletter-rss/world/"),
     ("technology", "https://www.reuters.com/arc/outboundfeeds/newsletter-rss/technology/"),
-    ("science", "https://www.reuters.com/arc/outboundfeeds/newsletter-rss/science/"),
 ]
 
 WEBSITE_SECTIONS = [
-    ("world", "https://www.reuters.com/world/"),
     ("business", "https://www.reuters.com/business/"),
+    ("markets", "https://www.reuters.com/markets/"),
+    ("world", "https://www.reuters.com/world/"),
     ("technology", "https://www.reuters.com/technology/"),
-    ("science", "https://www.reuters.com/science/"),
 ]
 
 CATEGORY_MAP = {
-    "world": "politics",
-    "business": "economics",
-    "technology": "technology",
-    "science": "science",
+    "world": "geopolitics-market",
+    "business": "markets",
+    "markets": "markets",
+    "technology": "corporate",
 }
 
 

@@ -46,6 +46,7 @@ PROJECT_DIRS_PATH = os.path.join(REPORTS_ROOT, ".rag-projects.json")
 PROJECT_GRAPH_PATH = os.path.join(REPORTS_ROOT, ".project-graph.json")
 CHAT_SESSIONS_DIR = os.path.join(REPORTS_ROOT, ".chat-sessions")
 NOTES_FILE = os.path.join(REPORTS_ROOT, ".learning-notes.json")
+BOOKS_ROOT = os.path.join(JARVIS_ROOT, "docs", "books")
 
 JIRA_REPORT_SCRIPT = os.path.join(JIRA_SKILL_DIR, "atlassian-report.ps1")
 

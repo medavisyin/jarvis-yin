@@ -92,7 +92,7 @@ pip install python-telegram-bot httpx[socks]
 | `/train` | 对关注列表触发 **Daily training（每日训练）**（价格预测等） |
 | `/scan` | 启动 **AI market scanner（AI 市场扫描）** |
 
-**`/fetch_step` 步骤名（与 `bot_telegram.py` 提示一致）**：`fetch_sources`、`topic_dedup`、`commit_report`、`jira_daily`、`wiki_fetch`、`ai_audio`、`world_audio`、`china_audio` 等；以后端 **Daily Fetch** 实际注册名为准。
+**`/fetch_step` 步骤名（与 `bot_telegram.py` 提示一致）**：`fetch_sources`、`topic_dedup`、`commit_report`、`jira_daily`、`wiki_fetch`、`ai_audio`、`finance_audio` 等；以后端 **Daily Fetch** 实际注册名为准。
 
 ---
 

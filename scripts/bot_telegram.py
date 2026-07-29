@@ -67,8 +67,7 @@ REPORTS_ROOT: str = os.environ.get("JARVIS_REPORTS_ROOT", "C:/reports/ai")
 
 AUDIO_FILES = [
     ("ai-briefing.mp3", "AI Briefing"),
-    ("world-news.mp3", "World News"),
-    ("china-news.mp3", "China News"),
+    ("finance-news.mp3", "Finance News"),
     ("wiki-report.mp3", "Wiki Fetch Report"),
 ]
 
@@ -391,7 +390,7 @@ HELP_TEXT = """Jarvis Bot Commands:
 /status  — Server health check
 /fetch   — Run daily pipeline (5-30 min, sends audio when done)
 /fetch_step <name> — Run one step
-  (fetch_sources, ai_audio, commit_report, jira_daily, wiki_fetch, world_audio, china_audio)
+  (fetch_sources, ai_audio, commit_report, jira_daily, wiki_fetch, finance_audio)
 /audio [date] — Send today's audio (or /audio 2026-05-10)
 /search <query> — RAG search
 /ask <question> — Ask Jarvis (LLM)
@@ -408,7 +407,7 @@ HELP_TEXT = """Jarvis Bot Commands:
 /midday — Run mid-day overnight speculative stock scanner
 /english — Tech English (AI news topics)
 /english <topic> — Analyze a topic
-/casual — Casual English (world news topics)
+/casual — Casual English (finance / market news topics)
 /casual <topic> — Analyze a topic
 /stop — Exit learning session
 
@@ -493,7 +492,7 @@ async def cmd_fetch_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "Usage: /fetch_step <name>\n\n"
             "Steps: fetch_sources, topic_dedup, commit_report, "
-            "jira_daily, wiki_fetch, ai_audio, world_audio, china_audio"
+            "jira_daily, wiki_fetch, ai_audio, finance_audio"
         )
         return
     step = context.args[0]
@@ -512,7 +511,7 @@ async def cmd_fetch_step(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += f"\n{msg[:2000]}"
         await update.message.reply_text(_truncate(text))
 
-        if status == "done" and step in ("ai_audio", "world_audio", "china_audio"):
+        if status == "done" and step in ("ai_audio", "finance_audio"):
             await _send_audio_files(update)
     except Exception as e:
         await update.message.reply_text(f"Error: {e}")

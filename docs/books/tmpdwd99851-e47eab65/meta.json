@@ -1,0 +1,15 @@
+{
+  "book_id": "tmpdwd99851-e47eab65",
+  "title": "TheNewYorker-20260302",
+  "book_type": "magazine",
+  "format": "pdf",
+  "filename": "TheNewYorker-20260302.pdf",
+  "original": "original.pdf",
+  "chunk_count": 66,
+  "first_readable_index": 0,
+  "status": "ready",
+  "rag_status": "ok",
+  "created_at": "2026-07-29T09:07:44.327252",
+  "rag_chunks": 66,
+  "rag_error": ""
+}

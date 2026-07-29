@@ -1,7 +1,7 @@
 """
-黑天鹅事件检测器 — 从每日世界新闻中识别可能影响特定行业的重大风险事件.
+黑天鹅事件检测器 — 从每日金融/世界新闻中识别可能影响特定行业的重大风险事件.
 
-数据源: Daily Fetch 产生的 world-news-data.json
+数据源: Daily Fetch 产生的 finance-news-data.json（兼容旧 world-news-data.json）
 输出: 行业风险评估 + 受影响股票预警
 
 检测维度:
@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import sys
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -189,13 +190,29 @@ def _load_world_news(date_str: Optional[str] = None) -> dict | None:
         dates_to_try.append(today.strftime("%Y-%m-%d"))
         dates_to_try.append((today - timedelta(days=1)).strftime("%Y-%m-%d"))
 
+    try:
+        _pipeline = os.path.normpath(
+            os.path.join(os.path.dirname(__file__), "..", "pipeline")
+        )
+        if _pipeline not in sys.path:
+            sys.path.insert(0, _pipeline)
+        from finance_news_paths import finance_news_data_path
+    except Exception:
+        finance_news_data_path = None
+
     for d in dates_to_try:
-        path = os.path.join(_REPORTS_AI_ROOT, d, "world-news", "world-news-data.json")
-        if os.path.isfile(path):
+        path = None
+        if finance_news_data_path:
+            path = finance_news_data_path(_REPORTS_AI_ROOT, d)
+        if not path:
+            path = os.path.join(_REPORTS_AI_ROOT, d, "world-news", "world-news-data.json")
+            if not os.path.isfile(path):
+                path = None
+        if path and os.path.isfile(path):
             try:
                 with open(path, encoding="utf-8") as f:
                     data = json.load(f)
-                log.info("加载世界新闻: %s (%d items)", d, data.get("total_items", 0))
+                log.info("加载金融/世界新闻: %s (%d items)", d, data.get("total_items", 0))
                 return data
             except Exception as e:
                 log.warning("读取 %s 失败: %s", path, e)
@@ -203,7 +220,7 @@ def _load_world_news(date_str: Optional[str] = None) -> dict | None:
 
 
 def _extract_text(news_data: dict) -> list[tuple[str, str]]:
-    """Extract (headline, body) pairs from world-news-data.json."""
+    """Extract (headline, body) pairs from finance/world news JSON."""
     items = []
     for cat in news_data.get("categories", []):
         for item in cat.get("items", []):

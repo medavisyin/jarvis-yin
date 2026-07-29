@@ -1,5 +1,8 @@
 # Implementation Guide: World News Pipeline
 
+> **Superseded (2026-07-29):** Daily Fetch now uses the **Finance News** pipeline.
+> See [finance-news-impl.md](./finance-news-impl.md). This document remains for historical context.
+
 ## Overview
 
 The world news pipeline fetches international and Chinese political/financial news from 6 sources, merges them by category, translates English content to Chinese via Ollama, and produces `world-news-data.json` for audio narration and UI display.
