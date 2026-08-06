@@ -269,3 +269,51 @@ def analysis_user_message(
 
 def tabs_payload(book_type: str) -> dict[str, Any]:
     return {"book_type": (book_type or "novel").lower(), "tabs": tabs_for_book_type(book_type)}
+
+
+_SYSTEM_SELECTION_EXPLAIN = """You are an expert English literary coach helping a university-level learner \
+(approx. 6000-word vocabulary / CEFR B2–C1).
+
+The learner selected a word, phrase, or sentence from a longer passage. Explain the selection using the \
+surrounding context provided.
+
+Output ONLY this section heading, then the content under it:
+### 1. Meaning and Sense
+
+Under that heading, explain the meaning / sense of the selection in this passage. Do not add other \
+numbered sections (no grammar/usage section, no separate context section).
+
+Rules:
+- Respond entirely in English.
+- Do not use Chinese.
+- Be concrete: quote short bits of the selection and context when helpful.
+- Keep the answer focused and suitable for a floating popover (structured short paragraphs or bullets).
+- Skip elementary vocabulary a B2 student already knows unless it is key to the selection.
+- If the selection is ambiguous, say so briefly and give the best reading grounded in context.
+"""
+
+
+def selection_explain_system_prompt() -> str:
+    return _SYSTEM_SELECTION_EXPLAIN
+
+
+def selection_explain_user_message(
+    *,
+    selected_text: str,
+    context: str,
+    title: str = "",
+) -> str:
+    selected = (selected_text or "").strip()
+    if not selected:
+        raise ValueError("selected_text is required")
+    ctx = (context or "").strip() or selected
+    title_line = f"Book/section: {title.strip()}\n" if (title or "").strip() else ""
+    return (
+        f"{title_line}"
+        f"Surrounding context (selected paragraph plus nearby paragraphs when available):\n"
+        f"\"\"\"\n{ctx}\n\"\"\"\n\n"
+        f"Selected text to explain:\n"
+        f"\"\"\"\n{selected}\n\"\"\"\n\n"
+        f"Explain the selection under ### 1. Meaning and Sense only "
+        f"(meaning/sense in this passage; no other sections)."
+    )

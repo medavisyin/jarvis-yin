@@ -1,7 +1,7 @@
 # AI 右侧交易扫描器 (right_side_scanner) — 详细功能文档
 
 **文件路径**: `scripts/stock/right_side_scanner.py`
-**最后更新**: 2026-07-01
+**最后更新**: 2026-08-05
 
 ---
 
@@ -9,6 +9,7 @@
 
 - **核心职责**: 对全市场 A 股执行**右侧交易**导向的三层漏斗扫描，输出"主力资金由流出转为持续净流入 + 趋势/突破确认"的右侧入场推荐。与 `scanner`（左侧/抄底吸筹）互补。
 - **设计哲学**: **确认后跟进**——不抄底，等待主力资金反转与趋势确认后再入场；**无信号即不入场**，0 推荐是正常且负责任的结果。
+- **DeepSeek 人设对齐（2026-08）**: Layer3 共用 `llm_reasoning.build_right_layer3_system_prompt`（与深度分析同一尺子 + 右侧确认纪律）；**资金反转硬过滤仍在 Layer2 代码层**。目标价按约 1～2 周短周期情景理解。小白说明见 [strategy-unified-left-right-deepseek.md](./strategy-unified-left-right-deepseek.md) §4.5。
 - **系统角色**: Stock 子系统的**右侧全市场入口**；结果写入 `STOCK_REPORTS_ROOT/data/right_side_scan/`（JSON）与 `STOCK_REPORTS_ROOT/right_side_scan_reports/`（Markdown），可选索引到 RAG。
 - **上下游关系**
   - **上游**: akshare / 东财直连 / 新浪分页三重兜底的全市场行情；`china_market_data.stock_fund_flow_signals`（主力资金）；`fetch_market_data.fetch_daily_ohlcv` + `technical_analysis`（K 线与均线）；`scan_cache`（与左侧共享 enrichment 缓存）；`config.call_deepseek`。
@@ -102,8 +103,8 @@
 | 资金信号 | 布局期/悄悄吸筹（资金进、价格没涨） | 资金由出转进（10日流出→3日转正） |
 | 技术要求 | 不追高 | 站上 MA5、逼近/突破 MA20、放量 |
 | Layer2 主路径 | 截面 XGBoost 排序 | 资金反转硬过滤 + 复合得分 |
-| 持有周期 | 2 周~3 个月 | 2 周~2-3 个月 |
-| 风控 | 买入区间 | 严格止损 + 目标价（铁律） |
+| 持有周期（DeepSeek 终审口径） | 约 1～2 周主情景 | 约 1～2 周主情景 |
+| 风控 | 买入区间；空仓可建仓才买入 | 严格止损 + 短周期目标价（铁律） |
 
 ---
 

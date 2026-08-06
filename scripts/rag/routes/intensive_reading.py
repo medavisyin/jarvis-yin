@@ -32,6 +32,7 @@ from intensive_reading.ingest import (
     list_books,
     load_chunks,
     load_meta,
+    load_toc,
     reindex_book,
     save_book_files,
     update_meta_fields,
@@ -42,6 +43,8 @@ from intensive_reading.prompts import (
     KIND_VOCAB,
     allowed_kinds,
     analysis_user_message,
+    selection_explain_system_prompt,
+    selection_explain_user_message,
     slice_passage,
     system_prompt_for_kind,
     tabs_payload,
@@ -204,7 +207,21 @@ def api_get_book(book_id: str):
         return jsonify({"error": "Book not found"}), 404
     prog = load_progress(book_id)
     meta["progress"] = prog
+    if (meta.get("book_type") or "").lower() == BOOK_TYPE_MAGAZINE:
+        meta["toc"] = load_toc(_books_dir(), book_id)
     return jsonify(meta)
+
+
+@intensive_reading_bp.route("/api/intensive-reading/books/<book_id>/toc", methods=["GET"])
+def api_get_toc(book_id: str):
+    err = _require_book_id(book_id)
+    if err:
+        return err
+    meta = load_meta(_books_dir(), book_id)
+    if not meta:
+        return jsonify({"error": "Book not found"}), 404
+    toc = load_toc(_books_dir(), book_id)
+    return jsonify({"book_id": book_id, "toc": toc})
 
 
 @intensive_reading_bp.route(
@@ -480,6 +497,98 @@ def api_analyze():
             # Generation may also be cut by num_predict
             gen_truncated = str(done_reason).lower() in ("length", "max_tokens", "max")
             yield f"data: {json.dumps({'type': 'done', 'content': full, 'has_more': has_more, 'next_offset': next_offset, 'part': part, 'gen_truncated': gen_truncated, 'passage_len': len(full_text), 'offset': offset, 'analysis_kind': analysis_kind})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+_MAX_SELECTION_CHARS = 2000
+_MAX_SELECTION_CONTEXT_CHARS = 8000
+
+
+@intensive_reading_bp.route("/api/intensive-reading/explain-selection", methods=["POST"])
+def api_explain_selection():
+    data = request.get_json(silent=True) or {}
+    selected_text = (data.get("selected_text") or "").strip()
+    if not selected_text:
+        return jsonify({"error": "selected_text is required"}), 400
+    if len(selected_text) > _MAX_SELECTION_CHARS:
+        return jsonify({"error": f"selected_text too long (max {_MAX_SELECTION_CHARS})"}), 400
+
+    context = (data.get("context") or "").strip()
+    if len(context) > _MAX_SELECTION_CONTEXT_CHARS:
+        context = context[:_MAX_SELECTION_CONTEXT_CHARS]
+    title = (data.get("title") or "").strip()
+    book_id = (data.get("book_id") or "").strip()
+    if book_id:
+        err = _require_book_id(book_id)
+        if err:
+            return err
+        meta = load_meta(_books_dir(), book_id)
+        if meta and not title:
+            title = (meta.get("title") or book_id).strip()
+
+    try:
+        user_msg = selection_explain_user_message(
+            selected_text=selected_text,
+            context=context,
+            title=title,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    system_prompt = selection_explain_system_prompt()
+    host, model = _ollama_settings()
+
+    def generate():
+        import requests as req_mod
+
+        full = ""
+        try:
+            resp = req_mod.post(
+                f"{host}/api/chat",
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "stream": True,
+                    "think": False,
+                    "options": {"num_predict": 1024, "temperature": 0.4},
+                },
+                stream=True,
+                timeout=180,
+            )
+            if resp.status_code >= 400:
+                err_msg = f"Ollama error HTTP {resp.status_code}"
+                yield f"data: {json.dumps({'type': 'error', 'content': err_msg})}\n\n"
+                return
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                try:
+                    chunk_j = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                msg = chunk_j.get("message") or {}
+                token = msg.get("content") or ""
+                if not token:
+                    token = msg.get("thinking") or ""
+                if token:
+                    full += token
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                if chunk_j.get("done"):
+                    break
+            if not full.strip():
+                yield f"data: {json.dumps({'type': 'error', 'content': 'Ollama returned empty content. Check model and try again.'})}\n\n"
+                return
+            yield f"data: {json.dumps({'type': 'done', 'content': full})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
 

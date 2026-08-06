@@ -191,6 +191,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   margin-bottom:0.85em;line-height:1.4;text-align:left}
 #irPassage .ir-para.ir-kicker{text-indent:0;font-size:0.82em;letter-spacing:0.04em;
   text-transform:uppercase;color:#8b8fa4;margin-bottom:0.35em;text-align:left}
+#irChunkTitle{display:none;flex:1 1 220px;min-width:0;font-size:0.92em;font-weight:600;
+  color:#e8eaf2;line-height:1.35}
+#irPassage .ir-article-title{margin:0 0 0.85em;padding:0 0 0.55em;border-bottom:1px solid #2a2d3a;
+  text-indent:0;text-align:left;font-weight:650;font-size:1.22em;line-height:1.35;color:#f0f2fa}
+#irExplainBtn{position:fixed;z-index:500;display:none;padding:5px 10px;font-size:0.78em;
+  border-radius:6px;border:1px solid #4a5080;background:#2a2f4a;color:#e8eaf2;cursor:pointer;
+  box-shadow:0 4px 14px rgba(0,0,0,.45);line-height:1.2}
+#irExplainBtn:hover{background:#343a5c;border-color:#6a72a8}
+#irExplainBtn:disabled{opacity:.65;cursor:wait}
+#irExplainPop{position:fixed;z-index:501;display:none;max-width:min(380px,92vw);max-height:min(320px,50vh);
+  overflow:auto;padding:12px 14px;border-radius:10px;border:1px solid #3a3d4a;background:#1a1d2a;
+  color:#e8eaf2;font-size:0.84em;line-height:1.55;white-space:pre-wrap;box-shadow:0 10px 28px rgba(0,0,0,.55)}
+#irExplainPop .ir-explain-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin:0 0 8px;padding:0 0 8px;border-bottom:1px solid #2a2d3a;font-size:0.78em;color:#8b8fa4}
+#irExplainPop .ir-explain-close{background:transparent;border:none;color:#8b8fa4;cursor:pointer;font-size:1.2em;line-height:1;padding:0 2px}
+#irExplainPop .ir-explain-close:hover{color:#e8eaf2}
+#irExplainPop .ir-explain-body{color:#c4c8f0}
+#irArticlesWrap{position:relative;display:none;align-items:center}
+#irArticlesBtn{font-size:0.75em;padding:3px 10px;border-radius:6px;border:1px solid #3a3d4a;
+  background:#252836;color:#c4c8f0;cursor:pointer;line-height:1.3}
+#irArticlesBtn:hover{background:#2e3244;border-color:#4a5080}
+#irArticlesPop{display:none;position:absolute;left:0;top:calc(100% + 4px);z-index:40;
+  min-width:min(340px,88vw);max-width:min(420px,92vw);max-height:min(360px,52vh);
+  overflow:auto;padding:6px 0;border-radius:8px;border:1px solid #3a3d4a;background:#1a1d2a;
+  box-shadow:0 10px 28px rgba(0,0,0,.55)}
+#irArticlesPop.open{display:block}
+#irArticlesPop .ir-toc-item{display:block;width:100%;text-align:left;border:none;background:transparent;
+  color:#c4c8f0;font-size:0.82em;line-height:1.35;padding:8px 12px;cursor:pointer}
+#irArticlesPop .ir-toc-item:hover{background:#252836}
+#irArticlesPop .ir-toc-item.active{background:#2a2f4a;color:#f0f2fa;font-weight:600}
+#irArticlesPop .ir-toc-empty{padding:10px 12px;font-size:0.8em;color:#8b8fa4}
 #irAnalysis{padding:16px 18px!important;line-height:1.65!important}
 .modal-panel{background:#161822;border:1px solid #2a2d3a;border-radius:12px;max-width:680px;width:100%;
              max-height:86vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.55)}
@@ -264,6 +295,24 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
             <option value="zh">中文</option><option value="en">English</option>
           </select>
         </div>
+      </div>
+    </div>
+    <div style="margin-bottom:16px">
+      <div style="color:#8b8fa4;font-size:0.78em;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Audio Voice / 音色</div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f1117;border-radius:6px;border:1px solid #2a2d3e">
+          <span style="font-size:0.88em;color:#e0e0e0">中文音色</span>
+          <select id="settVoiceZh" style="background:#1a1d2e;color:#a0a4b8;border:1px solid #3a3d4a;border-radius:4px;padding:4px 8px;font-size:0.85em">
+            <option value="female">普通话女</option><option value="male">普通话男</option>
+          </select>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0f1117;border-radius:6px;border:1px solid #2a2d3e">
+          <span style="font-size:0.88em;color:#e0e0e0">英文音色</span>
+          <select id="settVoiceEn" style="background:#1a1d2e;color:#a0a4b8;border:1px solid #3a3d4a;border-radius:4px;padding:4px 8px;font-size:0.85em">
+            <option value="female">美式女</option><option value="male">美式男</option>
+          </select>
+        </div>
+        <p style="font-size:0.72em;color:#6b7280;margin:0">Applies to single-narrator audio. Dialogue keeps fixed dual voices.</p>
       </div>
     </div>
     <hr style="border:none;border-top:1px solid #2a2d3e;margin:16px 0">
@@ -658,11 +707,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           <button type="button" class="toolbar-btn" onclick="irBackToLibrary()" style="font-size:0.78em">&#8592; Library</button>
           <strong id="irReaderTitle" style="color:#c4c8f0;font-size:0.95em"></strong>
-          <span id="irReaderMeta" style="font-size:0.78em;color:#8b8fa4"></span>
+          <span id="irChunkTitle"></span>
+          <span id="irReaderMeta" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
         </div>
         <div style="display:grid;grid-template-columns:1.45fr 1fr;gap:14px;flex:1;min-height:0" class="ir-split">
           <div style="display:flex;flex-direction:column;min-height:0;border:1px solid #2a2d3a;border-radius:8px;overflow:hidden">
-            <div style="padding:6px 10px;background:#1e2030;font-size:0.75em;color:#8b8fa4;border-bottom:1px solid #2a2d3a">Passage</div>
+            <div style="padding:6px 10px;background:#1e2030;font-size:0.75em;color:#8b8fa4;border-bottom:1px solid #2a2d3a;display:flex;align-items:center;gap:10px">
+              <span>Passage</span>
+              <div id="irArticlesWrap">
+                <button type="button" id="irArticlesBtn" onclick="irToggleArticlesPop(event)">Articles ▾</button>
+                <div id="irArticlesPop" role="listbox" aria-label="Articles"></div>
+              </div>
+            </div>
             <div id="irPassage" class="ir-passage"></div>
           </div>
           <div style="display:flex;flex-direction:column;min-height:0;border:1px solid #2a2d3a;border-radius:8px;overflow:hidden">
@@ -1533,7 +1589,7 @@ var _IR_MAG_TABS = [
 var _irState = {
   bookId: null, bookType: 'novel', chunkIndex: 0, total: 0, nextIndex: null, prevIndex: null,
   analyzing: false, tabPinned: false, activeKind: 'vocab',
-  tabs: _IR_NOVEL_TABS.slice(), analyses: {}
+  tabs: _IR_NOVEL_TABS.slice(), analyses: {}, toc: []
 };
 
 function irEmptyAnalysisSlot() {
@@ -1660,16 +1716,81 @@ function irShowReader() {
   document.getElementById('irLibraryPane').style.display = 'none';
   var pane = document.getElementById('irReaderPane');
   pane.style.display = 'flex';
+  irSyncArticlesUi();
 }
 function irBackToLibrary() {
   if (irBusy()) {
     showToast('Wait for analysis to finish before leaving');
     return;
   }
+  irCloseArticlesPop();
   _irState.bookId = null;
+  _irState.toc = [];
+  irSyncArticlesUi();
   irShowLibrary();
   irRefreshBooks();
 }
+
+function irCloseArticlesPop() {
+  var pop = document.getElementById('irArticlesPop');
+  if (pop) pop.classList.remove('open');
+}
+
+function irSyncArticlesUi() {
+  var wrap = document.getElementById('irArticlesWrap');
+  if (!wrap) return;
+  var show = _irState.bookType === 'magazine' && !!_irState.bookId;
+  wrap.style.display = show ? 'inline-flex' : 'none';
+  if (!show) irCloseArticlesPop();
+  else irRenderArticlesPop();
+}
+
+function irRenderArticlesPop() {
+  var pop = document.getElementById('irArticlesPop');
+  if (!pop) return;
+  var toc = Array.isArray(_irState.toc) ? _irState.toc : [];
+  if (!toc.length) {
+    pop.innerHTML = '<div class="ir-toc-empty">No articles list yet</div>';
+    return;
+  }
+  pop.innerHTML = '';
+  toc.forEach(function(entry) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'ir-toc-item' + (entry.chunk_index === _irState.chunkIndex ? ' active' : '');
+    btn.setAttribute('role', 'option');
+    btn.textContent = entry.title || ('Chunk ' + (entry.chunk_index + 1));
+    btn.title = btn.textContent;
+    btn.onclick = function(ev) {
+      ev.stopPropagation();
+      irCloseArticlesPop();
+      irLoadChunk(entry.chunk_index);
+    };
+    pop.appendChild(btn);
+  });
+}
+
+function irToggleArticlesPop(ev) {
+  if (ev) ev.stopPropagation();
+  if (_irState.bookType !== 'magazine') return;
+  var pop = document.getElementById('irArticlesPop');
+  if (!pop) return;
+  if (pop.classList.contains('open')) {
+    pop.classList.remove('open');
+    return;
+  }
+  irRenderArticlesPop();
+  pop.classList.add('open');
+}
+
+document.addEventListener('click', function(ev) {
+  var wrap = document.getElementById('irArticlesWrap');
+  if (!wrap || wrap.contains(ev.target)) return;
+  irCloseArticlesPop();
+});
+document.addEventListener('keydown', function(ev) {
+  if (ev.key === 'Escape') irCloseArticlesPop();
+});
 
 async function irRefreshBooks() {
   var list = document.getElementById('irBookList');
@@ -1799,6 +1920,7 @@ async function irOpenBook(bookId) {
     }
     _irState.bookId = bookId;
     _irState.bookType = (meta.book_type === 'magazine') ? 'magazine' : 'novel';
+    _irState.toc = (_irState.bookType === 'magazine' && Array.isArray(meta.toc)) ? meta.toc : [];
     await irLoadTabs(_irState.bookType);
     irResetAnalyses();
     document.getElementById('irReaderTitle').textContent = meta.title || bookId;
@@ -1810,31 +1932,49 @@ async function irOpenBook(bookId) {
   }
 }
 
-function irRenderPassage(raw) {
+function irRenderPassage(raw, opts) {
+  irHideSelectionExplain();
+  opts = opts || {};
   var el = document.getElementById('irPassage');
   if (!el) return;
   el.innerHTML = '';
   el.style.flex = '1';
   el.style.overflowY = 'auto';
   var text = (raw || '').replace(/\r\n/g, '\n').trim();
-  if (!text) {
+  var articleTitle = (opts.articleTitle || '').replace(/\s+/g, ' ').trim();
+  var isMagazine = opts.bookType === 'magazine';
+  if (!text && !articleTitle) {
     el.textContent = '';
     return;
   }
-  var paras = text.split(/\n\s*\n/).map(function(p) {
+  var paras = text ? text.split(/\n\s*\n/).map(function(p) {
     return p.replace(/\n/g, ' ').replace(/[ \t]+/g, ' ').trim();
-  }).filter(Boolean);
+  }).filter(Boolean) : [];
+  if (isMagazine && articleTitle) {
+    // Avoid duplicating the same title as the first paragraph
+    if (paras.length && paras[0].replace(/\s+/g, ' ').trim().toLowerCase() === articleTitle.toLowerCase()) {
+      paras = paras.slice(1);
+    }
+    var heading = document.createElement('h2');
+    heading.className = 'ir-article-title';
+    heading.textContent = articleTitle;
+    el.appendChild(heading);
+  }
   if (paras.length === 0) {
-    el.textContent = text;
+    if (!isMagazine || !articleTitle) el.textContent = text;
     return;
   }
   paras.forEach(function(p, idx) {
     var node = document.createElement('p');
     var words = p.split(/\s+/).length;
     // Short early lines often look like magazine section / headline
-    if (idx === 0 && words <= 8 && p.length < 80 && !/[.!?]$/.test(p)) {
+    if (!isMagazine && idx === 0 && words <= 8 && p.length < 80 && !/[.!?]$/.test(p)) {
       node.className = 'ir-para ir-kicker';
-    } else if (idx <= 1 && words <= 14 && p.length < 110 && !/[.!?].*[.!?]/.test(p)) {
+    } else if (!isMagazine && idx <= 1 && words <= 14 && p.length < 110 && !/[.!?].*[.!?]/.test(p)) {
+      node.className = 'ir-para ir-title';
+    } else if (isMagazine && idx === 0 && words <= 16 && p.length < 120 && !/[.!?].*[.!?]/.test(p)
+               && p.toLowerCase() !== articleTitle.toLowerCase()) {
+      // Deck / subtitle under the article title
       node.className = 'ir-para ir-title';
     } else {
       node.className = 'ir-para';
@@ -1844,12 +1984,301 @@ function irRenderPassage(raw) {
   });
 }
 
+var _irExplainAbort = null;
+var _irExplainSel = { text: '', context: '', rect: null };
+
+function irEnsureExplainUi() {
+  var btn = document.getElementById('irExplainBtn');
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'irExplainBtn';
+    btn.textContent = 'Explain';
+    btn.addEventListener('mousedown', function(e) { e.preventDefault(); });
+    btn.addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      irRunSelectionExplain();
+    });
+    document.body.appendChild(btn);
+  }
+  var pop = document.getElementById('irExplainPop');
+  if (!pop) {
+    pop = document.createElement('div');
+    pop.id = 'irExplainPop';
+    pop.innerHTML = '<div class="ir-explain-head"><span>Selection explain</span>' +
+      '<button type="button" class="ir-explain-close" aria-label="Close">&times;</button></div>' +
+      '<div class="ir-explain-body"></div>';
+    pop.querySelector('.ir-explain-close').addEventListener('click', function(e) {
+      e.preventDefault();
+      irHideExplainPop();
+    });
+    document.body.appendChild(pop);
+  }
+  return { btn: btn, pop: pop };
+}
+
+function irHideExplainBtn() {
+  var btn = document.getElementById('irExplainBtn');
+  if (btn) btn.style.display = 'none';
+}
+
+function irHideExplainPop() {
+  var pop = document.getElementById('irExplainPop');
+  if (pop) pop.style.display = 'none';
+  if (_irExplainAbort) {
+    try { _irExplainAbort.abort(); } catch (e) {}
+    _irExplainAbort = null;
+  }
+}
+
+function irHideSelectionExplain() {
+  irHideExplainBtn();
+  irHideExplainPop();
+  _irExplainSel = { text: '', context: '', rect: null };
+}
+
+function irFindIrPara(node) {
+  var root = document.getElementById('irPassage');
+  while (node && node !== root) {
+    if (node.nodeType === 1 && node.classList && node.classList.contains('ir-para')) return node;
+    node = node.parentNode;
+  }
+  return null;
+}
+
+function irBuildSelectionContext(range) {
+  var pass = document.getElementById('irPassage');
+  var paras = pass ? pass.querySelectorAll('.ir-para') : [];
+  var covered = [];
+  var i;
+  for (i = 0; i < paras.length; i++) {
+    try {
+      if (range.intersectsNode && range.intersectsNode(paras[i])) covered.push(i);
+    } catch (e) { /* older browsers / detached */ }
+  }
+  if (covered.length === 0) {
+    var para = irFindIrPara(range.commonAncestorContainer) || irFindIrPara(range.startContainer);
+    if (para) {
+      for (i = 0; i < paras.length; i++) {
+        if (paras[i] === para) { covered.push(i); break; }
+      }
+    }
+  }
+  if (covered.length === 0 || paras.length === 0) {
+    return range.toString();
+  }
+  var first = covered[0];
+  var last = covered[covered.length - 1];
+  var start = Math.max(0, first - 1);
+  var end = Math.min(paras.length - 1, last + 1);
+  var parts = [];
+  for (i = start; i <= end; i++) {
+    parts.push(paras[i].textContent || '');
+  }
+  return parts.filter(Boolean).join('\n\n');
+}
+
+function irPlaceFixedNearRect(el, rect, preferBelow) {
+  if (!el || !rect) return;
+  var pad = 8;
+  var vw = window.innerWidth || 800;
+  var vh = window.innerHeight || 600;
+  el.style.display = 'block';
+  el.style.visibility = 'hidden';
+  var w = el.offsetWidth || 80;
+  var h = el.offsetHeight || 32;
+  var left = rect.left + (rect.width / 2) - (w / 2);
+  left = Math.max(pad, Math.min(left, vw - w - pad));
+  var top;
+  if (preferBelow) {
+    top = rect.bottom + pad;
+    if (top + h > vh - pad) top = rect.top - h - pad;
+  } else {
+    top = rect.top - h - pad;
+    if (top < pad) top = rect.bottom + pad;
+  }
+  top = Math.max(pad, Math.min(top, vh - h - pad));
+  el.style.left = Math.round(left) + 'px';
+  el.style.top = Math.round(top) + 'px';
+  el.style.visibility = 'visible';
+}
+
+function irOnPassageSelectionChange() {
+  var pass = document.getElementById('irPassage');
+  var pane = document.getElementById('irReaderPane');
+  var modal = document.getElementById('intensiveReadingModal');
+  var ui = irEnsureExplainUi();
+  if (!pass || !pane || !modal || !modal.classList.contains('open')) {
+    irHideExplainBtn();
+    return;
+  }
+  var paneDisp = window.getComputedStyle(pane).display;
+  if (paneDisp === 'none') {
+    irHideExplainBtn();
+    return;
+  }
+  var sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.rangeCount) {
+    irHideExplainBtn();
+    return;
+  }
+  var range = sel.getRangeAt(0);
+  var anc = range.commonAncestorContainer;
+  var inPassage = pass.contains(anc) ||
+    (anc.nodeType === 3 && anc.parentNode && pass.contains(anc.parentNode));
+  if (!inPassage) {
+    irHideExplainBtn();
+    return;
+  }
+  var text = (sel.toString() || '').replace(/\s+/g, ' ').trim();
+  if (!text || text.length < 1) {
+    irHideExplainBtn();
+    return;
+  }
+  var rect = range.getBoundingClientRect();
+  if (!rect || (rect.width === 0 && rect.height === 0)) {
+    var rects = range.getClientRects();
+    if (rects && rects.length) rect = rects[0];
+  }
+  if (!rect || (rect.width === 0 && rect.height === 0)) {
+    irHideExplainBtn();
+    return;
+  }
+  irHideExplainPop();
+  _irExplainSel = {
+    text: text.slice(0, 2000),
+    context: irBuildSelectionContext(range).slice(0, 8000),
+    rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height,
+            right: rect.right, bottom: rect.bottom }
+  };
+  ui.btn.disabled = false;
+  ui.btn.textContent = 'Explain';
+  irPlaceFixedNearRect(ui.btn, rect, true);
+}
+
+async function irRunSelectionExplain() {
+  var selected = (_irExplainSel.text || '').trim();
+  if (!selected) {
+    showToast('Select some text first');
+    return;
+  }
+  var ui = irEnsureExplainUi();
+  var body = ui.pop.querySelector('.ir-explain-body');
+  var rect = _irExplainSel.rect;
+  ui.btn.disabled = true;
+  ui.btn.textContent = '…';
+  body.textContent = 'Explaining…';
+  irPlaceFixedNearRect(ui.pop, rect || ui.btn.getBoundingClientRect(), true);
+  if (_irExplainAbort) {
+    try { _irExplainAbort.abort(); } catch (e) {}
+  }
+  _irExplainAbort = new AbortController();
+  try {
+    var titleEl = document.getElementById('irReaderTitle');
+    var r = await fetch('/api/intensive-reading/explain-selection', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: _irExplainAbort.signal,
+      body: JSON.stringify({
+        selected_text: selected,
+        context: _irExplainSel.context || selected,
+        book_id: _irState.bookId || '',
+        title: (titleEl && titleEl.textContent) || ''
+      })
+    });
+    if (!r.ok) {
+      var err = await r.json().catch(function() { return {}; });
+      throw new Error(err.error || ('HTTP ' + r.status));
+    }
+    var reader = r.body.getReader();
+    var decoder = new TextDecoder();
+    var full = '';
+    var buf = '';
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      buf += decoder.decode(chunk.value, { stream: true });
+      var parts = buf.split('\n');
+      buf = parts.pop() || '';
+      for (var i = 0; i < parts.length; i++) {
+        var line = parts[i].trim();
+        if (!line.startsWith('data:')) continue;
+        var payload = line.slice(5).trim();
+        try {
+          var msg = JSON.parse(payload);
+          if (msg.type === 'token') {
+            full += msg.content || '';
+            body.textContent = full;
+          } else if (msg.type === 'error') {
+            throw new Error(msg.content || 'Explain failed');
+          } else if (msg.type === 'done') {
+            if (msg.content) full = msg.content;
+            body.textContent = full;
+          }
+        } catch (pe) {
+          if (!(pe instanceof SyntaxError)) throw pe;
+        }
+      }
+    }
+    if (!full.trim()) throw new Error('No explanation returned — is Ollama running?');
+    body.textContent = full;
+    irPlaceFixedNearRect(ui.pop, rect || ui.btn.getBoundingClientRect(), true);
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+    body.textContent = e.message || String(e);
+    showToast(e.message || String(e));
+  } finally {
+    ui.btn.disabled = false;
+    ui.btn.textContent = 'Explain';
+    _irExplainAbort = null;
+  }
+}
+
+(function irBindSelectionExplain() {
+  function onMaybeSelection(e) {
+    var pass = document.getElementById('irPassage');
+    var pane = document.getElementById('irReaderPane');
+    var modal = document.getElementById('intensiveReadingModal');
+    if (!pass || !pane || !modal || !modal.classList.contains('open')) return;
+    if (window.getComputedStyle(pane).display === 'none') return;
+    if (e && e.target && (e.target.id === 'irExplainBtn' ||
+        (e.target.closest && e.target.closest('#irExplainPop')))) {
+      return;
+    }
+    setTimeout(irOnPassageSelectionChange, 0);
+  }
+  document.addEventListener('mouseup', onMaybeSelection);
+  document.addEventListener('keyup', function(e) {
+    if (e.key === 'Shift' || e.key.indexOf('Arrow') === 0) onMaybeSelection(e);
+  });
+  document.addEventListener('mousedown', function(e) {
+    var t = e.target;
+    if (!t) return;
+    if (t.id === 'irExplainBtn' || (t.closest && (t.closest('#irExplainBtn') || t.closest('#irExplainPop')))) {
+      return;
+    }
+    var pop = document.getElementById('irExplainPop');
+    if (pop && pop.style.display !== 'none' && !(t.closest && t.closest('#irExplainPop'))) {
+      irHideExplainPop();
+    }
+  });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') irHideSelectionExplain();
+  });
+})();
+
 async function irLoadChunk(chunkIndex) {
   if (!_irState.bookId) return;
   if (irBusy()) {
     showToast('Wait for analysis to finish before changing chunk');
     return;
   }
+  if (_irExplainAbort) {
+    showToast('Wait for explanation to finish before changing chunk');
+    return;
+  }
+  irHideSelectionExplain();
   irResetAnalyses();
   irRenderTabs();
   var pass = document.getElementById('irPassage');
@@ -1870,14 +2299,37 @@ async function irLoadChunk(chunkIndex) {
     _irState.total = d.total || 0;
     _irState.nextIndex = d.next_index;
     _irState.prevIndex = (typeof d.prev_index === 'number') ? d.prev_index : null;
-    var title = (d.chunk && d.chunk.title) ? d.chunk.title : '';
-    document.getElementById('irReaderMeta').textContent =
-      'chunk ' + (_irState.chunkIndex + 1) + ' / ' + _irState.total + (title ? (' · ' + title) : '');
-    irRenderPassage((d.chunk && d.chunk.text) || '');
+    if (d.book_type === 'magazine' || d.book_type === 'novel') {
+      _irState.bookType = d.book_type;
+    }
+    var title = (d.chunk && d.chunk.title) ? String(d.chunk.title).replace(/\s+/g, ' ').trim() : '';
+    var metaEl = document.getElementById('irReaderMeta');
+    var chunkTitleEl = document.getElementById('irChunkTitle');
+    if (_irState.bookType === 'magazine') {
+      metaEl.textContent = 'Magazine · chunk ' + (_irState.chunkIndex + 1) + ' / ' + _irState.total;
+      if (chunkTitleEl) {
+        chunkTitleEl.style.display = title ? 'inline' : 'none';
+        chunkTitleEl.textContent = title;
+        chunkTitleEl.title = title;
+      }
+    } else {
+      metaEl.textContent =
+        'chunk ' + (_irState.chunkIndex + 1) + ' / ' + _irState.total + (title ? (' · ' + title) : '');
+      if (chunkTitleEl) {
+        chunkTitleEl.style.display = 'none';
+        chunkTitleEl.textContent = '';
+      }
+    }
+    irRenderPassage((d.chunk && d.chunk.text) || '', {
+      bookType: _irState.bookType,
+      articleTitle: title
+    });
+    irSyncArticlesUi();
     irSetNavDisabled(false);
     await irLoadCachedAnalysis(_irState.chunkIndex);
     await irSaveProgress(_irState.chunkIndex, _irState.total);
   } catch (e) {
+    irHideSelectionExplain();
     document.getElementById('irPassage').textContent = e.message;
     showToast(e.message);
   }
@@ -3816,6 +4268,8 @@ async function openGlobalSettings() {
     document.getElementById('settAudioAi').value = d.audio_lang_ai || 'zh';
     document.getElementById('settAudioFinance').value = d.audio_lang_finance || d.audio_lang_world || 'zh';
     document.getElementById('settAudioKnowledge').value = d.audio_lang_knowledge || 'zh';
+    document.getElementById('settVoiceZh').value = d.audio_voice_zh || 'female';
+    document.getElementById('settVoiceEn').value = d.audio_voice_en || 'female';
     var masked = d.deepseek_api_key_masked || '';
     var el = document.getElementById('settDeepseekKey');
     el.value = '';
@@ -3831,6 +4285,8 @@ async function saveGlobalSettings() {
     audio_lang_ai: document.getElementById('settAudioAi').value,
     audio_lang_finance: document.getElementById('settAudioFinance').value,
     audio_lang_knowledge: document.getElementById('settAudioKnowledge').value,
+    audio_voice_zh: document.getElementById('settVoiceZh').value,
+    audio_voice_en: document.getElementById('settVoiceEn').value,
   };
   try {
     await fetch('/api/settings', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
@@ -4311,7 +4767,12 @@ async function runStockAnalysis() {
       const r2 = await fetch('/api/stock/analyze/deepseek', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(dsPayload)});
       const d2 = await r2.json();
       if (d2.error) {
-        resDs.innerHTML = '<p style="color:#f87171">DeepSeek: '+d2.error+'</p>';
+        var errH = '<p style="color:#f87171">DeepSeek: '+d2.error+'</p>';
+        if (d2.reasoning) {
+          errH += '<details style="margin-top:8px"><summary style="font-size:0.85em;color:#60a5fa;cursor:pointer">&#129504; 推理过程 (失败时保留)</summary>';
+          errH += '<div style="font-size:0.8em;color:#94a3b8;white-space:pre-wrap;margin-top:6px;max-height:400px;overflow-y:auto;padding:8px;background:#0a0e1a;border-radius:6px">' + d2.reasoning.replace(/</g,'&lt;').replace(/>/g,'&gt;') + '</div></details>';
+        }
+        resDs.innerHTML = errH;
       } else {
         var h = '';
         if (d2.reasoning) {
@@ -6122,6 +6583,133 @@ async function fetchNationalTeam() {
   } catch(e) { el.innerHTML = '<p style="color:#f87171">请求失败: '+e.message+'</p>'; st.textContent = ''; }
   document.getElementById('btnNTFetch').disabled = false;
 }
+function _ntEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+function _ntStatusDot(status) {
+  if (status === 'GREEN') return {icon: '&#128994;', color: '#22c55e'};
+  if (status === 'YELLOW') return {icon: '&#128993;', color: '#eab308'};
+  if (status === 'RED') return {icon: '&#128308;', color: '#ef4444'};
+  if (status === 'OBSERVING') return {icon: '&#128309;', color: '#3b82f6'};
+  if (status === 'NO_DATA') return {icon: '&#9898;', color: '#6b7280'};
+  return {icon: '&#9898;', color: '#8b8fa4'};
+}
+function _renderNtTrack(title, track, side) {
+  if (!track || !track.signal) return '';
+  var sig = track.signal || {};
+  var dot = _ntStatusDot(sig.status);
+  var border = side === 'retreat' ? '#7f1d1d' : '#1e3a5f';
+  var h = '<div style="background:#0f1117;border:1px solid ' + border + ';border-radius:8px;padding:12px 14px;flex:1;min-width:260px">';
+  h += '<div style="font-size:0.78em;color:#8b8fa4;margin-bottom:6px">' + _ntEsc(title) + '</div>';
+  h += '<div style="font-size:1.05em;font-weight:700;color:' + dot.color + '">' + dot.icon + ' ' + _ntEsc(sig.status_label || sig.status || '-') + '</div>';
+  if (sig.status_detail) {
+    h += '<div style="font-size:0.78em;color:#a1a1aa;margin-top:6px;line-height:1.45">' + _ntEsc(sig.status_detail) + '</div>';
+  }
+  var events = track.events || [];
+  if (events.length) {
+    h += '<div style="margin-top:8px;font-size:0.75em;color:#94a3b8">';
+    events.forEach(function(ev) {
+      h += '<div><span style="color:#fbbf24;font-weight:600">' + _ntEsc(ev.at || '--:--') + '</span> ' + _ntEsc(ev.label || ev.id || '') + '</div>';
+    });
+    h += '</div>';
+  }
+  var sync = track.sync_rally || track.sync_dump;
+  if (sync && sync.desc) {
+    h += '<div style="margin-top:8px;font-size:0.75em;color:#8b8fa4">同步: ' + _ntEsc(sync.desc);
+    if (sync.triggered_at) h += ' <span style="color:#fbbf24">(' + _ntEsc(sync.triggered_at) + ')</span>';
+    h += '</div>';
+  }
+  var vol = track.volume_pulse || track.volume_dump;
+  if (vol && vol.window_amount != null) {
+    h += '<div style="margin-top:4px;font-size:0.72em;color:#6b7280">近30分钟成交额: ' + Math.round(vol.window_amount).toLocaleString() + '</div>';
+  }
+  var td = track.trigger_detail || {};
+  if (td.reason) {
+    h += '<div style="margin-top:4px;font-size:0.72em;color:#6b7280">触发: ' + _ntEsc(td.reason) + '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+function _renderNtIntradayShares(block) {
+  if (!block) return '';
+  var h = '<div style="margin-bottom:16px;padding:10px 14px;border:1px solid #1e3a5f;border-radius:8px;background:#0b1220">';
+  h += '<div style="font-size:0.88em;font-weight:700;color:#93c5fd;margin-bottom:8px">开盘至今份额（宽基）</div>';
+  if (block.error) {
+    h += '<div style="font-size:0.82em;color:#fca5a5">暂不可用: ' + _ntEsc(block.error) + '</div>';
+    h += '</div>';
+    return h;
+  }
+  var anomalies = block.anomalies || [];
+  if (anomalies.length) {
+    h += '<div style="margin-bottom:8px">';
+    anomalies.forEach(function(a) {
+      var dir = a.direction === '增持' ? '&#9650;' : '&#9660;';
+      var dc = a.direction === '增持' ? '#ef4444' : '#10b981';
+      var prev = (a.prev_yi != null) ? a.prev_yi.toFixed(1) : '?';
+      var curr = (a.curr_yi != null) ? a.curr_yi.toFixed(1) : '?';
+      var pct = (a.change_pct != null) ? ((a.change_pct > 0 ? '+' : '') + a.change_pct.toFixed(1) + '%') : '';
+      h += '<div style="font-size:0.84em;color:#e0e0e0;margin-bottom:4px">' + dir + ' <b style="color:' + dc + '">' + _ntEsc(a.name) + '</b> (' + _ntEsc(a.code) + '): ';
+      h += prev + ' &rarr; ' + curr + ' 亿份 ';
+      h += '<span style="color:' + dc + ';font-weight:600">(' + pct + ')</span></div>';
+    });
+    h += '</div>';
+  } else {
+    h += '<div style="font-size:0.78em;color:#8b8fa4;margin-bottom:8px">暂无 |变化| &gt; 3% 的宽基异常</div>';
+  }
+  var items = block.items || [];
+  if (items.length) {
+    h += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px 12px">';
+    items.forEach(function(it) {
+      var line = _ntEsc(it.name) + ' (' + _ntEsc(it.code) + '): ';
+      if (it.status === 'ok' && it.prev_yi != null && it.curr_yi != null) {
+        var c = (it.change_pct == null) ? '#8b8fa4' : (it.change_pct > 0 ? '#ef4444' : (it.change_pct < 0 ? '#10b981' : '#8b8fa4'));
+        var p = (it.change_pct == null) ? '' : (' (' + (it.change_pct > 0 ? '+' : '') + it.change_pct.toFixed(2) + '%)');
+        line += it.prev_yi.toFixed(1) + ' &rarr; ' + it.curr_yi.toFixed(1) + ' 亿份<span style="color:' + c + '">' + p + '</span>';
+      } else {
+        line += '<span style="color:#6b7280">无数据</span>';
+      }
+      h += '<div style="font-size:0.74em;color:#cbd5e1">' + line + '</div>';
+    });
+    h += '</div>';
+  }
+  if (block.disclaimer) {
+    h += '<div style="margin-top:8px;font-size:0.68em;color:#6b7280;line-height:1.4">' + _ntEsc(block.disclaimer) + '</div>';
+  }
+  if (block.as_of) {
+    h += '<div style="margin-top:4px;font-size:0.68em;color:#64748b">检测时刻: ' + _ntEsc(String(block.as_of).replace('T', ' ').slice(0, 19)) + '</div>';
+  }
+  h += '</div>';
+  return h;
+}
+function _renderNtIntraday(intraday) {
+  if (!intraday) return '';
+  if (intraday.error) {
+    return '<div style="margin-bottom:16px;padding:10px 14px;border:1px solid #7f1d1d;border-radius:8px;color:#fca5a5;font-size:0.82em">盘中信号暂不可用: ' + _ntEsc(intraday.error) + '</div>';
+  }
+  var support = intraday.support || {};
+  var retreat = intraday.retreat || {};
+  // backward-compat: old flat payload without nests
+  if (!intraday.support && intraday.signal) support = intraday;
+  var h = '<div style="margin-bottom:16px">';
+  h += '<div style="font-size:0.88em;font-weight:700;color:#93c5fd;margin-bottom:8px">&#128737; 盘中实时疑似信号（弱代理监测）</div>';
+  h += '<div style="display:flex;gap:12px;flex-wrap:wrap">';
+  h += _renderNtTrack('护盘轨', support, 'support');
+  h += _renderNtTrack('撤退轨', retreat, 'retreat');
+  h += '</div>';
+  if (intraday.disclaimer || (support && support.disclaimer)) {
+    h += '<div style="margin-top:8px;font-size:0.7em;color:#6b7280;line-height:1.4">' + _ntEsc(intraday.disclaimer || support.disclaimer) + '</div>';
+  }
+  if (intraday.detect_time) {
+    h += '<div style="margin-top:4px;font-size:0.7em;color:#64748b">检测时刻: ' + _ntEsc(intraday.detect_time) + '</div>';
+  }
+  h += '</div>';
+  return h;
+}
 function renderNationalTeam(d) {
   const el = document.getElementById('ntResult');
   const snap = d.snapshot || {};
@@ -6181,6 +6769,9 @@ function renderNationalTeam(d) {
   if (snap.fetched_at) {
     h += '<div style="font-size:0.72em;color:#64748b;margin:-8px 0 12px">实时拉取: ' + snap.fetched_at.replace('T', ' ').slice(0, 19) + '</div>';
   }
+
+  h += _renderNtIntradayShares(d.intraday_shares);
+  h += _renderNtIntraday(d.intraday);
 
   var periods = (ps.periods || []);
   if (periods.length > 0) {

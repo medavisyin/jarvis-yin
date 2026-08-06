@@ -573,30 +573,9 @@ def _run_rs_scan_inner(use_deepseek: bool, market_df=None):
         _scan_status["step"] = "Layer 3: 呼叫 DeepSeek 执行右侧交易入场评判..."
         _scan_status["progress"] = 60
 
-    system_prompt = (
-        "你是一位顶级A股量化分析师，专注于**右侧交易**选股与买入判断（与左侧抄底吸筹互补）。\n\n"
-        "右侧交易核心理念：不预测底，等待**确认后跟进**。当主力资金由流出转为持续净流入，"
-        "并伴随趋势/突破确认后，在确认信号出现时入场，而非在下跌中抄底。\n\n"
-        "右侧入场判定准则（必须全部考量）：\n"
-        "1. **资金面右侧确认（核心）**：10日主力曾净流出但近3日转为持续净流入且3日净占比>=+3%，"
-        "表明主力态度由派发转为回补/吸筹，是右侧入场的根本依据。\n"
-        "2. **趋势确认**：价格站上MA5，逼近或突破MA20，均线有望转多头排列；"
-        "若已放量突破关键阻力位更佳。\n"
-        "3. **量能配合**：近期成交量放大（量比>=1.5），反弹有量、回调缩量为佳。\n"
-        "4. **允许追高但严控风险**：右侧入场不要求低位，允许在突破位/确认位买入，"
-        "但因A股T+1，必须设置明确止损（如跌破MA5或突破位-3%）；接近涨停板不追。\n"
-        "5. **持有周期与目标**：2周到2、3个月内持有，预期盈利10%以上。\n"
-        "6. **基本面底线**：盈利能力与财务健康至少中等，规避绩差/高负债股。\n\n"
-        "判断纪律：\n"
-        "- 若资金反转信号不成立、或趋势未确认、或风险>收益，必须判定\"不买入\"。\n"
-        "- 宁可错过确认前的涨幅，不可在信号未成立时提前埋伏（那是左侧的事）。\n\n"
-        "输出要求：只输出一个JSON对象，不要任何其他文字或```json围栏：\n"
-        '{"verdict":"买入","score":75,"reason":"右侧入场核心理由3-5条（必须论证资金反转+趋势确认）","risk":"主要风险","buy_low":9.50,"buy_high":10.00,"stop_loss":9.10,"target_price":10.80,"strategy":"右侧入场操作路径：确认信号、分批仓位、止损、止盈","entry_type":"右侧"}\n'
-        "verdict 只能是 \"买入\" 或 \"不买入\"。score 0-100。"
-        "buy_low/buy_high 为建议买入价区间（参考当前价，允许在突破位追高）。"
-        "stop_loss 为严格止损价。target_price 为2-3个月目标价（+10%以上）。"
-        "entry_type 固定为 \"右侧\"。"
-    )
+    from llm_reasoning import build_right_layer3_system_prompt
+
+    system_prompt = build_right_layer3_system_prompt()
 
     final_picks = []
     picks_lock = threading.Lock()
@@ -714,7 +693,7 @@ def _build_rs_prompt(stock: dict) -> str:
   - 资金反转成立: {reversal_str}
 
 请基于"资金由流出转为持续净流入 + 趋势/突破确认"的右侧逻辑做出判断（"买入"或"不买入"），
-并给出右侧入场操作策略（确认信号、分批仓位、严格止损、2-3个月目标价）。
+并给出右侧入场操作策略（确认信号、分批仓位、严格止损、约1～2周短周期目标价）。
 只输出JSON对象，不要任何外围文字或围栏。"""
 
 
@@ -834,8 +813,8 @@ def _generate_rs_markdown_report(picks: list[dict], all_cand: list[dict], date_s
         f"**扫描启动时间**: {meta.get('started_at', 'N/A')}",
         f"**分析截止时间**: {meta.get('ended_at', 'N/A')}",
         "**策略定位**: 右侧交易（确认后跟进：主力资金由流出转为持续净流入 + 趋势/突破确认后入场）",
-        "**目标周期**: 短期 (2周到2、3个月内持有)",
-        "**预期盈利**: 10%以上",
+        "**目标周期**: 约1～2周主情景（与深度分析同一尺子）",
+        "**预期节奏**: 确认后跟进；目标价按约1～2周短周期情景理解",
         f"**资金反转候选**: {meta.get('all_candidates_count', 0)} 只",
         f"**终极右侧推荐**: {len(picks)} 只",
         "",
@@ -875,7 +854,7 @@ def _generate_rs_markdown_report(picks: list[dict], all_cand: list[dict], date_s
                 f"- **当前价**: ¥{pick['price']}",
                 f"- **建议买入区间**: {_buy_range_str(pick)}",
                 f"- **严格止损价**: ¥{pick.get('stop_loss', 'N/A')}",
-                f"- **2-3个月目标价**: ¥{pick.get('target_price', 'N/A')}",
+                f"- **约1～2周目标价**: ¥{pick.get('target_price', 'N/A')}",
                 f"- **资金反转信号**: 3日主力净流入 {float(ff.get('main_net_3d',0) or 0)/1e8:.2f}亿 / 3日净占比 {float(ff.get('main_pct_3d',0) or 0):.2f}%",
                 f"- **趋势确认**: {'站上MA5' if pick.get('price_above_ma5') else '未确认'} / MA20={pick.get('ma20','N/A')}",
                 f"- **推荐理由**: {pick.get('reasoning', 'N/A')}",

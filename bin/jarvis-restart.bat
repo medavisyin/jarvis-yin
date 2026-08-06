@@ -66,7 +66,7 @@ if /I "%TARGET%"=="ALL" (
 echo.
 echo Restart complete (%TARGET%).
 echo   Search UI:    http://localhost:%PORT_UI%
-echo   Agent:        http://localhost:%PORT_AGENT%
+echo   Agent:        http://localhost:%PORT_AGENT%  (LAN: use Wi-Fi IP)
 echo   Telegram Bot: port %PORT_TG%
 echo.
 echo Usage: jarvis-restart.bat [/UI ^| /AGENT ^| /TELEGRAM ^| /ALL]
@@ -103,8 +103,8 @@ start "Jarvis Search" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\rag\search_ui.py" 
 exit /b 0
 
 :StartAgent
-echo Starting Agent (port %PORT_AGENT%)...
-start "Jarvis Agent" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\rag\agent.py" %PORT_AGENT%
+echo Starting Agent (port %PORT_AGENT%, LAN --host 0.0.0.0)...
+start "Jarvis Agent" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\rag\agent.py" %PORT_AGENT% --host 0.0.0.0
 exit /b 0
 
 :StartTelegram

@@ -45,6 +45,47 @@ def extract_pdf_pages(filepath: str) -> list[str]:
     return pages
 
 
+def extract_pdf_outline(filepath: str) -> list[dict[str, Any]]:
+    """
+    Flatten PDF bookmarks into [{title, page, level}, ...] (0-based page).
+
+    Nested outlines keep depth as ``level``. Missing / unresolvable destinations
+    are skipped. Empty outline → [].
+    """
+    from pypdf import PdfReader
+
+    if not os.path.isfile(filepath):
+        raise FileNotFoundError(filepath)
+
+    reader = PdfReader(filepath)
+    outline = getattr(reader, "outline", None) or []
+    if not outline:
+        return []
+
+    out: list[dict[str, Any]] = []
+
+    def walk(items: Any, depth: int = 0) -> None:
+        if not items:
+            return
+        for it in items:
+            if isinstance(it, list):
+                walk(it, depth + 1)
+                continue
+            title = (getattr(it, "title", None) or "").strip()
+            if not title:
+                continue
+            try:
+                page = reader.get_destination_page_number(it)
+            except Exception:
+                continue
+            if page is None or int(page) < 0:
+                continue
+            out.append({"title": title, "page": int(page), "level": int(depth)})
+
+    walk(outline, 0)
+    return out
+
+
 def _html_to_text(html: str) -> str:
     soup = BeautifulSoup(html, "html.parser")
     for tag in soup(["script", "style", "nav"]):
@@ -212,7 +253,17 @@ def extract_book(filepath: str) -> dict[str, Any]:
     title = os.path.splitext(os.path.basename(filepath))[0]
     if ext == ".pdf":
         pages = extract_pdf_pages(filepath)
-        return {"format": "pdf", "title": title, "pages": pages, "sections": None}
+        try:
+            outline = extract_pdf_outline(filepath)
+        except Exception:
+            outline = []
+        return {
+            "format": "pdf",
+            "title": title,
+            "pages": pages,
+            "sections": None,
+            "outline": outline,
+        }
     if ext == ".epub":
         sections = extract_epub_sections(filepath)
         if sections and sections[0].get("book_title"):

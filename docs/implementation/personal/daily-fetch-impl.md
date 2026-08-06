@@ -105,9 +105,11 @@ flowchart TD
 
 - Output root: `REPORTS_ROOT` / `today` subdirectory (`4407–4408`).
 - Proxy: Per-domain strategy via `proxy_strategy.py`; resolves proxy URL from `BRIEFING_PROXY` env var first, falls back to the stored `proxy_url` in the memory file. Cache persisted at `REPORTS_ROOT/.proxy-strategy.json`. Startup scripts (`bin/jarvis-start.bat`, `bin/jarvis-restart.bat`) default `BRIEFING_PROXY` to `socks5://localhost:10808` if not already set.
-- Audio languages: `_GLOBAL_SETTINGS["audio_lang_ai" | "audio_lang_finance"]` default `"zh"`; `"en"` selects `en-IN-PrabhatNeural`. Legacy `audio_lang_world` / `audio_lang_china` migrate into `audio_lang_finance` only when that key was never saved.
+- Audio languages: `_GLOBAL_SETTINGS["audio_lang_ai" | "audio_lang_finance" | "audio_lang_knowledge"]` default `"zh"`. Legacy `audio_lang_world` / `audio_lang_china` migrate into `audio_lang_finance` only when that key was never saved.
+- Audio voices (single-narrator): `_GLOBAL_SETTINGS["audio_voice_zh" | "audio_voice_en"]` default `"female"` → Edge presets in `scripts/rag/tts_voices.py` (zh: Xiaoxiao/Yunjian; en: Jenny/Andrew US). Dialogue / Knowledge Audio uses fixed dual-gender pairs from the same module (Global gender ignored). Presets exclude dialect and `en-IN-*` voices.
+- Finance audio narration (`content_type=finance`): facts plus one short market-impact sentence per item (`scripts/rag/narration_prompts.py`). AI briefing narration stays facts-only. Text finance JSON/reports are unchanged.
 - Narration model: `RAG_NARRATION_MODEL` default `qwen3.5:4b`; English mode uses 2-pass enrichment for vocabulary teaching.
-- `briefing-template.py` / `generate-audio.py`: use `REPORTS_ROOT` from `scripts/config.py`; schema aligned with `merge-sources` output—not called by `_run_daily_fetch`.
+- `briefing-template.py` / `generate-audio.py`: use `REPORTS_ROOT` from `scripts/config.py`; schema aligned with `merge-sources` output—not called by `_run_daily_fetch`. (Standalone CLI voice defaults may still differ; out of Daily Fetch scope.)
 
 ### Error Handling & Edge Cases
 
@@ -124,6 +126,8 @@ flowchart TD
 - Merge output schema: `scripts/pipeline/merge-sources.py`
 - Finance filter / paths: `scripts/pipeline/finance_news_filter.py`, `finance_news_paths.py`, `run-finance-news.py`
 - History-driven `missing_steps` for continue: `scripts/rag/routes/daily_fetch.py`
+- TTS voice presets / resolve: `scripts/rag/tts_voices.py`
+- Segmented narration prompts (finance impact): `scripts/rag/narration_prompts.py`
 - Standalone PDF/audio CLIs (ecosystem): `scripts/output/briefing-template.py`, `scripts/output/generate-audio.py`
 
 ## Improvement Ideas

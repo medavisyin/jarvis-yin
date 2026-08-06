@@ -91,45 +91,62 @@ def _get_deepseek_client():
 
 def call_deepseek(system_prompt: str, user_prompt: str,
                   max_tokens: int = 4096,
-                  reasoning_effort: str = "high") -> dict:
+                  reasoning_effort: str = "high",
+                  thinking: bool = True) -> dict:
     """Call DeepSeek API via OpenAI SDK and return parsed response.
 
     Returns dict with keys:
       - ok: bool
       - content: str (assistant reply)
       - reasoning_content: str (chain-of-thought)
+      - finish_reason: str (e.g. stop / length)
       - model: str
-      - usage: dict
+      - usage: dict (includes reasoning_tokens when available)
       - error: str (if ok=False)
+
+    Note: thinking tokens share max_tokens with the final answer. finish_reason
+    "length" with empty/short content means reasoning exhausted the budget.
+    Pass thinking=False to disable thinking mode so the budget goes to content.
     """
     client = _get_deepseek_client()
     if client is None:
         return {"ok": False, "error": "No DeepSeek API key configured"}
 
     try:
-        response = client.chat.completions.create(
-            model=DEEPSEEK_MODEL,
-            messages=[
+        kwargs = {
+            "model": DEEPSEEK_MODEL,
+            "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
-            max_tokens=max_tokens,
-            stream=False,
-            reasoning_effort=reasoning_effort,
-            extra_body={"thinking": {"type": "enabled"}},
-            timeout=120,
-        )
-        msg = response.choices[0].message
+            "max_tokens": max_tokens,
+            "stream": False,
+            "extra_body": {"thinking": {"type": "enabled" if thinking else "disabled"}},
+            "timeout": 120,
+        }
+        if thinking:
+            kwargs["reasoning_effort"] = reasoning_effort
+        response = client.chat.completions.create(**kwargs)
+        choice = response.choices[0]
+        msg = choice.message
+        usage = {}
+        if response.usage:
+            usage = {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "total_tokens": response.usage.total_tokens,
+            }
+            details = getattr(response.usage, "completion_tokens_details", None)
+            reasoning_tokens = getattr(details, "reasoning_tokens", None) if details else None
+            if reasoning_tokens is not None:
+                usage["reasoning_tokens"] = reasoning_tokens
         return {
             "ok": True,
             "content": msg.content or "",
             "reasoning_content": getattr(msg, "reasoning_content", "") or "",
+            "finish_reason": getattr(choice, "finish_reason", None) or "",
             "model": response.model or DEEPSEEK_MODEL,
-            "usage": {
-                "prompt_tokens": response.usage.prompt_tokens,
-                "completion_tokens": response.usage.completion_tokens,
-                "total_tokens": response.usage.total_tokens,
-            } if response.usage else {},
+            "usage": usage,
         }
     except Exception as exc:
         return {"ok": False, "error": str(exc)}

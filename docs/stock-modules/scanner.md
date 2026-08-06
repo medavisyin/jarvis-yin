@@ -1,7 +1,7 @@
 # AI 股票扫描器 (scanner) — 详细功能文档
 
 **文件路径**: `scripts/stock/scanner.py`  
-**最后更新**: 2026-07-01
+**最后更新**: 2026-08-05
 
 ---
 
@@ -9,6 +9,7 @@
 
 - **核心职责**: 对**全市场 A 股**执行「左侧·短期」三层漏斗扫描，输出**可买性（buyability）**导向的短期推荐列表（最多 5 只），而非单纯动量排名。设计哲学（2026-04 改版）：**宁可 0 推荐，也不输出「看起来强但不宜买」的标的**。
 - **策略定位（2026-07）**: 本模块为**左侧交易**（下跌/回调中抄底吸筹）。右侧交易见 `right_side_scanner.md`；统一编排见 `unified_scanner.md`。
+- **DeepSeek 人设对齐（2026-08）**: Layer3（含本地降级）与 Top5 轻量复核共用 `llm_reasoning.deepseek_shared_persona_rules` / `build_left_layer3_system_prompt`，与单股深度分析同一尺子（交叉验证、约 1～2 周情景、空仓可建仓才买入）。小白说明见 [strategy-unified-left-right-deepseek.md](./strategy-unified-left-right-deepseek.md) §4.5。
 - **一致性修复（2026-07）**: 为消除"短期推荐买入 / 深度分析看空"悖论，新增**资金面硬门控**（数据缺失或主力出货则强制降级/否决）+ **Top5 DeepSeek 深度复核**（看空则否决，详见 §3.4）。
 - **系统角色**: Stock 子系统的**左侧·短期全市场入口**；结果写入 `STOCK_REPORTS_ROOT/scans/`（JSON + Markdown），可选索引到 RAG；与 `hot_sectors`、`technical_analysis`、`fundamental_analysis`、`fetch_market_data`、`china_market_data`、`model_cross_sectional`、`model_xgboost`、`model_price_predictor`、`scan_cache`、`config.call_deepseek` 等协作。
 - **上下游关系（文字描述）**  

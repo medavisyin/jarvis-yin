@@ -27,7 +27,7 @@ from routes.ai_news import (
     _generate_segmented_narrations,
     _load_ai_kb,
     _tts_segments_to_mp3,
-    tts_voice_for_lang,
+    tts_voice_from_settings,
 )
 
 daily_fetch_bp = Blueprint("daily_fetch", __name__)
@@ -804,7 +804,7 @@ def _run_daily_fetch(
                         if narrations_ai:
                             total_chars = sum(len(n) for n in narrations_ai)
                             ai_mp3 = os.path.join(output_dir, "ai-briefing.mp3")
-                            _tts_segments_to_mp3(narrations_ai, ai_mp3, voice=tts_voice_for_lang(ai_lang))
+                            _tts_segments_to_mp3(narrations_ai, ai_mp3, voice=tts_voice_from_settings(ai_lang, gs))
                             steps.append({"step": "ai_audio", "exit_code": 0,
                                           "output": f"Generated ai-briefing.mp3 ({len(ai_segments)} segments, {total_chars} chars, {len(recent_titles)} titles deduped)"})
                         else:
@@ -949,7 +949,7 @@ def _run_daily_fetch(
                         if narrations_fn:
                             total_chars = sum(len(n) for n in narrations_fn)
                             fn_mp3 = os.path.join(output_dir, "finance-news.mp3")
-                            _tts_segments_to_mp3(narrations_fn, fn_mp3, voice=tts_voice_for_lang(fn_lang))
+                            _tts_segments_to_mp3(narrations_fn, fn_mp3, voice=tts_voice_from_settings(fn_lang, gs))
                             warn = fdata.get("warnings") or []
                             warn_note = f"; warnings={warn}" if warn else ""
                             steps.append({"step": "finance_audio", "exit_code": 0,

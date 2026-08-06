@@ -698,6 +698,223 @@ CORE_ETF_LIST = [
     {"code": "515790", "name": "光伏ETF", "exchange": "sse", "index": "光伏产业", "type": "行业"},
 ]
 
+_INTRADAY_SHARES_DISCLAIMER = (
+    "昨收份额为交易所官方数据；盘中份额来自东财行情字段 f38，口径可能略有偏差；"
+    "仅当 f38 数据日期为当日时视为有效；无数据时不使用成交额估算。"
+)
+_EM_SPOT_SHARE_CACHE_SEC = 90
+_EM_SPOT_ANOMALY_PCT = 3.0
+
+
+def parse_etf_spot_share_diff(diff: list | None, codes: set[str] | None = None) -> dict[str, dict]:
+    """Parse East Money ETF clist rows into {code: share meta}."""
+    want = set(codes) if codes is not None else None
+    out: dict[str, dict] = {}
+    for row in diff or []:
+        code = str(row.get("f12") or "").strip()
+        if not code:
+            continue
+        if want is not None and code not in want:
+            continue
+        f38 = row.get("f38")
+        shares = None
+        shares_yi = None
+        try:
+            if f38 not in (None, "-", ""):
+                shares = float(f38)
+                shares_yi = round(shares / 1e8, 2)
+        except (TypeError, ValueError):
+            shares = None
+            shares_yi = None
+        f297 = row.get("f297")
+        data_date = ""
+        if f297 not in (None, "-", "", 0, "0"):
+            data_date = str(f297).replace("-", "")[:8]
+        out[code] = {
+            "shares": shares,
+            "shares_yi": shares_yi,
+            "data_date": data_date,
+            "updated_at": row.get("f124"),
+            "name": row.get("f14"),
+            "source": "eastmoney_spot",
+        }
+    return out
+
+
+def compute_spot_vs_prev_pct(curr_yi: float | None, prev_yi: float | None) -> float | None:
+    """Percent change from previous official shares to current spot shares."""
+    if curr_yi is None or prev_yi is None:
+        return None
+    try:
+        curr = float(curr_yi)
+        prev = float(prev_yi)
+    except (TypeError, ValueError):
+        return None
+    if prev <= 0:
+        return None
+    return round((curr - prev) / prev * 100, 2)
+
+
+def fetch_etf_spot_shares_em(
+    codes: list[str] | set[str] | None = None,
+    force_refresh: bool = False,
+) -> dict[str, dict]:
+    """Fetch quasi-realtime ETF shares (f38) via East Money ETF board clist."""
+    import requests
+    from eastmoney_throttle import eastmoney_slot
+
+    if codes is None:
+        codes = [e["code"] for e in CORE_ETF_LIST if e.get("type") == "宽基"]
+    want = {str(c) for c in codes}
+    cache_path = os.path.join(_CACHE_NATIONAL, "em_spot_shares.json")
+    if not force_refresh and os.path.isfile(cache_path):
+        age = time.time() - os.path.getmtime(cache_path)
+        if age < _EM_SPOT_SHARE_CACHE_SEC:
+            try:
+                with open(cache_path, encoding="utf-8") as f:
+                    cached = json.load(f)
+                if isinstance(cached, dict) and want.issubset(set(cached.keys())):
+                    return {c: cached[c] for c in want if c in cached}
+            except Exception:
+                pass
+
+    url = "https://push2delay.eastmoney.com/api/qt/clist/get"
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Referer": "https://quote.eastmoney.com/",
+    }
+    found: dict[str, dict] = {}
+    total_pages = 20
+    for pn in range(1, total_pages + 1):
+        params = {
+            "pn": str(pn),
+            "pz": "100",
+            "po": "1",
+            "np": "1",
+            "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+            "fltt": "2",
+            "invt": "2",
+            "wbp2u": "|0|0|0|web",
+            "fid": "f12",
+            "fs": "b:MK0021,b:MK0022,b:MK0023,b:MK0024,b:MK0827",
+            "fields": "f12,f14,f38,f297,f124",
+            "_": int(time.time() * 1000),
+        }
+        try:
+            with eastmoney_slot():
+                r = requests.get(url, params=params, headers=headers, timeout=20)
+            r.raise_for_status()
+            data = r.json().get("data") or {}
+            diff = data.get("diff") or []
+        except Exception as e:
+            log.warning("东财ETF份额 clist 失败 page=%s: %s", pn, e)
+            raise
+        if not diff:
+            break
+        parsed = parse_etf_spot_share_diff(diff, codes=want)
+        found.update(parsed)
+        if want.issubset(set(found.keys())):
+            break
+        time.sleep(0.15)
+
+    try:
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(found, f, ensure_ascii=False, indent=2, default=str)
+    except Exception:
+        pass
+    return found
+
+
+def national_team_intraday_shares(force_refresh: bool = False) -> dict:
+    """Open-to-now broad ETF share discovery: exchange prev → EM f38."""
+    today = _today_str()
+    broad = [e for e in CORE_ETF_LIST if e.get("type") == "宽基"]
+    result = {
+        "as_of": datetime.now().isoformat(timespec="seconds"),
+        "items": [],
+        "anomalies": [],
+        "disclaimer": _INTRADAY_SHARES_DISCLAIMER,
+    }
+
+    history = _load_national_history()
+    prev = None
+    for h in reversed(history):
+        if _normalize_date(h.get("date", "")) != _normalize_date(today):
+            prev = h
+            break
+    prev_map = {}
+    prev_date = None
+    if prev:
+        prev_date = prev.get("date")
+        prev_map = {e["code"]: e for e in prev.get("etf_snapshot", []) if e.get("code")}
+
+    try:
+        spot = fetch_etf_spot_shares_em(
+            codes=[e["code"] for e in broad],
+            force_refresh=force_refresh,
+        )
+    except Exception as e:
+        log.warning("盘中份额拉取失败: %s", e)
+        result["error"] = str(e)
+        return result
+
+    anomalies = []
+    items = []
+    for etf in broad:
+        code = etf["code"]
+        prev_etf = prev_map.get(code) or {}
+        prev_yi = prev_etf.get("shares_yi")
+        try:
+            prev_yi = float(prev_yi) if prev_yi is not None else None
+        except (TypeError, ValueError):
+            prev_yi = None
+
+        spot_row = spot.get(code) or {}
+        em_date = str(spot_row.get("data_date") or "").replace("-", "")[:8]
+        spot_yi = spot_row.get("shares_yi")
+        status = "ok"
+        curr_yi = None
+        change_pct = None
+
+        if spot_yi is None or not em_date or em_date != today or prev_yi is None:
+            status = "无数据"
+        else:
+            try:
+                curr_yi = float(spot_yi)
+            except (TypeError, ValueError):
+                status = "无数据"
+                curr_yi = None
+            if status == "ok":
+                change_pct = compute_spot_vs_prev_pct(curr_yi, prev_yi)
+
+        item = {
+            "code": code,
+            "name": etf["name"],
+            "prev_yi": round(prev_yi, 2) if prev_yi is not None else None,
+            "curr_yi": round(curr_yi, 2) if curr_yi is not None else None,
+            "change_pct": change_pct,
+            "em_date": em_date or None,
+            "prev_date": prev_date,
+            "status": status,
+            "prev_source": "exchange",
+            "curr_source": "eastmoney_f38",
+        }
+        items.append(item)
+
+        if status == "ok" and change_pct is not None and abs(change_pct) > _EM_SPOT_ANOMALY_PCT:
+            anomalies.append({
+                "code": code,
+                "name": etf["name"],
+                "change_pct": change_pct,
+                "direction": "增持" if change_pct > 0 else "减持",
+                "prev_yi": item["prev_yi"],
+                "curr_yi": item["curr_yi"],
+            })
+
+    result["items"] = items
+    result["anomalies"] = anomalies
+    return result
+
 
 def fetch_etf_shares_sse(date: str = "", force_refresh: bool = False) -> pd.DataFrame:
     """获取上交所ETF份额数据。尝试今日,失败后回退近5个交易日。"""

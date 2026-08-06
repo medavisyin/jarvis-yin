@@ -158,3 +158,23 @@ def save_chunk_analysis(
             pass
         raise
     return doc
+
+
+def clear_book_analyses(books_dir: str, book_id: str) -> int:
+    """Delete all per-chunk analysis JSON files for a book. Returns files removed."""
+    analyses = _analyses_dir(books_dir, book_id)
+    if not os.path.isdir(analyses):
+        return 0
+    removed = 0
+    for name in os.listdir(analyses):
+        path = os.path.join(analyses, name)
+        if not os.path.isfile(path):
+            continue
+        if not name.endswith(".json"):
+            continue
+        try:
+            os.unlink(path)
+            removed += 1
+        except OSError:
+            continue
+    return removed

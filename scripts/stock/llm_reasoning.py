@@ -185,7 +185,7 @@ def _make_system_prompt(cost_price: float | None = None) -> str:
         "   - 买入判断 (明确回答: 建议买入 / 建议观望 / 建议回避)\n"
         "   - 方向判断 (看涨/看跌/震荡)\n"
         "   - 信心水平 (高/中/低)\n"
-        "   - 时间范围 (短期2周到2-3个月)\n"
+        "   - 时间范围 (约1周/2周主情景)\n"
         "   - 核心理由 (3-5条)\n"
         "   - 风险因素\n"
         "   - 建议操作 (买入区间/持有/减仓/观望)\n"
@@ -545,6 +545,183 @@ def _build_deepseek_prompt(symbol: str, data: dict) -> str:
     return "\n".join(sections)
 
 
+DEEPSEEK_REPORT_MIN_CHARS = 500
+
+
+def _deepseek_report_incomplete(result: dict, min_chars: int = DEEPSEEK_REPORT_MIN_CHARS) -> bool:
+    """True when the DeepSeek answer is missing, truncated, or too short to be a report."""
+    content = (result.get("content") or "").strip()
+    finish = (result.get("finish_reason") or "").lower()
+    if not content:
+        return True
+    if finish == "length":
+        return True
+    if len(content) < min_chars:
+        return True
+    return False
+
+
+def deepseek_report_call(call_fn, system_prompt: str, user_prompt: str,
+                         max_tokens: int = 8192,
+                         retry_max_tokens: int = 16384,
+                         min_chars: int = DEEPSEEK_REPORT_MIN_CHARS) -> dict:
+    """Call DeepSeek for a deep report; retry once if thinking exhausts the budget.
+
+    First call uses thinking mode (high effort). If content is empty,
+    finish_reason is length, or the body is shorter than min_chars, retry once
+    with thinking disabled so the token budget goes to the report body.
+    On retry success, keep the first call's reasoning_content for the UI.
+    If still incomplete after retry, return ok=False.
+
+    Note: DeepSeek maps effort "medium" to "high", so lowering effort alone
+    does not free budget — disable thinking on retry instead.
+    """
+    result = call_fn(
+        system_prompt, user_prompt,
+        max_tokens=max_tokens, reasoning_effort="high", thinking=True,
+    )
+    if not result.get("ok"):
+        return result
+
+    if not _deepseek_report_incomplete(result, min_chars=min_chars):
+        return result
+
+    finish = result.get("finish_reason") or ""
+    content_len = len((result.get("content") or "").strip())
+    first_reasoning = result.get("reasoning_content") or ""
+    log.warning(
+        "DeepSeek report incomplete (finish_reason=%s, content_len=%s, "
+        "reasoning_tokens=%s); retrying with thinking=disabled max_tokens=%s",
+        finish,
+        content_len,
+        (result.get("usage") or {}).get("reasoning_tokens"),
+        retry_max_tokens,
+    )
+    retry = call_fn(
+        system_prompt, user_prompt,
+        max_tokens=retry_max_tokens, thinking=False,
+    )
+    if not retry.get("ok"):
+        retry_err = retry.get("error") or "retry failed"
+        return {
+            "ok": False,
+            "error": (
+                f"DeepSeek retry failed after incomplete content "
+                f"(finish_reason={finish or 'unknown'}, content_len={content_len}): "
+                f"{retry_err}"
+            ),
+            "content": result.get("content") or "",
+            "reasoning_content": first_reasoning,
+            "finish_reason": finish or retry.get("finish_reason") or "",
+            "model": result.get("model") or retry.get("model") or "",
+            "usage": result.get("usage") or retry.get("usage") or {},
+        }
+
+    if not _deepseek_report_incomplete(retry, min_chars=min_chars):
+        out = dict(retry)
+        if first_reasoning:
+            out["reasoning_content"] = first_reasoning
+        return out
+
+    retry_finish = retry.get("finish_reason") or finish or "unknown"
+    retry_len = len((retry.get("content") or "").strip())
+    return {
+        "ok": False,
+        "error": (
+            f"DeepSeek returned incomplete report after retry "
+            f"(finish_reason={retry_finish}, content_len={retry_len})"
+        ),
+        "content": retry.get("content") or result.get("content") or "",
+        "reasoning_content": (
+            first_reasoning
+            or retry.get("reasoning_content")
+            or ""
+        ),
+        "finish_reason": retry_finish,
+        "model": retry.get("model") or result.get("model") or "",
+        "usage": retry.get("usage") or result.get("usage") or {},
+    }
+
+
+def deepseek_shared_persona_rules() -> str:
+    """Shared DeepSeek decision ruler used by deep report, Layer3 scanners, and light verdict.
+
+    Aligned to the single-stock deep-analysis persona: cross-check dimensions,
+    probabilistic language, A-share microstructure, fund-flow intent, 1–2 week
+    scenarios, and empty/light/heavy position checklist.
+    """
+    return (
+        "你是一位顶级A股量化分析师，精通技术分析、基本面分析、资金流向分析和市场微观结构。\n"
+        "决策尺子（必须全部遵守）：\n"
+        "1. **多维度交叉验证**: 不要简单罗列每个维度的结论，而是找出技术×资金×基本面×情绪之间的"
+        "矛盾和共振点（例如资金流入但技术偏弱意味着什么；基本面优秀但估值偏高怎么解读）。\n"
+        "2. **概率化判断**: 给出具体的概率估计而非模糊描述"
+        "（例如「约70%概率1周内向上突破关键阻力」而非「可能会上涨」）。\n"
+        "3. **A股特色**: 必须考虑T+1、涨跌停、散户结构，以及主力吸筹/拉升/出货阶段对股价的影响；"
+        "追高风险要显式评估。\n"
+        "4. **资金流向深度解读**: 分辨主力是在吸筹布局还是借利好出货；超大单/净流入流出如何与价量配合。\n"
+        "5. **时间框架**: 主情景落在未来约**1周/2周**（乐观/中性/悲观及概率）；"
+        "不要把「未来2～3个月赚10%+」当成默认买入门槛。\n"
+        "6. **仓位差异化内心检查**: 决策前必须过一遍空仓/轻仓/重仓三类投资者——尤其空仓者现在是否适合建仓、"
+        "轻仓者是否加仓、重仓者是否减仓或止盈止损。\n"
+        "7. **风险量化**: 尽量给出具体止损/回撤感，而非空话。\n"
+    )
+
+
+def build_left_layer3_system_prompt() -> str:
+    """Left-side scanner Layer3: shared persona + buy/no-buy JSON mapped to empty-entry advice."""
+    return (
+        deepseek_shared_persona_rules()
+        + "\n"
+        "你当前任务是对扫描候选做**短期可买性终审**（与「A股分析&AI预测」深度分析同一人设与周期）。\n\n"
+        "买入映射（强制）：\n"
+        "- 仅当按上述尺子，**空仓者现在适合建仓或分批建仓**时，才可判定 \"买入\"。\n"
+        "- 若交叉验证矛盾大、空仓者应观望/等回调、或1周/2周主情景偏谨慎 → 必须 \"不买入\"。\n"
+        "- 理由须点明交叉验证结论与约1～2周主情景，而不是空泛喊口号。\n\n"
+        "输出要求：只输出一个JSON对象，不要任何其他文字：\n"
+        '{"verdict":"买入","score":75,"reason":"核心理由3-5条（须含交叉验证与1～2周情景）",'
+        '"risk":"主要风险","buy_low":9.50,"buy_high":10.00,'
+        '"strategy":"建议仓位与针对约1～2周持有节奏的买卖/止损路径"}\n'
+        "verdict 只能是 \"买入\" 或 \"不买入\"。score 0-100。buy_low/buy_high 是建议买入价区间。"
+    )
+
+
+def build_right_layer3_system_prompt() -> str:
+    """Right-side scanner Layer3: shared persona + right-side confirm rules; fund_reversal stays in code."""
+    return (
+        deepseek_shared_persona_rules()
+        + "\n"
+        "你当前任务是**右侧交易**终审（与深度分析同一人设/1～2周尺子；与左侧抄底互补）。\n"
+        "右侧核心理念：不预测底，等待**确认后跟进**——主力资金由流出转为持续净流入，并伴随趋势/突破确认。\n\n"
+        "右侧额外准则（在共享尺子之上）：\n"
+        "1. 资金反转与趋势确认是否站得住（代码层已做硬过滤，你仍须复核其是否像假突破）。\n"
+        "2. 允许在确认位跟进，但因T+1必须给出明确止损；接近涨停不追。\n"
+        "3. 买入映射同深度口径：仅当**空仓者现在适合在确认位建仓**才可 \"买入\"；否则 \"不买入\"。\n"
+        "4. 目标与节奏对齐约**1周/2周**主情景（可给短周期目标价），不要默认写成「2～3个月赚10%+」。\n\n"
+        "输出要求：只输出一个JSON对象，不要任何其他文字或```json围栏：\n"
+        '{"verdict":"买入","score":75,"reason":"右侧入场核心理由3-5条（资金反转+趋势确认+交叉验证）",'
+        '"risk":"主要风险","buy_low":9.50,"buy_high":10.00,"stop_loss":9.10,"target_price":10.80,'
+        '"strategy":"右侧操作路径：确认信号、分批仓位、止损、约1～2周节奏止盈","entry_type":"右侧"}\n'
+        "verdict 只能是 \"买入\" 或 \"不买入\"。score 0-100。"
+        "buy_low/buy_high 为建议买入价区间。stop_loss 为严格止损价。"
+        "target_price 为约1～2周情景下的短周期目标价。entry_type 固定为 \"右侧\"。"
+    )
+
+
+def build_verdict_system_prompt() -> str:
+    """Light Top5 recheck: shared persona + direction JSON only."""
+    return (
+        deepseek_shared_persona_rules()
+        + "\n"
+        "你当前只做**结构化方向判断**（与深度分析同一数据尺子与约1周/2周情景），不写长报告。\n"
+        "特别关注主力资金流向（净流入/净流出/出货期）与技术面的共振或矛盾；"
+        "若主力持续大幅净流出或出货期且无压倒性反向证据，应判\"看空\"。\n\n"
+        "只输出一个JSON对象，不要任何其他文字或```json围栏：\n"
+        '{"direction":"看空","confidence":65,"reason":"一句话核心理由","veto_reason":"若看空给出否决依据，否则留空"}\n'
+        "direction 只能是 \"看多\" / \"看空\" / \"中性\"。confidence 0-100。"
+    )
+
+
 def generate_prediction_deepseek(symbol: str, realtime_quote: dict | None = None, cost_price: float | None = None) -> dict:
     """生成 AI 综合预测报告 via DeepSeek API (deepseek-v4-flash with thinking).
 
@@ -602,24 +779,13 @@ def generate_prediction_deepseek(symbol: str, realtime_quote: dict | None = None
         )
 
     system_prompt = (
-        "你是一位顶级A股量化分析师，精通技术分析、基本面分析、资金流向分析和市场微观结构。\n"
+        deepseek_shared_persona_rules()
+        + "\n"
         "你正在使用 deepseek-v4-flash (thinking mode) 进行深度推理分析，请充分利用你的推理能力。\n\n"
-        "分析要求（必须全部满足）：\n"
-        "1. **多维度交叉验证**: 不要简单罗列每个维度的结论，而是找出不同维度之间的矛盾和共振点。"
-        "例如：资金在流入但技术面偏弱意味着什么？基本面优秀但估值偏高怎么解读？\n"
-        "2. **概率化判断**: 给出具体的概率估计而非模糊描述。"
-        "例如：'70%概率1周内向上突破¥10.04' 而非 '可能会上涨'\n"
-        "3. **A股特色分析**: 必须考虑T+1交易制度、涨跌停板制度、散户占比高的市场特征、"
-        "主力资金行为（吸筹/拉升/出货）对股价的影响\n"
-        "4. **利用原始数据**: 我提供了近20日的原始行情数据，请自行分析量价关系、趋势强度、"
+        "补充要求：\n"
+        "1. **利用原始数据**: 我提供了近20日的原始行情数据，请自行分析量价关系、趋势强度、"
         "成交量变化趋势、是否有放量/缩量特征\n"
-        "5. **资金流向深度解读**: 分析主力资金的真实意图 — 是在吸筹布局还是借利好出货？"
-        "超大单占比说明什么？\n"
-        "6. **给出差异化建议**: 不同仓位水平的投资者应该如何操作？\n"
-        "   - 空仓者：是否建仓？建仓价位？分几批？\n"
-        "   - 轻仓者：是否加仓？在什么条件下加？\n"
-        "   - 重仓者：是否减仓？止盈/止损策略？\n"
-        "7. **风险量化**: 给出具体的最大回撤估计和止损价位，而非泛泛而谈\n\n"
+        "（其余决策尺子见上文共享条款：交叉验证、概率化、T+1、资金意图、1周/2周情景、空仓/轻仓/重仓。）\n\n"
         "报告结构：\n"
         "1. 一句话结论（含方向、概率、时间框架）\n"
         "2. 多维度交叉分析（技术×资金×基本面×情绪的交叉验证）\n"
@@ -661,11 +827,16 @@ def generate_prediction_deepseek(symbol: str, realtime_quote: dict | None = None
         f"特别注意：请自行从原始OHLCV数据中发现量价关系趋势，不要只看我提供的技术指标摘要。"
     )
 
-    result = call_deepseek(system_prompt, user_prompt, max_tokens=8192)
+    result = deepseek_report_call(call_deepseek, system_prompt, user_prompt)
 
     if not result["ok"]:
         log.error("DeepSeek 预测 %s 失败: %s", symbol, result.get("error"))
-        return {"error": result["error"]}
+        return {
+            "error": result["error"],
+            "reasoning": result.get("reasoning_content", ""),
+            "finish_reason": result.get("finish_reason", ""),
+            "usage": result.get("usage", {}),
+        }
 
     content = result["content"]
     reasoning = result.get("reasoning_content", "")
@@ -686,6 +857,7 @@ def generate_prediction_deepseek(symbol: str, realtime_quote: dict | None = None
         "reasoning": reasoning,
         "model": result["model"],
         "usage": result.get("usage", {}),
+        "finish_reason": result.get("finish_reason", ""),
     }
 
 
@@ -719,18 +891,7 @@ def generate_prediction_verdict(symbol: str, realtime_quote: dict | None = None)
 
     analysis_text = _build_deepseek_prompt(symbol, data)
 
-    system_prompt = (
-        "你是一位顶级A股量化分析师。基于与深度分析完全相同的多维度数据"
-        "（技术×资金×基本面×情绪×原始OHLCV），给出一个**结构化方向判断**。\n\n"
-        "要求：\n"
-        "1. 必须交叉验证各维度，特别关注主力资金流向（净流入/净流出/出货期）与技术面的共振/矛盾。\n"
-        "2. 概率化判断，给出明确方向（看多/看空/中性）与置信度。\n"
-        "3. 若主力资金持续大幅净流出或处于出货期，且无压倒性反向证据，应判\"看空\"。\n"
-        "4. A股T+1，追高风险需考虑。\n\n"
-        "只输出一个JSON对象，不要任何其他文字或```json围栏：\n"
-        '{"direction":"看空","confidence":65,"reason":"一句话核心理由","veto_reason":"若看空给出否决依据，否则留空"}\n'
-        "direction 只能是 \"看多\" / \"看空\" / \"中性\"。confidence 0-100。"
-    )
+    system_prompt = build_verdict_system_prompt()
 
     result = call_deepseek(system_prompt, analysis_text, max_tokens=1500, reasoning_effort="medium")
     if not result["ok"]:

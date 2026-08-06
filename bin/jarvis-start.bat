@@ -25,9 +25,9 @@ start "Jarvis Search" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\rag\search_ui.py"
 
 timeout /t 2 /nobreak >nul
 
-echo Starting Jarvis Agent (port 18889)...
-echo [%date% %time%] Starting agent.py >> "%LOG%"
-start "Jarvis Agent" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\rag\agent.py"
+echo Starting Jarvis Agent (port 18889, LAN --host 0.0.0.0)...
+echo [%date% %time%] Starting agent.py --host 0.0.0.0 >> "%LOG%"
+start "Jarvis Agent" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\rag\agent.py" --host 0.0.0.0
 
 timeout /t 2 /nobreak >nul
 
@@ -38,7 +38,7 @@ start "Jarvis Telegram" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\bot_telegram.py"
 echo.
 echo All servers starting. Wait ~15 seconds for model loading.
 echo   Search UI:     http://localhost:18888
-echo   Agent:         http://localhost:18889
+echo   Agent:         http://localhost:18889  (LAN: use Wi-Fi IP, e.g. http://192.168.x.x:18889)
 echo   Telegram Bot:  active (polling)
 echo.
 echo [%date% %time%] Done >> "%LOG%"

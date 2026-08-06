@@ -12,8 +12,12 @@ from typing import Any, Optional
 
 from intensive_reading.chunking import (
     chunk_by_words,
+    chunk_magazine_by_page_headings,
+    chunk_magazine_from_outline,
     chunk_magazine_text,
     chunk_novel_pages,
+    is_toc_text,
+    is_weak_magazine_title,
     next_readable_index,
 )
 from intensive_reading.extract import extract_book
@@ -138,17 +142,193 @@ def _split_oversized_chunks(
         base_title = c.get("title") or "Part"
         parts = _split_text_by_max_words(text, max_words)
         for j, part in enumerate(parts):
+            part_title = base_title
+            if is_weak_magazine_title(base_title):
+                part_title = _headline_from_text(part) or base_title
+            if len(parts) > 1:
+                part_title = f"{part_title} ({j + 1})"
             out.append(
                 {
                     "chunk_index": 0,
                     "text": part,
-                    "title": f"{base_title} ({j + 1})" if len(parts) > 1 else base_title,
+                    "title": part_title,
                     "is_toc": bool(c.get("is_toc")),
                 }
             )
     for i, c in enumerate(out):
         c["chunk_index"] = i
     return out
+
+
+def _polish_magazine_chunk_titles(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Replace weak TOC/cover titles with a headline guessed from body text."""
+    out: list[dict[str, Any]] = []
+    for c in chunks:
+        item = dict(c)
+        title = item.get("title") or ""
+        suffix = ""
+        m = re.search(r"\s*(\(\d+\))\s*$", title)
+        if m:
+            suffix = f" {m.group(1)}"
+            title_core = title[: m.start()].strip()
+        else:
+            title_core = title
+        if is_weak_magazine_title(title_core):
+            better = _headline_from_text(item.get("text") or "")
+            if better:
+                item["title"] = better + suffix
+            else:
+                # Never keep PRICE/masthead as the visible title
+                idx = int(item.get("chunk_index") or 0) + 1
+                item["title"] = f"Article {idx}"
+        out.append(item)
+    return out
+
+
+_AUTHOR_NUM_TITLE = re.compile(
+    r"\b(?:[A-Z][a-z]+(?:\s+[A-Z][a-z.\-]+){0,4})\s+\d{1,3}\s+"
+    r"([A-Z][\w'’,\-:]*"
+    r"(?:\s+[\w'’,\-:]+){2,16})"
+)
+
+_NY_MASTHEAD_PREFIX = re.compile(
+    r"^\d*\s*THE\s+NEW\s+YORKER,\s*[A-Z]+\s+\d{1,2},\s*\d{4}\s*",
+    re.I,
+)
+_DATE_PRICE_PREFIX = re.compile(
+    r"^[A-Z]+\s+\d{1,2},\s*\d{4}\s*PRICE\s*\$?\d+(?:\.\d+)?\s*",
+    re.I,
+)
+_GOINGS_ON_PREFIX = re.compile(
+    r"^\d*\s*GOINGS\s+ON(?:\s+[A-Z]+\s+\d{1,2}\s*[–-]\s*[A-Z]+\s+\d{1,2},\s*\d{4})?\s*",
+    re.I,
+)
+
+
+def _strip_magazine_masthead(s: str) -> str:
+    """Remove common magazine chrome from the start of a line/title probe."""
+    prev = None
+    out = (s or "").strip()
+    while out and out != prev:
+        prev = out
+        out = _DATE_PRICE_PREFIX.sub("", out).strip()
+        out = _NY_MASTHEAD_PREFIX.sub("", out).strip()
+        out = _GOINGS_ON_PREFIX.sub("", out).strip()
+    return out
+
+
+def _headline_from_text(text: str) -> str:
+    """Pick a plausible article headline from early body lines."""
+    for ln in (text or "").splitlines():
+        raw = re.sub(r"\s+", " ", ln).strip()
+        if not raw or len(raw) < 10:
+            continue
+        s = _strip_magazine_masthead(raw)
+        if not s or len(s) < 10:
+            continue
+        if is_weak_magazine_title(s) and len(s.split()) <= 14:
+            continue
+        # New Yorker / dense PDF lines: "David Sedaris 12 Cash and Carry ..."
+        m = _AUTHOR_NUM_TITLE.search(s)
+        if m:
+            cand = m.group(1).strip(" ,;-")
+            if 10 <= len(cand) <= 110 and not is_weak_magazine_title(cand):
+                return cand
+        if len(s) > 110:
+            # Long run-on: take a short prefix after masthead strip
+            words = s.split()
+            if len(words) >= 5:
+                probe = " ".join(words[:12]).strip(" ,;-")
+                if len(probe) >= 15 and not is_weak_magazine_title(probe):
+                    return probe[:100]
+            continue
+        if is_weak_magazine_title(s) or is_toc_text(s):
+            continue
+        wc = len(s.split())
+        if wc < 3 or wc > 20:
+            continue
+        if s.endswith((",", ";", ":")):
+            continue
+        return s
+    # Last resort: first non-masthead long line prefix
+    for ln in (text or "").splitlines():
+        raw = re.sub(r"\s+", " ", ln).strip()
+        s = _strip_magazine_masthead(raw)
+        if not s or is_weak_magazine_title(s):
+            continue
+        words = s.split()
+        if len(words) < 5:
+            continue
+        probe = " ".join(words[:12]).strip(" ,;-")
+        if len(probe) >= 15 and not is_weak_magazine_title(probe):
+            return probe[:100]
+    return ""
+
+
+def _magazine_chunks_from_sections(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Hybrid magazine EPUB chunking:
+    - Wired-like: one spine section ≈ one article → keep section title.
+    - Economist/New Yorker-like: weak/TOC title or oversized multi-article blob
+      → split with chunk_magazine_text inside the section; fall back to
+      word-split + headline-from-body when heading split fails.
+    """
+    chunks: list[dict[str, Any]] = []
+    for s in sections:
+        text = (s.get("text") or "").strip()
+        if not text:
+            continue
+        title = (s.get("title") or "").strip() or f"Article {len(chunks) + 1}"
+        words = len(text.split())
+        weak = is_weak_magazine_title(title) or is_toc_text(text)
+        should_split = weak or words > 1200
+        if should_split and words >= 60:
+            sub = chunk_magazine_text(text)
+            if len(sub) >= 2:
+                for c in sub:
+                    if is_weak_magazine_title(c.get("title") or ""):
+                        better = _headline_from_text(c.get("text") or "")
+                        if better:
+                            c["title"] = better
+                chunks.extend(sub)
+                continue
+            if sub:
+                cand = sub[0]
+                if is_weak_magazine_title(cand.get("title") or ""):
+                    better = _headline_from_text(text)
+                    if better:
+                        cand = dict(cand)
+                        cand["title"] = better
+                if not is_weak_magazine_title(cand.get("title") or ""):
+                    chunks.append(cand)
+                    continue
+            parts = _split_text_by_max_words(text, 1200)
+            for j, part in enumerate(parts):
+                ht = _headline_from_text(part) or f"Article {len(chunks) + 1}"
+                if len(parts) > 1:
+                    ht = f"{ht} ({j + 1})"
+                chunks.append(
+                    {
+                        "chunk_index": len(chunks),
+                        "text": part,
+                        "title": ht,
+                        "is_toc": is_toc_text(part),
+                    }
+                )
+            continue
+        if weak:
+            better = _headline_from_text(text)
+            if better:
+                title = better
+        chunks.append(
+            {
+                "chunk_index": len(chunks),
+                "text": text,
+                "title": title,
+                "is_toc": is_toc_text(text),
+            }
+        )
+    return _split_oversized_chunks(chunks)
 
 
 def build_chunks(extracted: dict[str, Any], book_type: str) -> list[dict[str, Any]]:
@@ -158,17 +338,23 @@ def build_chunks(extracted: dict[str, Any], book_type: str) -> list[dict[str, An
         book_type = BOOK_TYPE_NOVEL
 
     if book_type == BOOK_TYPE_MAGAZINE:
-        if extracted.get("pages"):
-            full = "\n\n".join(p for p in extracted["pages"] if p)
-            chunks = chunk_magazine_text(full)
-            return _split_oversized_chunks(chunks)
         if extracted.get("sections"):
-            full = "\n\n".join(
-                (s.get("title") or "") + "\n\n" + (s.get("text") or "")
-                for s in extracted["sections"]
+            return _polish_magazine_chunk_titles(
+                _magazine_chunks_from_sections(extracted["sections"])
             )
+        if extracted.get("pages"):
+            pages = extracted["pages"]
+            outline = extracted.get("outline") or []
+            if outline:
+                chunks = chunk_magazine_from_outline(pages, outline)
+                if chunks:
+                    return _split_oversized_chunks(chunks)
+            chunks = chunk_magazine_by_page_headings(pages)
+            if chunks:
+                return _polish_magazine_chunk_titles(_split_oversized_chunks(chunks))
+            full = "\n\n".join(p for p in pages if p)
             chunks = chunk_magazine_text(full)
-            return _split_oversized_chunks(chunks)
+            return _polish_magazine_chunk_titles(_split_oversized_chunks(chunks))
         return []
 
     # novel / ebook
@@ -244,6 +430,9 @@ def save_book_files(
 
     with open(os.path.join(book_dir, "chunks.json"), "w", encoding="utf-8") as f:
         json.dump(chunks, f, ensure_ascii=False, indent=1)
+
+    if book_type == BOOK_TYPE_MAGAZINE:
+        write_toc_json(book_dir, chunks)
 
     readable = next_readable_index(chunks, start=0)
     if readable is None:
@@ -327,6 +516,47 @@ def get_chunk(books_dir: str, book_id: str, chunk_index: int) -> Optional[dict[s
             out["text"] = normalize_reading_text(out.get("text") or "")
             return out
     return None
+
+
+def build_toc_entries(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """TOC list for magazine Articles UI (skips pure TOC chrome chunks)."""
+    entries: list[dict[str, Any]] = []
+    for c in chunks or []:
+        if c.get("is_toc"):
+            continue
+        title = (c.get("title") or "").strip()
+        if not title:
+            continue
+        entry: dict[str, Any] = {
+            "title": title,
+            "chunk_index": int(c.get("chunk_index", len(entries))),
+        }
+        if c.get("start_page") is not None:
+            entry["start_page"] = c.get("start_page")
+        if c.get("end_page") is not None:
+            entry["end_page"] = c.get("end_page")
+        entries.append(entry)
+    return entries
+
+
+def write_toc_json(book_dir: str, chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    toc = build_toc_entries(chunks)
+    with open(os.path.join(book_dir, "toc.json"), "w", encoding="utf-8") as f:
+        json.dump(toc, f, ensure_ascii=False, indent=1)
+    return toc
+
+
+def load_toc(books_dir: str, book_id: str) -> list[dict[str, Any]]:
+    try:
+        book_dir = resolve_book_dir(books_dir, book_id)
+    except InvalidBookId:
+        return []
+    path = os.path.join(book_dir, "toc.json")
+    if os.path.isfile(path):
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    return build_toc_entries(load_chunks(books_dir, book_id))
 
 
 def update_meta_fields(books_dir: str, book_id: str, fields: dict[str, Any]) -> Optional[dict[str, Any]]:
@@ -425,6 +655,114 @@ def reindex_book(books_dir: str, book_id: str) -> dict[str, Any]:
         book_id,
         meta.get("title") or book_id,
         meta.get("book_type") or BOOK_TYPE_NOVEL,
+        chunks,
+    )
+    if count > 0 and not err:
+        return update_meta_fields(
+            books_dir,
+            book_id,
+            {"rag_status": "ok", "rag_chunks": count, "rag_error": ""},
+        ) or meta
+    return update_meta_fields(
+        books_dir,
+        book_id,
+        {
+            "rag_status": "failed",
+            "rag_chunks": 0,
+            "rag_error": err or "index returned 0 points",
+        },
+    ) or meta
+
+
+def _original_file_path(book_dir: str) -> Optional[str]:
+    if not os.path.isdir(book_dir):
+        return None
+    for name in sorted(os.listdir(book_dir)):
+        if name.lower().startswith("original.") and os.path.isfile(os.path.join(book_dir, name)):
+            return os.path.join(book_dir, name)
+    return None
+
+
+def rebuild_magazine_from_original(
+    books_dir: str,
+    book_id: str,
+    *,
+    reindex_rag: bool = True,
+) -> dict[str, Any]:
+    """
+    Re-extract + re-chunk a magazine from original.* , clear analysis cache.
+    Novels are rejected. Returns updated meta.
+    """
+    if not is_valid_book_id(book_id):
+        raise InvalidBookId(f"Invalid book_id: {book_id!r}")
+    meta = load_meta(books_dir, book_id)
+    if not meta:
+        raise FileNotFoundError(f"Book not found: {book_id}")
+    book_type = (meta.get("book_type") or "").strip().lower()
+    if book_type != BOOK_TYPE_MAGAZINE:
+        raise ValueError("rebuild_magazine_from_original only accepts magazine books")
+
+    book_dir = resolve_book_dir(books_dir, book_id)
+    src = _original_file_path(book_dir)
+    if not src:
+        raise FileNotFoundError(f"No original.* file for magazine: {book_id}")
+
+    extracted = extract_book(src)
+    chunks = build_chunks(extracted, BOOK_TYPE_MAGAZINE)
+    if not chunks:
+        return update_meta_fields(
+            books_dir,
+            book_id,
+            {
+                "status": "error",
+                "error": "No text extracted on magazine rebuild",
+                "chunk_count": 0,
+                "rag_status": "skipped",
+            },
+        ) or meta
+
+    for i, c in enumerate(chunks):
+        c["chunk_index"] = i
+    with open(os.path.join(book_dir, "chunks.json"), "w", encoding="utf-8") as f:
+        json.dump(chunks, f, ensure_ascii=False, indent=1)
+    write_toc_json(book_dir, chunks)
+
+    from intensive_reading.analysis_cache import clear_book_analyses
+
+    cleared = clear_book_analyses(books_dir, book_id)
+    readable = next_readable_index(chunks, start=0)
+    fields: dict[str, Any] = {
+        "chunk_count": len(chunks),
+        "first_readable_index": readable,
+        "status": "ready" if readable is not None else "no_readable_content",
+        "error": "",
+    }
+    if readable is None:
+        fields["rag_status"] = "skipped"
+    meta = update_meta_fields(books_dir, book_id, fields) or meta
+    meta = dict(meta)
+    meta["analyses_cleared"] = cleared
+
+    if readable is None:
+        return meta
+
+    if not reindex_rag:
+        stale = update_meta_fields(
+            books_dir,
+            book_id,
+            {
+                "rag_status": "stale",
+                "rag_error": "chunks rebuilt; RAG reindex skipped",
+            },
+        ) or meta
+        stale = dict(stale)
+        stale["analyses_cleared"] = cleared
+        return stale
+
+    count, err = index_chunks_to_rag(
+        book_id,
+        meta.get("title") or book_id,
+        BOOK_TYPE_MAGAZINE,
         chunks,
     )
     if count > 0 and not err:

@@ -1281,16 +1281,31 @@ def api_stock_national_team():
     try:
         from china_market_data import (national_team_monitor, national_team_trend,
                                        national_team_period_stats, national_team_backfill_history,
-                                       national_team_fund_signals)
+                                       national_team_fund_signals,
+                                       national_team_intraday_shares)
+        from national_team_intraday import national_team_intraday_signal
         force = request.args.get("force", "1").lower() not in ("0", "false", "no")
         snapshot = national_team_monitor(force_refresh=force)
         backfill = national_team_backfill_history(days=90)
         trend = national_team_trend()
         period_stats = national_team_period_stats()
         fund_signals = national_team_fund_signals(force_refresh=force)
+        intraday = None
+        try:
+            intraday = national_team_intraday_signal()
+        except Exception as ie:
+            traceback.print_exc()
+            intraday = {"error": str(ie)}
+        intraday_shares = None
+        try:
+            intraday_shares = national_team_intraday_shares(force_refresh=force)
+        except Exception as ie:
+            traceback.print_exc()
+            intraday_shares = {"error": str(ie), "items": [], "anomalies": []}
         return jsonify({"snapshot": snapshot, "trend": trend,
                         "period_stats": period_stats, "backfill": backfill,
-                        "fund_signals": fund_signals})
+                        "fund_signals": fund_signals, "intraday": intraday,
+                        "intraday_shares": intraday_shares})
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500

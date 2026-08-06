@@ -1,15 +1,28 @@
 # Stock 模块详细文档索引
 
-**生成日期**: 2026-07-01
-**文档数量**: 25 个模块文档
-**文档语言**: 中文
-**目的**: 为每个 stock 功能模块提供详细的技术实现与金融理论文档，便于学习和后续调整
+**生成日期**: 2026-07-01  
+**最后更新**: 2026-08-05  
+**文档语言**: 中文  
+**目的**: 为每个 stock 功能模块提供详细的技术实现与金融理论文档；并提供 DeepSeek 策略小白专文，便于学习和后续调整
+
+---
+
+## 策略说明（小白可读 · DeepSeek）
+
+面向非专家：讲清「金融逻辑 + DeepSeek 看什么/怎么判」。入口导览见 [`docs/guides/stock-strategy-guide.md`](../guides/stock-strategy-guide.md)。
+
+| 网页功能 | 策略专文 |
+|---|---|
+| A股分析 & AI预测 | [strategy-ashare-analysis-deepseek.md](./strategy-ashare-analysis-deepseek.md) |
+| AI 股票推荐（左侧+右侧 · 共享数据） | [strategy-unified-left-right-deepseek.md](./strategy-unified-left-right-deepseek.md) |
+| AI 股票推荐(长期) | [strategy-long-term-deepseek.md](./strategy-long-term-deepseek.md) |
+| AI 午盘极速隔夜套利 (T+1) | [strategy-midday-t1-deepseek.md](./strategy-midday-t1-deepseek.md) |
 
 ---
 
 ## 文档结构说明
 
-每个模块文档包含以下统一章节：
+每个**模块技术文档**包含以下统一章节：
 
 1. **模块概述** — 核心职责、系统定位、依赖关系
 2. **金融理论基础** — 涉及的金融/投资理论、A股特殊适用性
@@ -18,6 +31,8 @@
 5. **配置项与可调参数** — 参数说明、默认值、调优建议
 6. **使用示例与工作流** — 调用方式、模块协作
 7. **已知限制与改进方向** — 局限性、优化方向
+
+策略专文（`strategy-*-deepseek.md`）使用另一套小白模板（比喻 → 金融逻辑 → 漏斗 → DeepSeek 角色 → 行情适配 → 报告解读 → 纪律 → 四套对照）。
 
 ---
 
@@ -128,7 +143,7 @@ config.py ───────────────────────�
 
 ## 相关文档
 
-- [`docs/guides/stock-strategy-guide.md`](../guides/stock-strategy-guide.md) — 小白向左右侧交易原理与报告解读
+- [`docs/guides/stock-strategy-guide.md`](../guides/stock-strategy-guide.md) — 股票策略**入口导览**（细节见上方四篇 `strategy-*-deepseek.md`）
 - [`docs/guides/stock-new-strategy-guide.md`](../guides/stock-new-strategy-guide.md) — 新增策略插件接口规范与模板
 - [`docs/guides/stock-usage-guide.md`](../guides/stock-usage-guide.md) — 股票系统实用操作指南
 - [`docs/implementation/stock/`](../implementation/stock/) — 按功能分组的实现文档（英文）

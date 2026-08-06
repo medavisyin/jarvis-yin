@@ -562,25 +562,9 @@ def _layer3_llm_rank(candidates: list[dict]) -> list[dict]:
 def _layer3_deepseek_judge(stocks: list[dict]) -> list[dict]:
     """Use DeepSeek to make high-quality buy/no-buy decisions with rich data."""
     from config import call_deepseek
+    from llm_reasoning import build_left_layer3_system_prompt
 
-    system_prompt = (
-        "你是一位顶级A股量化分析师，专注于进行短期（2周到2、3个月内持有且预期盈利10%以上）的选股与买入判断。\n\n"
-        "判断标准（必须全部考量）：\n"
-        "1. 聪明钱信号：资金持续流入但股价未大涨=主力吸筹期（最佳买点）\n"
-        "2. 追高惩罚：连续大涨、接近涨停板不追买（A股T+1，买入后当日无法卖出）\n"
-        "3. 估值安全边际：PE在行业合理区间，PB不过高\n"
-        "4. 技术面确认：不在超买区（RSI<70），有支撑位保护\n"
-        "5. 基本面底线：盈利能力和财务健康至少中等\n"
-        "6. 资金-价格背离：资金进但价格不涨 = 吸筹（好），资金出但价格涨 = 出货（危险）\n"
-        "7. 短期持有与盈利预期：评估该股在 2周到2、3个月 内，是否有足够强劲的行业/板块/政策催化剂或量价资金支撑，以较高概率实现 10%以上 的涨幅。\n\n"
-        "在启用 DeepSeek 的情况下，请展现出顶级量化分析深度：\n"
-        "- 结合主力筹码特征、日K线量价配合、背离度以及智能技术特征，深度探讨其短期的爆发潜力与安全边际。\n"
-        "- 提供多达 3-5 条的极度详尽买入原因，并给出清晰、可执行的仓位比例、止损价与目标盈利路径操作策略，切忌笼统空话。\n\n"
-        "如果不确定，或者评估在 2周到3个月 内盈利 10% 以上的置信度不高，或者风险 > 收益，必须判定'不买入'。宁可错过，不可追高。\n\n"
-        "输出要求：只输出一个JSON对象，格式如下（不要输出任何其他文字）：\n"
-        '{"verdict":"买入","score":75,"reason":"核心理由3-5条（必须包含对2周到2、3个月内盈利10%以上潜力的深度剖析和核心逻辑论证）","risk":"主要风险","buy_low":9.50,"buy_high":10.00,"strategy":"建议仓位以及针对2周到3个月持有周期的具体买卖/持有操作路径与止损点"}\n'
-        "verdict 只能是 \"买入\" 或 \"不买入\"。score 0-100。buy_low/buy_high 是建议买入价区间。"
-    )
+    system_prompt = build_left_layer3_system_prompt()
 
     evaluated = []
     for stock in stocks:
@@ -744,7 +728,10 @@ buy_low 和 buy_high 必须是数字（建议买入价区间，参考当前价 �
 
 def _layer3_local_judge(stocks: list[dict]) -> list[dict]:
     """Use local Ollama LLM for buy/no-buy judgment (fallback or for remaining stocks)."""
+    from llm_reasoning import build_left_layer3_system_prompt
+
     model = MODEL_USAGE.get("prediction_reasoning", "qwen3.5:4b")
+    system_prompt = build_left_layer3_system_prompt()
     evaluated = []
 
     for stock in stocks:
@@ -758,12 +745,7 @@ def _layer3_local_judge(stocks: list[dict]) -> list[dict]:
                 json={
                     "model": model,
                     "messages": [
-                        {"role": "system", "content": (
-                            "你是专业A股分析师。你的任务是判断这只股票**现在是否值得买入**。"
-                            "你必须非常严格：只有估值合理、基本面良好、技术面未严重超买的股票才推荐买入。"
-                            "如果不确定或风险大于收益，必须判定为'不买入'。"
-                            "只输出JSON，不要任何其他文字。"
-                        )},
+                        {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt},
                     ],
                     "stream": False,
@@ -829,15 +811,15 @@ def _build_scoring_prompt(stock: dict) -> str:
     else:
         ff_text = "  (无资金流向数据)"
 
-    return f"""判断这只A股股票**是否符合短期（2周到2、3个月内持有且预期盈利10%以上）买入要求**。
+    return f"""判断这只A股股票**现在是否值得买入**（与「A股分析&AI预测」同一决策尺子）。
 
-核心原则(A股特色):
-1. 持有期与预期：目标是在短期 2周到2、3个月 内，大概率能实现 10% 以上 的盈利空间。
-2. 跟随"聪明钱"吸筹：资金持续流入但股价未大涨=主力吸筹(最佳信号)
-3. 追高是最大敌人：连续大涨、涨停板后不追买(A股T+1,买入后当日无法卖出)
-4. 估值合理+基本面良好是安全底线
-5. A股T+1风险：买入即锁仓一天,所以不能追高,要有足够安全边际
-6. 如果不确定或短期盈利10%的概率不高或风险大于收益,必须判定"不买入"
+核心原则:
+1. 多维度交叉验证（技术×资金×基本面×情绪）；主情景约**1周/2周**。
+2. 仅当按该尺子，**空仓者现在适合建仓或分批建仓**时才可判"买入"；否则"不买入"。
+3. 跟随"聪明钱"吸筹：资金持续流入但股价未大涨=主力吸筹(最佳信号之一)
+4. 追高是最大敌人：连续大涨、涨停板后不追买(A股T+1,买入后当日无法卖出)
+5. 估值合理+基本面良好是安全底线；资金出货期或关键矛盾过大 → 不买入
+6. 如果不确定、空仓宜观望/等回调、或风险大于收益，必须判定"不买入"
 
 数据:
 - 股票: {stock['name']} ({stock['symbol']})
@@ -859,9 +841,9 @@ def _build_scoring_prompt(stock: dict) -> str:
 {signals_text}
 
 要求: 直接输出一个JSON对象，不要输出任何其他文字。
-verdict 字段必须是 "买入" 或 "不买入"。只有你确信值得买入且2周至3个月内有10%+盈利潜力时才填"买入"。
+verdict 字段必须是 "买入" 或 "不买入"。只有空仓者现在适合建仓时才填"买入"。
 格式(buy_low和buy_high是数字):
-{{"verdict":"买入","score":75,"reason":"资金持续流入且主力明显吸筹，回调充分，预期2周至2个月内有10%以上盈利潜力","risk":"行业竞争加剧","buy_low":{price_f * 0.95:.2f},"buy_high":{price_f * 1.0:.2f}}}
+{{"verdict":"买入","score":75,"reason":"交叉验证：资金吸筹与技术未超买共振，约1～2周主情景偏多，空仓可分批建仓","risk":"行业竞争加剧","buy_low":{price_f * 0.95:.2f},"buy_high":{price_f * 1.0:.2f}}}
 
 你的回复(只输出JSON):"""
 
@@ -1328,8 +1310,8 @@ def _generate_report(top_picks: list[dict], scan_meta: dict) -> str:
         f"# AI股票推荐报告(短期) — {date_str}",
         "",
         f"**扫描时间**: {scan_meta.get('started_at', 'N/A')}",
-        "**目标周期**: 短期 (2周到2、3个月内持有)",
-        "**盈利预期**: 10% 以上",
+        "**目标周期**: 约1～2周主情景（与深度分析同一尺子）",
+        "**盈利预期**: 以交叉验证与空仓可建仓为准（不再默认要求10%+）",
         f"**全市场股票数**: {scan_meta.get('market_total', 'N/A')}",
         f"**Layer1候选**: {scan_meta.get('layer1_count', 'N/A')}",
         f"**Layer2分析**: {scan_meta.get('layer2_count', 'N/A')}",

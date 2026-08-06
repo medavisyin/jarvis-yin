@@ -393,12 +393,10 @@ def _generate_knowledge_audio(job_id: str, item_type: str,
         _audio_jobs[job_id]["status"] = "generating_script"
 
         if language == "en":
-            voice = TTS_VOICE_EN
             lang_instruction = "Write in conversational English."
             section_rag = "FROM KNOWLEDGE BASE"
             section_web = "LATEST FROM THE WEB"
         else:
-            voice = TTS_VOICE_ZH
             lang_instruction = "用中文写播客旁白。技术术语保留英文。Write the narration in Chinese (中文)."
             section_rag = "知识库内容"
             section_web = "最新网上资讯"
@@ -513,7 +511,8 @@ Knowledge base content:
                         return
                     except Exception:
                         await asyncio.sleep(1)
-                comm = edge_tts.Communicate(chunk_text, voice, rate="-5%", pitch="+0Hz")
+                # Last resort: fixed dialogue host (never dialect / en-IN defaults)
+                comm = edge_tts.Communicate(chunk_text, ka_voices["host"], rate="-5%", pitch="+0Hz")
                 await comm.save(chunk_path)
 
             for turn_idx, (role, text) in enumerate(turns):
@@ -1047,8 +1046,10 @@ def _generate_segmented_narrations(
         {"name": "<source or category name>", "content": "<items text>"}
 
     Returns a list of narration strings (one per segment, in order).
-    Single narrator, factual reporting only — no dialogue, no commentary.
+    Finance includes a short market-impact sentence per item; AI stays facts-only.
     """
+    from narration_prompts import segmented_prompts_with_content
+
     total = len(segments)
     narrations: list[str] = []
     is_en = lang == "en"
@@ -1059,68 +1060,14 @@ def _generate_segmented_narrations(
         min_chars = max(200, len(seg_content) // 3)
         max_chars = max(500, len(seg_content) // 2)
 
-        if is_en:
-            if content_type in ("world", "finance"):
-                topic = "finance/markets" if content_type == "finance" else "world"
-                system_prompt = (
-                    f"You are a professional {topic} news anchor reading a briefing.\n"
-                    "Focus on market impact: policy, rates, tariffs, equities, corporate events.\n"
-                    "Cover US, Asia-Pacific, and China when present.\n"
-                    "Single narrator, no dialogue, no role-play. State the facts in clear, concise sentences.\n"
-                    "Write entirely in English.\n"
-                    "No personal commentary, analysis, or predictions. No markdown.\n"
-                    "No self-introduction or opening remarks — read the news content directly."
-                )
-                user_prompt = (
-                    f"Read the news in the \"{seg_name}\" section (about {min_chars}-{max_chars} words).\n"
-                    f"For each item: in 1-2 sentences state what happened, who is involved, and key figures.\n"
-                    f"Do not add commentary or analysis. Just report the facts.\n\n"
-                    f"News material:\n\n{seg_content}"
-                )
-            else:
-                system_prompt = (
-                    "You are a professional AI-tech news anchor reading an AI industry briefing.\n"
-                    "Single narrator, no dialogue, no role-play. State the facts in clear, concise sentences.\n"
-                    "Write entirely in English.\n"
-                    "No personal commentary, analysis, or predictions. No markdown.\n"
-                    "No self-introduction or opening remarks — read the news content directly."
-                )
-                user_prompt = (
-                    f"Read the AI news in \"{seg_name}\" (about {min_chars}-{max_chars} words).\n"
-                    f"For each item: in 1-2 sentences state what it is and the key facts and figures.\n"
-                    f"Do not add commentary or analysis. Just report the facts.\n\n"
-                    f"News items:\n\n{seg_content}"
-                )
-        else:
-            if content_type in ("world", "finance"):
-                system_prompt = (
-                    "你是一位专业的金融新闻播报员，正在播报对股市有影响的财经简报。\n"
-                    "覆盖美国、亚太、中国市场相关政策、央行、关税、行情与公司要闻。\n"
-                    "单人播报，不要对话，不要分角色。用简洁清晰的句子陈述事实。\n"
-                    "全部用中文，只有人名、公司名和专有名词保留英文。\n"
-                    "不要发表个人评论、分析或预测。不要用markdown。\n"
-                    "不要自我介绍，不要开场白，直接播报新闻内容。"
-                )
-                user_prompt = (
-                    f"播报以下「{seg_name}」板块的金融新闻（约{min_chars}-{max_chars}字）。\n"
-                    f"对每条新闻：用1-2句话说明发生了什么、涉及谁、关键数据。\n"
-                    f"不要添加评论或分析。直接报道事实。\n\n"
-                    f"新闻素材：\n\n{seg_content}"
-                )
-            else:
-                system_prompt = (
-                    "你是一位专业的AI科技新闻播报员，正在播报AI行业简报。\n"
-                    "单人播报，不要对话，不要分角色。用简洁清晰的句子陈述事实。\n"
-                    "全部用中文，专有名词保留英文。\n"
-                    "不要发表个人评论、分析或预测。不要用markdown。\n"
-                    "不要自我介绍，不要开场白，直接播报新闻内容。"
-                )
-                user_prompt = (
-                    f"播报以下「{seg_name}」的AI新闻（约{min_chars}-{max_chars}字）。\n"
-                    f"对每条新闻：用1-2句话说明它是什么、关键事实和数据。\n"
-                    f"不要添加评论或分析。直接报道事实。\n\n"
-                    f"新闻条目：\n\n{seg_content}"
-                )
+        system_prompt, user_prompt = segmented_prompts_with_content(
+            content_type=content_type,
+            lang=lang,
+            seg_name=seg_name,
+            min_chars=min_chars,
+            max_chars=max_chars,
+            seg_content=seg_content,
+        )
 
         _log.info("Generating narration segment %d/%d: %s (%d chars input, lang=%s)",
                   idx + 1, total, seg_name, len(seg_content), "en" if is_en else "zh")
@@ -1191,32 +1138,26 @@ def _enrich_vocabulary(dialogue: str) -> str:
     return dialogue
 
 
-TTS_VOICE_ZH = "zh-CN-shaanxi-XiaoniNeural"
-TTS_VOICE_EN = "en-IN-PrabhatNeural"
+from tts_voices import (  # noqa: E402
+    DIALOGUE_VOICES as _DIALOGUE_VOICES,
+    resolve_tts_voice,
+    voice_fallback_chain as _voice_fallback_chain,
+)
 
-_TTS_VOICE_FALLBACKS_ZH = [TTS_VOICE_ZH, "zh-CN-YunjianNeural", "zh-CN-XiaoxiaoNeural"]
-# English fallbacks stay male so a single-voice male briefing never degrades to a female voice.
-# Neerja (female) is still used as the *primary* dialogue guest via _DIALOGUE_VOICES; on failure it
-# falls back through these male voices, which is acceptable for a best-effort recovery.
-_TTS_VOICE_FALLBACKS_EN = [TTS_VOICE_EN, "en-US-AndrewNeural", "en-US-GuyNeural"]
-_TTS_VOICE_FALLBACKS = _TTS_VOICE_FALLBACKS_ZH  # backward-compat alias
-
-_DIALOGUE_VOICES = {
-    "zh": {"host": TTS_VOICE_ZH, "guest": "zh-CN-XiaoxiaoNeural"},
-    "en": {"host": TTS_VOICE_EN, "guest": "en-IN-NeerjaNeural"},
-}
+# Backward-compat aliases (defaults = female standard voices)
+TTS_VOICE_ZH = resolve_tts_voice("zh", "female")
+TTS_VOICE_EN = resolve_tts_voice("en", "female")
 
 
-def tts_voice_for_lang(lang: str) -> str:
-    """Return the Edge-TTS voice id for a briefing audio language code."""
-    return TTS_VOICE_EN if lang == "en" else TTS_VOICE_ZH
+def tts_voice_for_lang(lang: str, gender: str | None = None) -> str:
+    """Edge voice for single-narrator briefing; gender from Global Settings when provided."""
+    return resolve_tts_voice(lang, gender)
 
 
-def _voice_fallback_chain(voice: str) -> list[str]:
-    chain = [voice]
-    pool = _TTS_VOICE_FALLBACKS_EN if voice.startswith("en-") else _TTS_VOICE_FALLBACKS_ZH
-    chain.extend(v for v in pool if v != voice)
-    return chain
+def tts_voice_from_settings(lang: str, settings: dict | None) -> str:
+    settings = settings or {}
+    key = "audio_voice_en" if (lang or "").lower().startswith("en") else "audio_voice_zh"
+    return resolve_tts_voice(lang, settings.get(key))
 
 
 _HOST_TAGS = {"[主播]", "[Host]"}

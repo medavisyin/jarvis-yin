@@ -6,8 +6,9 @@ reasoning via tool calling, analyzes images, and invokes available skills
 (Jira, commit summaries, briefing search, Confluence) as tools.
 
 Usage:
-  python agent.py [port]
+  python agent.py [port] [--host HOST]
   Opens at http://localhost:18889 (or custom port)
+  LAN access: set JARVIS_HOST=0.0.0.0 or pass --host 0.0.0.0
 
 Dependencies: pip install ollama qdrant-client sentence-transformers flask pypdf
 """
@@ -1146,6 +1147,8 @@ _GLOBAL_SETTINGS_DEFAULTS = {
     "audio_lang_ai": "zh",
     "audio_lang_finance": "zh",
     "audio_lang_knowledge": "zh",
+    "audio_voice_zh": "female",
+    "audio_voice_en": "female",
     "deepseek_api_key": "",
 }
 
@@ -1623,11 +1626,13 @@ def index():
 # ===================================================================
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 18889
-    print(f"Starting Jarvis on http://127.0.0.1:{port}", flush=True)
+    from listen_bind import resolve_listen_config
+
+    host, port = resolve_listen_config(sys.argv[1:], os.environ)
+    print(f"Starting Jarvis on http://{host}:{port}", flush=True)
     print(f"Model: {OLLAMA_MODEL} via {OLLAMA_HOST}", flush=True)
     print("Preloading embedding model and Qdrant data...", flush=True)
     _get_embed_model()
     _get_qdrant()
     print("Ready! Open your browser.", flush=True)
-    app.run(host="127.0.0.1", port=port, debug=False, threaded=True)
+    app.run(host=host, port=port, debug=False, threaded=True)

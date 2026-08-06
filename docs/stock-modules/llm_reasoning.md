@@ -1,13 +1,14 @@
 # LLM 综合推理 (llm_reasoning) — 详细功能文档
 
 **文件路径**: `scripts/stock/llm_reasoning.py`  
-**最后更新**: 2026-04-27
+**最后更新**: 2026-08-05
 
 ---
 
 ## 1. 模块概述
 
 - **核心职责**: 为**单只股票**聚合并格式化 **技术分析、基本面、新闻情绪、（可选）XGBoost 方向预测、（DeepSeek 版）近 20 日 OHLCV、资金流向、价格预测、大盘情绪** 等多源信息，由 **Ollama 本地大模型** 或 **DeepSeek API** 生成**中文投资预测报告**（并写入 `STOCK_DATA_DIR/{symbol}/` 下 Markdown）。
+- **共享人设（2026-08）**: `deepseek_shared_persona_rules()` / `build_left_layer3_system_prompt()` / `build_right_layer3_system_prompt()` / `build_verdict_system_prompt()` 供扫描 Layer3 与轻量复核复用，与深度长报告同一决策尺子（交叉验证、约 1～2 周情景、空仓/轻仓/重仓），减轻「推荐买入 vs 深度偏谨慎」的口径冲突。
 - **系统角色**: Stock 子系统的**「综合研判与叙事输出」**层，衔接 `technical_analysis.analyze`、`fundamental_analysis`、`sentiment`、`china_market_data`、`market_sentiment`、以及磁盘上的 `xgb_prediction.json` / `price_prediction.json`。
 - **上下游**  
   - 上游: 各分析模块与已缓存的 ML 输出。  
@@ -52,7 +53,8 @@
 | `_build_prompt(symbol, data)` | 紧凑中文摘要，供**本地** Ollama。 |
 | `generate_prediction(symbol, stream=False)` | `POST {OLLAMA_HOST}/api/chat`，`model=MODEL_USAGE["prediction_reasoning"]`，`temperature=0.6`, `num_predict=1500`；去 ``；写 `prediction-report.md`；`stream=True` 时返回**逐 token 生成器**并过滤 think 段。 |
 | `_build_deepseek_prompt(symbol, data)` | **扩展版**：`daily.csv` 近 20 行表、**全量**指标与信号、**全部新闻条**表格、XGB 细节、`price_prediction.json`、**`stock_fund_flow_signals`**、**`get_market_sentiment()`** 大盘。 |
-| `generate_prediction_deepseek(symbol)` | `call_deepseek(..., max_tokens=8192)`，写 `prediction-report-deepseek.md`，返回 report/reasoning/usage。 |
+| `generate_prediction_deepseek(symbol)` | 经 `deepseek_report_call`（首呼 high/8192；空 content 时重试 medium/16384）；仍空则 error、不写 header-only 文件；成功写 `prediction-report-deepseek.md`，返回 report/reasoning/usage/finish_reason。 |
+| `deepseek_report_call(call_fn, ...)` | **2026-08**：空 content / `finish_reason=length` / 正文 `<500` 字时，重试一次（**thinking disabled** + 16384）；成功则保留首呼 CoT；仍不完整则 error。注：DeepSeek 的 `medium` 会映射成 `high`，不能靠降 effort 省预算。 |
 | `generate_prediction_verdict(stock_dict)` | **2026-07 新增**：**轻量版**深度复核，供 `scanner._run_deepseek_recheck_for_picks` 对 Top5 复用。复用数据装配逻辑但用更轻 system prompt，输出结构化 `{direction: 看多/看空/中性, confidence, reason}`；JSON 解析含 `think` 标签与代码块剥离的兜底。看空 verdict 用于在左侧一致性修复中否决 Top5。 |
 | `_make_system_prompt` | 本地版**段落结构**要求（方向、信心、1–2 周、风险、操作、价位）。 |
 
@@ -80,7 +82,7 @@
 |----|-------------|------|
 | `MODEL_USAGE["prediction_reasoning"]` | 如 `qwen3.5:4b` | 本地报告模型 |
 | Ollama `options` | `temperature=0.6`, `num_predict=1500`, `num_ctx=4096` | 可调创造性长度 |
-| `call_deepseek` | `max_tokens=8192` | DeepSeek 长报告 |
+| `call_deepseek` / `deepseek_report_call` | 首呼 `max_tokens=8192`；空 content 重试 `16384` + `reasoning_effort=medium` | DeepSeek 长报告（thinking 与正文共享预算） |
 | `stream` | `False` | True 时用于 SSE 接口 |
 
 **调优**: 长报告易超时 — 可降 `num_predict` 或换更快模型；DeepSeek 成本高，适合**重点标的**。
