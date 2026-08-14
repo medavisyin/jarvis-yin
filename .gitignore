@@ -3,6 +3,11 @@ tests/
 tmp/
 logs/
 
+# Local intensive-reading books (PDFs, EPUBs, chunks, analyses)
+# Keep the empty directory in git; do not push book content.
+docs/books/**
+!docs/books/.gitkeep
+
 # Python
 __pycache__/
 *.py[cod]
