@@ -1,7 +1,7 @@
-[Wed 07/29/2026 14:04:00.21] Starting Jarvis... 
-[Wed 07/29/2026 14:04:00.22] BRIEFING_PROXY=socks5://localhost:10808 
-[Wed 07/29/2026 14:04:00.49] Python: C:\Users\rong.yin.MEDAVIS\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe 
-[Wed 07/29/2026 14:04:00.49] Starting search_ui.py 
-[Wed 07/29/2026 14:04:02.19] Starting agent.py 
-[Wed 07/29/2026 14:04:04.19] Starting bot_telegram.py 
-[Wed 07/29/2026 14:04:04.31] Done 
+[Fri 08/14/2026 16:34:38.57] Starting Jarvis... 
+[Fri 08/14/2026 16:34:38.57] BRIEFING_PROXY=socks5://localhost:10808 
+[Fri 08/14/2026 16:34:38.98] Python: C:\Users\rong.yin.MEDAVIS\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe 
+[Fri 08/14/2026 16:34:38.98] Starting search_ui.py 
+[Fri 08/14/2026 16:34:41.12] Starting agent.py --host 0.0.0.0 
+[Fri 08/14/2026 16:34:43.19] Starting bot_telegram.py 
+[Fri 08/14/2026 16:34:43.27] Done 

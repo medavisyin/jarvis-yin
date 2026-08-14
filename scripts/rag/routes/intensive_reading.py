@@ -35,6 +35,7 @@ from intensive_reading.ingest import (
     load_toc,
     reindex_book,
     save_book_files,
+    delete_book,
     update_meta_fields,
 )
 from intensive_reading.progress import load_all_progress, load_progress, save_progress
@@ -210,6 +211,29 @@ def api_get_book(book_id: str):
     if (meta.get("book_type") or "").lower() == BOOK_TYPE_MAGAZINE:
         meta["toc"] = load_toc(_books_dir(), book_id)
     return jsonify(meta)
+
+
+@intensive_reading_bp.route("/api/intensive-reading/books/<book_id>", methods=["DELETE"])
+def api_delete_book(book_id: str):
+    """Remove local book files and this book's vectors from RAG."""
+    err = _require_book_id(book_id)
+    if err:
+        return err
+    try:
+        result = delete_book(_books_dir(), book_id)
+    except InvalidBookId:
+        return jsonify({"error": "Invalid book_id"}), 400
+    except FileNotFoundError:
+        return jsonify({"error": "Book not found"}), 404
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+    out = {"ok": True, "book": result}
+    if result.get("rag_error"):
+        out["warning"] = (
+            "Book deleted locally; RAG cleanup failed: " + result["rag_error"]
+        )
+    return jsonify(out)
 
 
 @intensive_reading_bp.route("/api/intensive-reading/books/<book_id>/toc", methods=["GET"])

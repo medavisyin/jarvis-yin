@@ -1,0 +1,15 @@
+{
+  "book_id": "newyorker20260810-8355ce99",
+  "title": "new_yorker.2026.08.10",
+  "book_type": "magazine",
+  "format": "pdf",
+  "filename": "new_yorker.2026.08.10.pdf",
+  "original": "original.pdf",
+  "chunk_count": 59,
+  "first_readable_index": 0,
+  "status": "ready",
+  "rag_status": "ok",
+  "created_at": "2026-08-14T15:00:53.241520",
+  "rag_chunks": 59,
+  "rag_error": ""
+}

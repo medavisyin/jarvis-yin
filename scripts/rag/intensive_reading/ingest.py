@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import re
 import shutil
+import sys
+import time
 import uuid
 from datetime import date, datetime
 from typing import Any, Optional
@@ -19,6 +22,7 @@ from intensive_reading.chunking import (
     is_toc_text,
     is_weak_magazine_title,
     next_readable_index,
+    normalize_magazine_section_title,
 )
 from intensive_reading.extract import extract_book
 
@@ -268,10 +272,9 @@ def _headline_from_text(text: str) -> str:
 def _magazine_chunks_from_sections(sections: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
     Hybrid magazine EPUB chunking:
-    - Wired-like: one spine section ≈ one article → keep section title.
-    - Economist/New Yorker-like: weak/TOC title or oversized multi-article blob
-      → split with chunk_magazine_text inside the section; fall back to
-      word-split + headline-from-body when heading split fails.
+    - One spine section ≈ one article with a strong title → keep that title.
+      Long articles are only word-split into Title (1)/(2) via _split_oversized_chunks.
+    - Weak/TOC spine title (multi-article blob) → split with chunk_magazine_text.
     """
     chunks: list[dict[str, Any]] = []
     for s in sections:
@@ -279,9 +282,10 @@ def _magazine_chunks_from_sections(sections: list[dict[str, Any]]) -> list[dict[
         if not text:
             continue
         title = (s.get("title") or "").strip() or f"Article {len(chunks) + 1}"
+        title = normalize_magazine_section_title(title) or f"Article {len(chunks) + 1}"
         words = len(text.split())
         weak = is_weak_magazine_title(title) or is_toc_text(text)
-        should_split = weak or words > 1200
+        should_split = weak
         if should_split and words >= 60:
             sub = chunk_magazine_text(text)
             if len(sub) >= 2:
@@ -785,6 +789,43 @@ def rebuild_magazine_from_original(
 _EMBED_MAX_CHARS = 2000
 _PAYLOAD_MAX_CHARS = 8000
 
+_RAG_CONFIG_PATH = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "config.py")
+)
+
+
+def _force_rag_config() -> None:
+    """Point sys.modules['config'] at scripts/config.py (has SNAPSHOT_PATH)."""
+    spec = importlib.util.spec_from_file_location("config", _RAG_CONFIG_PATH)
+    rag_cfg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(rag_cfg)
+    sys.modules["config"] = rag_cfg
+
+
+def _import_rag_index_deps():
+    """Import RAG indexer symbols while stock routes may occupy sys.modules['config'].
+
+    @_with_stock_imports swaps config to stock_config (no SNAPSHOT_PATH). Force the
+    RAG config for the import, then restore. Retry covers a poll swapping mid-import.
+    """
+    prev_config = sys.modules.get("config")
+    last_err: Exception | None = None
+    try:
+        for _ in range(5):
+            try:
+                _force_rag_config()
+                from rag_engine import COLLECTION, get_embed_model, get_qdrant
+                from config import SNAPSHOT_PATH
+
+                return COLLECTION, get_embed_model, get_qdrant, SNAPSHOT_PATH
+            except ImportError as e:
+                last_err = e
+                time.sleep(0.3)
+        raise last_err or ImportError("import rag_engine failed")
+    finally:
+        if prev_config is not None:
+            sys.modules["config"] = prev_config
+
 
 def index_chunks_to_rag(
     book_id: str,
@@ -802,8 +843,7 @@ def index_chunks_to_rag(
     if not is_valid_book_id(book_id):
         return 0, "invalid book_id"
     try:
-        from rag_engine import COLLECTION, get_embed_model, get_qdrant
-        from config import SNAPSHOT_PATH
+        COLLECTION, get_embed_model, get_qdrant, SNAPSHOT_PATH = _import_rag_index_deps()
     except Exception as e:
         return 0, f"import rag_engine failed: {e}"
 
@@ -898,3 +938,139 @@ def _merge_snapshot(snapshot_path: str, new_points) -> None:
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False)
     os.replace(tmp, snapshot_path)
+
+
+def _remove_book_from_snapshot(snapshot_path: str, book_id: str) -> int:
+    """Drop intensive_reading points for book_id from .rag-store.json. Returns count removed.
+
+    Missing file is a no-op (return 0). Corrupt or unwritable snapshot raises.
+    """
+    if not snapshot_path or not os.path.exists(snapshot_path):
+        return 0
+    with open(snapshot_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    points = data.get("points") or []
+    kept = []
+    removed = 0
+    for p in points:
+        payload = p.get("payload") or {}
+        if (
+            payload.get("source") == "intensive_reading"
+            and payload.get("book_id") == book_id
+        ):
+            removed += 1
+            continue
+        kept.append(p)
+    if removed == 0:
+        return 0
+    out = {
+        "collection": data.get("collection") or "ai_briefings",
+        "saved_at": datetime.now().isoformat(),
+        "count": len(kept),
+        "points": kept,
+    }
+    os.makedirs(os.path.dirname(snapshot_path) or ".", exist_ok=True)
+    tmp = f"{snapshot_path}.tmp-{os.getpid()}"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False)
+    os.replace(tmp, snapshot_path)
+    return removed
+
+
+def unindex_book_from_rag(book_id: str) -> str:
+    """Remove this book's vectors from Qdrant, in-memory cache, and snapshot.
+
+    Returns empty string on success, or an error message (caller may still
+    delete local files). Qdrant / cache / snapshot are independent so a Qdrant
+    failure still prunes the durable snapshot.
+    """
+    if not is_valid_book_id(book_id):
+        return "invalid book_id"
+    try:
+        COLLECTION, _get_embed, get_qdrant, SNAPSHOT_PATH = _import_rag_index_deps()
+    except Exception as e:
+        return f"import rag_engine failed: {e}"
+
+    errs: list[str] = []
+    try:
+        from qdrant_client.models import FieldCondition, Filter, MatchValue
+
+        client = get_qdrant()
+        delete_filter = Filter(must=[
+            FieldCondition(key="source", match=MatchValue(value="intensive_reading")),
+            FieldCondition(key="book_id", match=MatchValue(value=book_id)),
+        ])
+        old_ids = []
+        offset = None
+        while True:
+            result = client.scroll(
+                collection_name=COLLECTION,
+                scroll_filter=delete_filter,
+                limit=500,
+                offset=offset,
+                with_payload=False,
+            )
+            points, next_offset = result
+            old_ids.extend(p.id for p in points)
+            if next_offset is None:
+                break
+            offset = next_offset
+        if old_ids:
+            client.delete(collection_name=COLLECTION, points_selector=old_ids)
+    except Exception as e:
+        print(f"[intensive_reading] RAG unindex qdrant failed: {e}", flush=True)
+        errs.append(f"qdrant: {e}")
+
+    try:
+        import rag_engine as re_mod
+
+        cache = getattr(re_mod, "_qdrant_points", None)
+        if isinstance(cache, list):
+            re_mod._qdrant_points = [
+                p for p in cache
+                if not (
+                    (p.get("payload") or {}).get("source") == "intensive_reading"
+                    and (p.get("payload") or {}).get("book_id") == book_id
+                )
+            ]
+    except Exception as e:
+        print(f"[intensive_reading] RAG unindex cache failed: {e}", flush=True)
+        errs.append(f"cache: {e}")
+
+    try:
+        _remove_book_from_snapshot(SNAPSHOT_PATH, book_id)
+    except Exception as e:
+        print(f"[intensive_reading] RAG unindex snapshot failed: {e}", flush=True)
+        errs.append(f"snapshot: {e}")
+
+    return "; ".join(errs)
+
+
+def delete_book(books_dir: str, book_id: str) -> dict[str, Any]:
+    """Unindex from RAG, clear progress, then delete docs/books/{book_id}/."""
+    if not is_valid_book_id(book_id):
+        raise InvalidBookId(f"Invalid book_id: {book_id!r}")
+    book_dir = resolve_book_dir(books_dir, book_id)
+    meta = load_meta(books_dir, book_id)
+    if not meta and not os.path.isdir(book_dir):
+        raise FileNotFoundError(f"Book not found: {book_id}")
+
+    rag_err = unindex_book_from_rag(book_id)
+    try:
+        from intensive_reading.progress import clear_progress
+
+        clear_progress(book_id)
+    except Exception:
+        pass
+
+    if os.path.isdir(book_dir):
+        shutil.rmtree(book_dir)
+    elif not meta:
+        raise FileNotFoundError(f"Book not found: {book_id}")
+
+    return {
+        "ok": True,
+        "book_id": book_id,
+        "title": (meta or {}).get("title") or book_id,
+        "rag_error": rag_err or "",
+    }

@@ -5,11 +5,12 @@
   "format": "epub",
   "filename": "wired_2026.07.02.epub",
   "original": "original.epub",
-  "chunk_count": 343,
+  "chunk_count": 346,
   "first_readable_index": 0,
   "status": "ready",
-  "rag_status": "ok",
+  "rag_status": "stale",
   "created_at": "2026-07-29T11:31:44.102736",
   "rag_chunks": 343,
-  "rag_error": ""
+  "rag_error": "chunks rebuilt; RAG reindex skipped",
+  "error": ""
 }

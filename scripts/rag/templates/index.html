@@ -1841,6 +1841,17 @@ async function irRefreshBooks() {
         reBtn.addEventListener('click', function() { irReindexBook(reBtn.dataset.bookId, reBtn); });
         row.appendChild(reBtn);
       }
+      var delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = 'send-btn';
+      delBtn.style.cssText = 'padding:6px 12px;font-size:0.8em;background:#5c2a2a';
+      delBtn.textContent = 'Delete';
+      delBtn.dataset.bookId = b.book_id || '';
+      delBtn.dataset.bookTitle = b.title || b.book_id || '';
+      delBtn.addEventListener('click', function() {
+        irDeleteBook(delBtn.dataset.bookId, delBtn.dataset.bookTitle, delBtn);
+      });
+      row.appendChild(delBtn);
       list.appendChild(row);
     });
   } catch (e) {
@@ -1875,6 +1886,36 @@ async function irUploadBook() {
     showToast('Upload failed: ' + e.message);
   } finally {
     btn.disabled = false;
+  }
+}
+
+async function irDeleteBook(bookId, title, btnEl) {
+  if (!bookId) return;
+  var label = title || bookId;
+  if (!confirm('Delete "' + label + '" (' + bookId + ')?\nThis removes the local files and RAG vectors. It cannot be undone.')) {
+    return;
+  }
+  if (btnEl) btnEl.disabled = true;
+  try {
+    var r = await fetch('/api/intensive-reading/books/' + encodeURIComponent(bookId), {
+      method: 'DELETE'
+    });
+    var d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Delete failed');
+    showToast(d.warning ? d.warning : ('Deleted: ' + label));
+    if (_irState.bookId === bookId) {
+      _irState.analyzing = false;
+      _irState.bookId = null;
+      _irState.toc = [];
+      irCloseArticlesPop();
+      irSyncArticlesUi();
+      irShowLibrary();
+    }
+    await irRefreshBooks();
+  } catch (e) {
+    showToast('Delete failed: ' + e.message);
+    if (btnEl) btnEl.disabled = false;
+    await irRefreshBooks();
   }
 }
 

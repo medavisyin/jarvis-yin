@@ -10,6 +10,8 @@ from xml.etree import ElementTree as ET
 
 from bs4 import BeautifulSoup
 
+from intensive_reading.chunking import normalize_magazine_section_title
+
 # Zip-bomb / DoS guards for EPUB extraction
 _MAX_EPUB_ENTRIES = 800
 _MAX_EPUB_TEXT_ENTRY_BYTES = 2 * 1024 * 1024  # 2 MiB per HTML/XML we actually read
@@ -233,6 +235,7 @@ def extract_epub_sections(filepath: str) -> list[dict[str, Any]]:
             soup = BeautifulSoup(html, "html.parser")
             h = soup.find(["h1", "h2", "h3", "title"])
             title = (h.get_text(strip=True) if h else "") or hint or book_title
+            title = normalize_magazine_section_title(title) or title
             sections.append({"title": title, "text": text, "book_title": book_title})
     return sections
 

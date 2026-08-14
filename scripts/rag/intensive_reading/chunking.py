@@ -116,9 +116,25 @@ _WEAK_MAGAZINE_TITLE = re.compile(
 )
 
 
+_NAV_TRAIL = re.compile(
+    r"(?:\s*\|\s*(?:Next|Previous|Section\s+menu|Main\s+menu|章节菜单|主菜单)\s*)+\s*\|?\s*$",
+    re.I,
+)
+
+
+def normalize_magazine_section_title(title: str) -> str:
+    """Strip trailing EPUB/web nav chrome, e.g. '| Next | Section menu | Main menu |'."""
+    t = re.sub(r"\s+", " ", (title or "").strip())
+    prev = None
+    while prev != t:
+        prev = t
+        t = _NAV_TRAIL.sub("", t).strip().strip("|").strip()
+    return t
+
+
 def is_weak_magazine_title(title: str) -> bool:
     """True when a spine/section title is unlikely to be a real article headline."""
-    t = (title or "").strip()
+    t = normalize_magazine_section_title(title)
     if not t:
         return True
     if len(t) < 6:

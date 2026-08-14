@@ -1,0 +1,550 @@
+[
+ {
+  "title": "Politics",
+  "chunk_index": 0,
+  "start_page": 6,
+  "end_page": 10
+ },
+ {
+  "title": "Business",
+  "chunk_index": 1,
+  "start_page": 11,
+  "end_page": 14
+ },
+ {
+  "title": "Cartoon: America’s trouble getting out of the Iran conflict",
+  "chunk_index": 2,
+  "start_page": 15,
+  "end_page": 16
+ },
+ {
+  "title": "When a president stops pretending that voters count, disaster beckons",
+  "chunk_index": 3,
+  "start_page": 17,
+  "end_page": 19
+ },
+ {
+  "title": "Donald Trump’s Saudi deal risks nuclear proliferation",
+  "chunk_index": 4,
+  "start_page": 20,
+  "end_page": 22
+ },
+ {
+  "title": "Lebanon has a chance to break free of Hizbullah",
+  "chunk_index": 5,
+  "start_page": 23,
+  "end_page": 25
+ },
+ {
+  "title": "Should you be afraid of Elon Musk? (1)",
+  "chunk_index": 6
+ },
+ {
+  "title": "Should you be afraid of Elon Musk? (2)",
+  "chunk_index": 7
+ },
+ {
+  "title": "Prediction markets need better rules",
+  "chunk_index": 8,
+  "start_page": 30,
+  "end_page": 31
+ },
+ {
+  "title": "Britain’s troublingly nostalgic new prime minister",
+  "chunk_index": 9,
+  "start_page": 32,
+  "end_page": 35
+ },
+ {
+  "title": "Could Andrey Melnichenko change Russia?",
+  "chunk_index": 10,
+  "start_page": 36,
+  "end_page": 41
+ },
+ {
+  "title": "Elon Musk is building a form of capitalism that Adam Smith would loathe",
+  "chunk_index": 11,
+  "start_page": 42,
+  "end_page": 46
+ },
+ {
+  "title": "China is gaining troubling military know-how from Russia (1)",
+  "chunk_index": 12
+ },
+ {
+  "title": "China is gaining troubling military know-how from Russia (2)",
+  "chunk_index": 13
+ },
+ {
+  "title": "China is gaining troubling military know-how from Russia (3)",
+  "chunk_index": 14
+ },
+ {
+  "title": "A gold-bar scandal pits Indonesia’s army against its police",
+  "chunk_index": 15,
+  "start_page": 57,
+  "end_page": 58
+ },
+ {
+  "title": "Narendra Modi’s party discovers the limits of propaganda",
+  "chunk_index": 16,
+  "start_page": 59,
+  "end_page": 61
+ },
+ {
+  "title": "The Philippines war on drugs outlasts the Duterte presidency",
+  "chunk_index": 17,
+  "start_page": 62,
+  "end_page": 65
+ },
+ {
+  "title": "Japan’s popular prime minister is burning political capital fast (1)",
+  "chunk_index": 18
+ },
+ {
+  "title": "Japan’s popular prime minister is burning political capital fast (2)",
+  "chunk_index": 19
+ },
+ {
+  "title": "The Chinese economic experiment that failed",
+  "chunk_index": 20,
+  "start_page": 72,
+  "end_page": 76
+ },
+ {
+  "title": "China’s shadowy maritime militia is worryingly active (1)",
+  "chunk_index": 21
+ },
+ {
+  "title": "China’s shadowy maritime militia is worryingly active (2)",
+  "chunk_index": 22
+ },
+ {
+  "title": "Why criticism of the Qing dynasty scares the Communist Party",
+  "chunk_index": 23,
+  "start_page": 82,
+  "end_page": 86
+ },
+ {
+  "title": "Donald Trump is shifting America’s military footprint",
+  "chunk_index": 24,
+  "start_page": 87,
+  "end_page": 90
+ },
+ {
+  "title": "The Iran war is America’s least popular since polls began",
+  "chunk_index": 25,
+  "start_page": 91,
+  "end_page": 94
+ },
+ {
+  "title": "How the American right came to hate empathy",
+  "chunk_index": 26,
+  "start_page": 95,
+  "end_page": 98
+ },
+ {
+  "title": "The tariffs that just won’t die",
+  "chunk_index": 27,
+  "start_page": 99,
+  "end_page": 103
+ },
+ {
+  "title": "The faltering effort to revive copper mining in Michigan",
+  "chunk_index": 28,
+  "start_page": 104,
+  "end_page": 108
+ },
+ {
+  "title": "South America is eradicating hunger",
+  "chunk_index": 29,
+  "start_page": 109,
+  "end_page": 113
+ },
+ {
+  "title": "Brazil’s much-loved payments system has drawn Donald Trump’s ire",
+  "chunk_index": 30,
+  "start_page": 114,
+  "end_page": 117
+ },
+ {
+  "title": "Nicaragua’s President Daniel Ortega scraps elections",
+  "chunk_index": 31,
+  "start_page": 118,
+  "end_page": 120
+ },
+ {
+  "title": "Gulf countries are experts at air-conditioning",
+  "chunk_index": 32,
+  "start_page": 121,
+  "end_page": 123
+ },
+ {
+  "title": "How African motorists are adapting to the fuel crunch",
+  "chunk_index": 33,
+  "start_page": 124,
+  "end_page": 126
+ },
+ {
+  "title": "The return of the African megaproject",
+  "chunk_index": 34,
+  "start_page": 127,
+  "end_page": 130
+ },
+ {
+  "title": "Why young Africans still listen to the radio",
+  "chunk_index": 35,
+  "start_page": 131,
+  "end_page": 132
+ },
+ {
+  "title": "Lebanon’s president wants to enlist Donald Trump in rebuilding the country (1)",
+  "chunk_index": 36
+ },
+ {
+  "title": "Lebanon’s president wants to enlist Donald Trump in rebuilding the country (2)",
+  "chunk_index": 37
+ },
+ {
+  "title": "For Russians, the war feels closer than ever before",
+  "chunk_index": 38,
+  "start_page": 141,
+  "end_page": 143
+ },
+ {
+  "title": "Spain’s team embodies footballing values FIFA has betrayed",
+  "chunk_index": 39,
+  "start_page": 144,
+  "end_page": 145
+ },
+ {
+  "title": "A surrogacy scandal throws Germany’s conservatives into turmoil",
+  "chunk_index": 40,
+  "start_page": 146,
+  "end_page": 148
+ },
+ {
+  "title": "Ukraine’s new military commander aims to fight a more modern war",
+  "chunk_index": 41,
+  "start_page": 149,
+  "end_page": 152
+ },
+ {
+  "title": "Dismissing Europe as a museum is glib. Think of it as a theme park",
+  "chunk_index": 42,
+  "start_page": 153,
+  "end_page": 157
+ },
+ {
+  "title": "Beware of new prime ministers bearing gifts",
+  "chunk_index": 43,
+  "start_page": 158,
+  "end_page": 161
+ },
+ {
+  "title": "Andy Burnham’s first decisions in office reveal a lot about him",
+  "chunk_index": 44,
+  "start_page": 162,
+  "end_page": 163
+ },
+ {
+  "title": "How Britain’s new prime minister can revive Labour",
+  "chunk_index": 45,
+  "start_page": 164,
+  "end_page": 167
+ },
+ {
+  "title": "Tours of British post-war housing are a quiet hit",
+  "chunk_index": 46,
+  "start_page": 168,
+  "end_page": 170
+ },
+ {
+  "title": "Britons are increasingly tussling over inheritance",
+  "chunk_index": 47,
+  "start_page": 171,
+  "end_page": 173
+ },
+ {
+  "title": "Postcard from the Liz Truss festival of ideas",
+  "chunk_index": 48,
+  "start_page": 174,
+  "end_page": 175
+ },
+ {
+  "title": "If Andy Burnham is going to achieve big things, he has to act now",
+  "chunk_index": 49,
+  "start_page": 176,
+  "end_page": 180
+ },
+ {
+  "title": "The Iran war is consuming the Trump presidency",
+  "chunk_index": 50,
+  "start_page": 181,
+  "end_page": 184
+ },
+ {
+  "title": "The geopolitics of air-conditioning (1)",
+  "chunk_index": 51
+ },
+ {
+  "title": "The geopolitics of air-conditioning (2)",
+  "chunk_index": 52
+ },
+ {
+  "title": "The mayor of Scamtown (1)",
+  "chunk_index": 53
+ },
+ {
+  "title": "The mayor of Scamtown (2)",
+  "chunk_index": 54
+ },
+ {
+  "title": "The mayor of Scamtown (3)",
+  "chunk_index": 55
+ },
+ {
+  "title": "The mayor of Scamtown (4)",
+  "chunk_index": 56
+ },
+ {
+  "title": "The mayor of Scamtown (5)",
+  "chunk_index": 57
+ },
+ {
+  "title": "The mayor of Scamtown (6)",
+  "chunk_index": 58
+ },
+ {
+  "title": "Rules-based disorder: why prediction markets struggle if reality is contested (1)",
+  "chunk_index": 59
+ },
+ {
+  "title": "Rules-based disorder: why prediction markets struggle if reality is contested (2)",
+  "chunk_index": 60
+ },
+ {
+  "title": "Rules-based disorder: why prediction markets struggle if reality is contested (3)",
+  "chunk_index": 61
+ },
+ {
+  "title": "Rules-based disorder: why prediction markets struggle if reality is contested (4)",
+  "chunk_index": 62
+ },
+ {
+  "title": "Rules-based disorder: why prediction markets struggle if reality is contested (5)",
+  "chunk_index": 63
+ },
+ {
+  "title": "Rules-based disorder: why prediction markets struggle if reality is contested (6)",
+  "chunk_index": 64
+ },
+ {
+  "title": "Rules-based disorder: why prediction markets struggle if reality is contested (7)",
+  "chunk_index": 65
+ },
+ {
+  "title": "The maverick scientist trying to save coffee from extinction (1)",
+  "chunk_index": 66
+ },
+ {
+  "title": "The maverick scientist trying to save coffee from extinction (2)",
+  "chunk_index": 67
+ },
+ {
+  "title": "The maverick scientist trying to save coffee from extinction (3)",
+  "chunk_index": 68
+ },
+ {
+  "title": "The maverick scientist trying to save coffee from extinction (4)",
+  "chunk_index": 69
+ },
+ {
+  "title": "The maverick scientist trying to save coffee from extinction (5)",
+  "chunk_index": 70
+ },
+ {
+  "title": "The doctors keeping Cuba on life support (1)",
+  "chunk_index": 71
+ },
+ {
+  "title": "The doctors keeping Cuba on life support (2)",
+  "chunk_index": 72
+ },
+ {
+  "title": "The doctors keeping Cuba on life support (3)",
+  "chunk_index": 73
+ },
+ {
+  "title": "The doctors keeping Cuba on life support (4)",
+  "chunk_index": 74
+ },
+ {
+  "title": "The doctors keeping Cuba on life support (5)",
+  "chunk_index": 75
+ },
+ {
+  "title": "Airplane-engine maintenance is now a money spinner",
+  "chunk_index": 76,
+  "start_page": 264,
+  "end_page": 266
+ },
+ {
+  "title": "America’s AI labs are under threat from cheap Chinese rivals",
+  "chunk_index": 77,
+  "start_page": 267,
+  "end_page": 270
+ },
+ {
+  "title": "Investors cool on Europe’s old-style defence firms",
+  "chunk_index": 78,
+  "start_page": 271,
+  "end_page": 273
+ },
+ {
+  "title": "China’s mysterious new billionaires are conquering the world (1)",
+  "chunk_index": 79
+ },
+ {
+  "title": "China’s mysterious new billionaires are conquering the world (2)",
+  "chunk_index": 80
+ },
+ {
+  "title": "Don’t blame supermarkets for your expensive groceries",
+  "chunk_index": 81,
+  "start_page": 279,
+  "end_page": 282
+ },
+ {
+  "title": "Elon Musk’s vision of the future (1)",
+  "chunk_index": 82
+ },
+ {
+  "title": "Elon Musk’s vision of the future (2)",
+  "chunk_index": 83
+ },
+ {
+  "title": "Capitalism’s status hierarchy is being upturned",
+  "chunk_index": 84,
+  "start_page": 287,
+  "end_page": 291
+ },
+ {
+  "title": "Can prediction markets win over Wall Street?",
+  "chunk_index": 85,
+  "start_page": 292,
+  "end_page": 295
+ },
+ {
+  "title": "The rise of the deserving rich (1)",
+  "chunk_index": 86
+ },
+ {
+  "title": "The rise of the deserving rich (2)",
+  "chunk_index": 87
+ },
+ {
+  "title": "Can China dominate AI exports, too?",
+  "chunk_index": 88,
+  "start_page": 302,
+  "end_page": 305
+ },
+ {
+  "title": "The stubborn scarcity of female breadwinners",
+  "chunk_index": 89,
+  "start_page": 306,
+  "end_page": 310
+ },
+ {
+  "title": "How investors learned to live with inflation",
+  "chunk_index": 90,
+  "start_page": 311,
+  "end_page": 313
+ },
+ {
+  "title": "The world’s balance-sheet is out of kilter with its economy",
+  "chunk_index": 91,
+  "start_page": 314,
+  "end_page": 316
+ },
+ {
+  "title": "A brief history of Luddism",
+  "chunk_index": 92,
+  "start_page": 317,
+  "end_page": 321
+ },
+ {
+  "title": "Should you microdose GLP-1 drugs for weight loss?",
+  "chunk_index": 93,
+  "start_page": 322,
+  "end_page": 324
+ },
+ {
+  "title": "Electric aviation is taking off",
+  "chunk_index": 94,
+  "start_page": 325,
+  "end_page": 328
+ },
+ {
+  "title": "The surprising benefits of red light",
+  "chunk_index": 95,
+  "start_page": 329,
+  "end_page": 332
+ },
+ {
+  "title": "Why the OpenAI escape is the most worrying AI mishap yet",
+  "chunk_index": 96,
+  "start_page": 333,
+  "end_page": 337
+ },
+ {
+  "title": "How the Cotswolds became a popular lifestyle brand",
+  "chunk_index": 97,
+  "start_page": 338,
+  "end_page": 342
+ },
+ {
+  "title": "Why Gen Z hikers keep getting lost up mountains",
+  "chunk_index": 98,
+  "start_page": 343,
+  "end_page": 344
+ },
+ {
+  "title": "What did the Romans ever do for Christianity?",
+  "chunk_index": 99,
+  "start_page": 345,
+  "end_page": 347
+ },
+ {
+  "title": "Why traditional career advice is failing Gen Z",
+  "chunk_index": 100,
+  "start_page": 348,
+  "end_page": 351
+ },
+ {
+  "title": "Colson Whitehead concludes his three-part love letter to New York",
+  "chunk_index": 101,
+  "start_page": 352,
+  "end_page": 355
+ },
+ {
+  "title": "The Economist’s cover designer, Graeme James, has died, aged 65",
+  "chunk_index": 102,
+  "start_page": 356,
+  "end_page": 360
+ },
+ {
+  "title": "Economic data, commodities and markets",
+  "chunk_index": 103,
+  "start_page": 361,
+  "end_page": 363
+ },
+ {
+  "title": "Wally Funk was told women couldn’t be astronauts (1)",
+  "chunk_index": 104
+ },
+ {
+  "title": "Wally Funk was told women couldn’t be astronauts (2)",
+  "chunk_index": 105
+ }
+]

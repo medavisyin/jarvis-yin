@@ -92,6 +92,24 @@ def load_progress(book_id: str) -> Optional[dict[str, Any]]:
         return None
 
 
+def clear_progress(book_id: str) -> int:
+    """Delete conversation-memory progress facts for this book. Returns count removed."""
+    try:
+        from memory.store import MemoryType, delete_memory, get_all_memories
+    except Exception:
+        return 0
+    n = 0
+    try:
+        for entry in get_all_memories(memory_type=MemoryType.FACT.value):
+            meta = entry.metadata or {}
+            if meta.get("kind") == PROGRESS_KIND and meta.get("book_id") == book_id:
+                if delete_memory(entry.id):
+                    n += 1
+    except Exception:
+        return n
+    return n
+
+
 def load_all_progress() -> dict[str, dict[str, Any]]:
     """Map book_id -> progress dict."""
     out: dict[str, dict[str, Any]] = {}

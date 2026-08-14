@@ -1,0 +1,15 @@
+{
+  "book_id": "theeconomist20260815-f16c6660",
+  "title": "TheEconomist.2026.08.15",
+  "book_type": "magazine",
+  "format": "pdf",
+  "filename": "TheEconomist.2026.08.15.pdf",
+  "original": "original.pdf",
+  "chunk_count": 86,
+  "first_readable_index": 0,
+  "status": "ready",
+  "rag_status": "ok",
+  "created_at": "2026-08-14T14:49:29.682242",
+  "rag_chunks": 86,
+  "rag_error": ""
+}
