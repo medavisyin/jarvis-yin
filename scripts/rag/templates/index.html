@@ -222,7 +222,17 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 #irArticlesPop .ir-toc-item:hover{background:#252836}
 #irArticlesPop .ir-toc-item.active{background:#2a2f4a;color:#f0f2fa;font-weight:600}
 #irArticlesPop .ir-toc-empty{padding:10px 12px;font-size:0.8em;color:#8b8fa4}
-#irAnalysis{padding:16px 18px!important;line-height:1.65!important}
+#irAnalysis{padding:16px 18px!important;line-height:1.65!important;white-space:normal!important}
+#irAnalysis .ir-para{margin:0 0 0.9em;text-indent:0;white-space:pre-wrap;overflow-wrap:break-word}
+#irAnalysis .ir-para:last-child{margin-bottom:0}
+#irSpeakingPane{display:flex;flex-direction:column;gap:10px;min-height:100%}
+#irSpeakingPane textarea{width:100%;box-sizing:border-box;background:#12141c;color:#e8eaf2;
+  border:1px solid #3a3d4a;border-radius:6px;padding:8px 10px;font-size:0.86em;line-height:1.5;
+  font-family:inherit;resize:vertical;min-height:88px}
+#irSpeakingBtns{display:flex;flex-wrap:wrap;gap:6px}
+#irSpeakingBtns button{font-size:0.75em}
+#irSpeakingResult{white-space:pre-wrap;color:#c4c8f0;font-size:0.86em;line-height:1.6}
+#irSpeakingResult .ir-speak-h{color:#8b8fa4;font-size:0.75em;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.04em}
 .modal-panel{background:#161822;border:1px solid #2a2d3a;border-radius:12px;max-width:680px;width:100%;
              max-height:86vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.55)}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #2a2d3a}
@@ -408,6 +418,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" onclick="openUnifiedModal()" title="AI 股票推荐：一次扫描，共享市场数据，输出左侧(短期)+右侧(交易)两份报告">&#129302; AI 推荐</button>
         <button type="button" class="toolbar-btn" onclick="openMiddayModal()" title="AI午盘极速选股 (12:30运行，隔夜T+1套利)">⚡ 午盘推荐</button>
         <button type="button" class="toolbar-btn" onclick="openLongTermModal()" title="AI长期趋势推荐 (新闻+政策+贵金属分析)">&#128302; 长期推荐</button>
+        <button type="button" class="toolbar-btn" onclick="openQualityValueModal()" title="优质低估选股：同业低估 + 基本面排雷 + PB-ROE + DeepSeek 周期终审">&#128176; 优质低估</button>
         <button type="button" class="toolbar-btn" onclick="openPriceTrainModal()" title="明日价格预测训练 (自选股)">&#127919; 价格预测</button>
         <button type="button" class="toolbar-btn" onclick="openNationalTeamModal()" title="国家队ETF份额监控 (汇金/社保等)">&#127961; 国家队</button>
         <button type="button" class="toolbar-btn" onclick="openWeeklyModal()" title="周线选股: 连续3周收涨, 周一买入持有5日 + 策略回测">&#128202; 周线选股</button>
@@ -724,7 +735,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
           <div style="display:flex;flex-direction:column;min-height:0;border:1px solid #2a2d3a;border-radius:8px;overflow:hidden">
             <div style="padding:6px 10px;background:#1e2030;font-size:0.75em;color:#8b8fa4;border-bottom:1px solid #2a2d3a">Analysis (English)</div>
             <div id="irTabBar" style="display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;border-bottom:1px solid #2a2d3a;background:#181a24"></div>
-            <div id="irAnalysis" style="flex:1;overflow-y:auto;padding:16px 18px;font-size:0.88em;line-height:1.65;color:#c4c8f0;white-space:pre-wrap"></div>
+            <div id="irAnalysis" style="flex:1;overflow-y:auto;padding:16px 18px;font-size:0.88em;line-height:1.65;color:#c4c8f0"></div>
             <div style="padding:6px 10px;border-top:1px solid #2a2d3a;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
               <button type="button" class="toolbar-btn" id="irGenerateBtn" onclick="irGenerateActiveTab()" style="font-size:0.78em">Generate</button>
               <button type="button" class="toolbar-btn" id="irContinueBtn" onclick="irContinueAnalyze()" style="font-size:0.78em;display:none">Continue</button>
@@ -1232,6 +1243,42 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   </div>
 </div>
 
+<!-- Quality / undervalued scanner -->
+<div id="qualityValueModal" class="modal-overlay" role="dialog" aria-modal="true">
+  <div class="modal-panel" style="max-width:96vw;max-height:94vh;width:980px;background:#0f1117;border:1px solid #2a2d3e">
+    <div class="modal-head" style="border-bottom:1px solid #2a2d3e">
+      <h2>&#128176; 优质低估选股</h2>
+      <button type="button" class="modal-close" onclick="closeQualityValueModal()" title="Close">&times;</button>
+    </div>
+    <div class="modal-content" style="padding:14px 18px;background:#0f1117">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <button type="button" class="send-btn" id="btnQvStart" onclick="startQvScan()" style="padding:8px 18px;font-size:0.86em">&#128176; 开始扫描</button>
+        <button type="button" class="toolbar-btn" id="btnQvStop" onclick="stopQvScan()" style="font-size:0.78em" disabled>&#9724; 停止</button>
+        <button type="button" class="toolbar-btn" onclick="loadQvHistory()" style="font-size:0.78em">&#128203; 历史记录</button>
+        <button type="button" class="toolbar-btn" id="btnQvPdf" onclick="exportStockPdf('quality_value','qv')" style="font-size:0.78em">&#128196; 导出PDF</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;cursor:pointer;margin-left:8px" title="使用 DeepSeek 做行业周期与价值陷阱终审">
+          <input type="checkbox" id="qvUseDeepseek" style="accent-color:#22c55e">
+          <span>&#128171; DeepSeek</span>
+        </label>
+        <span id="qvStatus" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
+      </div>
+      <div id="qvProgress" style="display:none;margin-bottom:12px">
+        <div style="background:#1a1d2e;border-radius:8px;overflow:hidden;height:24px;border:1px solid #2a2d3e">
+          <div id="qvProgressBar" style="height:100%;background:linear-gradient(90deg,#22c55e,#86efac);transition:width 0.5s;width:0%;display:flex;align-items:center;justify-content:center">
+            <span id="qvProgressText" style="font-size:0.72em;color:#052e16;font-weight:600"></span>
+          </div>
+        </div>
+        <div id="qvPhase" style="font-size:0.76em;color:#8b8fa4;margin-top:4px"></div>
+      </div>
+      <div id="qvResult" style="max-height:62vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:14px;background:#1a1d2e;font-size:0.84em;line-height:1.6;color:#c4c8f0">
+        <p style="color:#6b7280">点击「开始扫描」筛选优质低估 A 股（约 6 个月～2 年）。流程：</p>
+        <p style="color:#6b7280">1. 同业 PE/PB + 股息粗筛（排除创业板 ST）→ 2. 基本面排雷 → 3. PB-ROE 排序 → 4. DeepSeek 周期/陷阱终审，最多 5 只</p>
+        <p style="color:#6b7280;font-size:0.9em;margin-top:8px">不构成投资建议。0 只是宁缺毋滥。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Price Prediction Training Modal -->
 <div id="priceTrainModal" class="modal-overlay" role="dialog" aria-modal="true">
   <div class="modal-panel" style="max-width:96vw;max-height:94vh;width:950px;background:#0f1117;border:1px solid #2a2d3e">
@@ -1586,22 +1633,32 @@ var _IR_MAG_TABS = [
   {id:'vocab',label:'好词好句'},{id:'claim_evidence',label:'论点vs论据'},{id:'stance',label:'立场与偏见'},
   {id:'cultural_cues',label:'文化潜规则'},{id:'structure',label:'行文结构'}
 ];
+var _IR_SPEAKING_TAB = {id:'speaking',label:'口语'};
 var _irState = {
   bookId: null, bookType: 'novel', chunkIndex: 0, total: 0, nextIndex: null, prevIndex: null,
-  analyzing: false, tabPinned: false, activeKind: 'vocab',
-  tabs: _IR_NOVEL_TABS.slice(), analyses: {}, toc: []
+  analyzing: false, speakingBusy: false, tabPinned: false, activeKind: 'vocab',
+  tabs: _IR_NOVEL_TABS.slice(), analyses: {}, speaking: null, toc: [],
+  speakingLoaded: false, speakingDirty: false, chunkLoading: false
 };
 
 function irEmptyAnalysisSlot() {
   return { text: '', offset: 0, part: 1, hasMore: false, genTrunc: false, lastOffset: 0, status: 'idle', error: '' };
 }
 
+function irEmptySpeaking() {
+  return {
+    oral: '', logic: '', cue: '', pressure_attack: '', user_reply: '',
+    pressure_defense: '', phase: 'idle', error: '', active_exercise: ''
+  };
+}
+
 function irTabsForType(bookType) {
-  return (bookType === 'magazine') ? _IR_MAG_TABS.slice() : _IR_NOVEL_TABS.slice();
+  if (bookType === 'magazine') return _IR_MAG_TABS.concat([_IR_SPEAKING_TAB]);
+  return _IR_NOVEL_TABS.slice();
 }
 
 function irBusy() {
-  return !!(!_irState ? false : _irState.analyzing);
+  return !!(!_irState ? false : (_irState.analyzing || _irState.speakingBusy));
 }
 
 function irSetNavDisabled(disabled) {
@@ -1618,6 +1675,9 @@ function irResetAnalyses() {
   });
   _irState.activeKind = (_irState.tabs[0] && _irState.tabs[0].id) || 'vocab';
   _irState.tabPinned = false;
+  _irState.speaking = irEmptySpeaking();
+  _irState.speakingLoaded = false;
+  _irState.speakingDirty = false;
 }
 
 async function irLoadTabs(bookType) {
@@ -1649,7 +1709,11 @@ function irRenderTabs() {
     btn.style.cssText = 'font-size:0.72em;padding:4px 8px;' +
       (active ? 'background:#3b82f6;color:#fff;border-color:#3b82f6;' : 'background:#1e2030;');
     var mark = '';
-    if (slot.status === 'done') mark = ' ✓';
+    if (t.id === 'speaking') {
+      var sp = _irState.speaking || irEmptySpeaking();
+      if (_irState.speakingBusy) mark = ' …';
+      else if (sp.logic || sp.cue || sp.pressure_attack || sp.pressure_defense) mark = ' ✓';
+    } else if (slot.status === 'done') mark = ' ✓';
     else if (slot.status === 'running') mark = ' …';
     else if (slot.status === 'error') mark = ' !';
     btn.textContent = t.label + mark;
@@ -1661,12 +1725,17 @@ function irRenderTabs() {
   irUpdateContinueBtn();
 }
 
-function irSelectTab(kind) {
+async function irSelectTab(kind) {
   if (irBusy()) {
     showToast('Wait for generation to finish');
     return;
   }
   if (!kind || !_irState.analyses[kind]) return;
+  irCaptureSpeakingOral();
+  if (_irState.activeKind === 'speaking' && kind !== 'speaking') {
+    await irPersistSpeaking();
+  }
+  irHideSelectionExplain();
   _irState.activeKind = kind;
   _irState.tabPinned = true;
   irRenderTabs();
@@ -1676,6 +1745,10 @@ function irShowActiveAnalysis() {
   var box = document.getElementById('irAnalysis');
   if (!box) return;
   var kind = _irState.activeKind;
+  if (kind === 'speaking') {
+    irShowSpeakingPane(box);
+    return;
+  }
   var slot = _irState.analyses[kind] || irEmptyAnalysisSlot();
   if (slot.status === 'idle' && !slot.text) {
     box.textContent = 'Click Generate on this tab to analyze (English). Cached results load when you revisit a chunk.';
@@ -1690,14 +1763,262 @@ function irShowActiveAnalysis() {
     return;
   }
   var msg = slot.text || '';
-  if (slot.status === 'running') msg = msg || 'Generating…';
+  if (slot.status === 'running') {
+    box.textContent = msg || 'Generating…';
+    return;
+  }
   if ((slot.hasMore || slot.genTrunc) && slot.status === 'done') {
     msg += '\n\n(Truncated — click Continue for more.)';
   }
   if (slot.status === 'error' && slot.error) {
     msg += (msg ? '\n\n' : '') + 'Error: ' + slot.error;
   }
-  box.textContent = msg;
+  irRenderPlainParas(box, msg);
+}
+
+function irCaptureSpeakingOral() {
+  if (!_irState.speaking) _irState.speaking = irEmptySpeaking();
+  var ta = document.getElementById('irOralDraft');
+  if (ta) _irState.speaking.oral = ta.value || '';
+  var reply = document.getElementById('irPressureReply');
+  if (reply) _irState.speaking.user_reply = reply.value || '';
+}
+
+function irMarkSpeakingDirty() {
+  _irState.speakingDirty = true;
+}
+
+function irSpeakLiveTargetKey(exercise, step) {
+  if (exercise === 'logic') return 'logic';
+  if (exercise === 'cue') return 'cue';
+  return (step === 2) ? 'pressure_defense' : 'pressure_attack';
+}
+
+function irUpdateSpeakLive(text) {
+  var el = document.getElementById('irSpeakLive');
+  if (el) el.textContent = text || '';
+}
+
+function irShowSpeakingPane(box) {
+  if (!box) return;
+  if (!_irState.speaking) _irState.speaking = irEmptySpeaking();
+  var sp = _irState.speaking;
+  var busy = !!_irState.speakingBusy;
+  box.innerHTML = '';
+  var pane = document.createElement('div');
+  pane.id = 'irSpeakingPane';
+
+  var oralLab = document.createElement('div');
+  oralLab.className = 'ir-speak-h';
+  oralLab.textContent = 'Your oral retelling';
+  pane.appendChild(oralLab);
+  var oral = document.createElement('textarea');
+  oral.id = 'irOralDraft';
+  oral.placeholder = 'Type your spoken retelling of this article (English)…';
+  oral.value = sp.oral || '';
+  oral.disabled = busy;
+  oral.addEventListener('input', irMarkSpeakingDirty);
+  oral.addEventListener('blur', function() {
+    irCaptureSpeakingOral();
+    irPersistSpeaking();
+  });
+  pane.appendChild(oral);
+
+  var btns = document.createElement('div');
+  btns.id = 'irSpeakingBtns';
+  function addBtn(label, exercise, step) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'toolbar-btn';
+    b.textContent = label;
+    b.disabled = busy;
+    b.addEventListener('click', function() { irRunSpeaking(exercise, step); });
+    btns.appendChild(b);
+  }
+  addBtn('逻辑显形', 'logic', 1);
+  addBtn('口语提词卡', 'cue', 1);
+  addBtn(sp.phase === 'attacked' ? '生成防御金句' : '压力测试', 'pressure', sp.phase === 'attacked' ? 2 : 1);
+  pane.appendChild(btns);
+
+  if (sp.phase === 'attacked') {
+    var rlab = document.createElement('div');
+    rlab.className = 'ir-speak-h';
+    rlab.textContent = 'Your reply to the attack';
+    pane.appendChild(rlab);
+    var reply = document.createElement('textarea');
+    reply.id = 'irPressureReply';
+    reply.placeholder = 'Reply to the Yes, but… attack, then click 生成防御金句.';
+    reply.value = sp.user_reply || '';
+    reply.disabled = busy;
+    reply.addEventListener('input', irMarkSpeakingDirty);
+    reply.addEventListener('blur', function() {
+      irCaptureSpeakingOral();
+      irPersistSpeaking();
+    });
+    pane.appendChild(reply);
+  }
+
+  var result = document.createElement('div');
+  result.id = 'irSpeakingResult';
+  var liveKey = busy ? (_irState.speakLiveKey || '') : '';
+  var live = document.createElement('div');
+  live.id = 'irSpeakLive';
+  live.style.whiteSpace = 'pre-wrap';
+  if (busy && liveKey) live.textContent = sp[liveKey] || '';
+  result.appendChild(live);
+  function addSection(title, text, key) {
+    if (!text) return;
+    if (busy && key && key === liveKey) return;
+    var h = document.createElement('div');
+    h.className = 'ir-speak-h';
+    h.textContent = title;
+    result.appendChild(h);
+    var p = document.createElement('div');
+    p.textContent = text;
+    result.appendChild(p);
+  }
+  if (sp.error) addSection('Error', sp.error, 'error');
+  addSection('逻辑显形', sp.logic, 'logic');
+  addSection('口语提词卡', sp.cue, 'cue');
+  addSection('Yes, but… 攻击', sp.pressure_attack, 'pressure_attack');
+  addSection('防御话术 / 过渡金句', sp.pressure_defense, 'pressure_defense');
+  if (!busy && !sp.logic && !sp.cue && !sp.pressure_attack && !sp.pressure_defense && !sp.error) {
+    var hint = document.createElement('div');
+    hint.textContent = 'Write a retelling (optional for the first two drills). Then pick a button.';
+    result.appendChild(hint);
+  }
+  pane.appendChild(result);
+  box.appendChild(pane);
+}
+
+async function irPersistSpeaking(opts) {
+  opts = opts || {};
+  if (!opts.skipCapture) irCaptureSpeakingOral();
+  if (!opts.force) {
+    if (!_irState.speakingLoaded) return;
+    if (!_irState.speakingDirty) return;
+  }
+  var bookId = opts.bookId || _irState.bookId;
+  var chunkIndex = (typeof opts.chunkIndex === 'number') ? opts.chunkIndex : _irState.chunkIndex;
+  var payload = opts.speaking || _irState.speaking;
+  if (!bookId || !payload) return;
+  try {
+    var r = await fetch('/api/intensive-reading/books/' + encodeURIComponent(bookId) +
+      '/chunks/' + encodeURIComponent(chunkIndex) + '/analysis', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ speaking: payload, merge: true })
+    });
+    if (!r.ok) {
+      var d = await r.json().catch(function() { return {}; });
+      showToast('Speaking save failed: ' + (d.error || r.status));
+      return;
+    }
+    if (bookId === _irState.bookId && chunkIndex === _irState.chunkIndex) {
+      _irState.speakingDirty = false;
+    }
+  } catch (e) {
+    showToast('Speaking save failed: ' + (e.message || 'network'));
+  }
+}
+
+async function irRunSpeaking(exercise, pressureStep) {
+  if (!_irState.bookId || irBusy()) return;
+  if (_irState.bookType !== 'magazine') {
+    showToast('Speaking practice is for magazines only');
+    return;
+  }
+  irCaptureSpeakingOral();
+  var sp = _irState.speaking || irEmptySpeaking();
+  var step = pressureStep || 1;
+  if (exercise === 'pressure' && !(sp.oral || '').trim()) {
+    showToast('Write your oral retelling first for pressure practice');
+    return;
+  }
+  if (exercise === 'pressure' && step === 2 && !(sp.user_reply || '').trim()) {
+    showToast('Reply to the attack first');
+    return;
+  }
+  _irState.speakingBusy = true;
+  sp.error = '';
+  sp.active_exercise = exercise;
+  var liveTarget = irSpeakLiveTargetKey(exercise, step);
+  _irState.speakLiveKey = liveTarget;
+  irSetNavDisabled(true);
+  irRenderTabs();
+  var liveSnapshot = sp[liveTarget] || '';
+  sp[liveTarget] = '';
+  irUpdateSpeakLive('');
+  var persistOk = false;
+  try {
+    var r = await fetch('/api/intensive-reading/speaking', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        book_id: _irState.bookId,
+        chunk_index: _irState.chunkIndex,
+        exercise: exercise,
+        oral_text: sp.oral || '',
+        pressure_step: step,
+        user_reply: sp.user_reply || '',
+        pressure_attack: sp.pressure_attack || ''
+      })
+    });
+    if (!r.ok) {
+      var err = await r.json().catch(function() { return {}; });
+      throw new Error(err.error || ('HTTP ' + r.status));
+    }
+    var reader = r.body.getReader();
+    var decoder = new TextDecoder();
+    var full = '';
+    var buf = '';
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      buf += decoder.decode(chunk.value, { stream: true });
+      var parts = buf.split('\n');
+      buf = parts.pop() || '';
+      for (var i = 0; i < parts.length; i++) {
+        var line = parts[i].trim();
+        if (!line.startsWith('data:')) continue;
+        var payload = line.slice(5).trim();
+        try {
+          var msg = JSON.parse(payload);
+          if (msg.type === 'token') {
+            full += msg.content || '';
+            sp[liveTarget] = full;
+            irUpdateSpeakLive(full);
+          } else if (msg.type === 'error') {
+            throw new Error(msg.content || 'Speaking failed');
+          } else if (msg.type === 'done' && msg.content) {
+            full = msg.content;
+            sp[liveTarget] = full;
+          }
+        } catch (pe) {
+          if (!(pe instanceof SyntaxError)) throw pe;
+        }
+      }
+    }
+    if (!full.trim()) throw new Error('No speaking output — is Ollama running?');
+    sp[liveTarget] = full;
+    if (exercise === 'pressure' && step === 1) sp.phase = 'attacked';
+    if (exercise === 'pressure' && step === 2) sp.phase = 'done';
+    persistOk = true;
+  } catch (e) {
+    sp.error = e.message || String(e);
+    sp[liveTarget] = liveSnapshot;
+    showToast(sp.error);
+  } finally {
+    _irState.speakingBusy = false;
+    _irState.speakLiveKey = '';
+    irSetNavDisabled(false);
+    irRenderTabs();
+    if (persistOk) {
+      _irState.speakingDirty = true;
+      _irState.speakingLoaded = true;
+      await irPersistSpeaking({ force: true });
+    }
+  }
 }
 
 function openIntensiveReadingModal() {
@@ -1718,10 +2039,20 @@ function irShowReader() {
   pane.style.display = 'flex';
   irSyncArticlesUi();
 }
-function irBackToLibrary() {
+async function irBackToLibrary() {
   if (irBusy()) {
     showToast('Wait for analysis to finish before leaving');
     return;
+  }
+  irCaptureSpeakingOral();
+  if (_irState.speakingLoaded && _irState.speakingDirty && _irState.bookId) {
+    await irPersistSpeaking({
+      bookId: _irState.bookId,
+      chunkIndex: _irState.chunkIndex,
+      speaking: _irState.speaking,
+      force: true,
+      skipCapture: true
+    });
   }
   irCloseArticlesPop();
   _irState.bookId = null;
@@ -1761,10 +2092,10 @@ function irRenderArticlesPop() {
     btn.setAttribute('role', 'option');
     btn.textContent = entry.title || ('Chunk ' + (entry.chunk_index + 1));
     btn.title = btn.textContent;
-    btn.onclick = function(ev) {
+    btn.onclick = async function(ev) {
       ev.stopPropagation();
       irCloseArticlesPop();
-      irLoadChunk(entry.chunk_index);
+      await irLoadChunk(entry.chunk_index);
     };
     pop.appendChild(btn);
   });
@@ -1959,6 +2290,16 @@ async function irOpenBook(bookId) {
     } else if (typeof meta.first_readable_index === 'number') {
       start = meta.first_readable_index;
     }
+    if (_irState.speakingLoaded && _irState.speakingDirty && _irState.bookId) {
+      irCaptureSpeakingOral();
+      await irPersistSpeaking({
+        bookId: _irState.bookId,
+        chunkIndex: _irState.chunkIndex,
+        speaking: _irState.speaking,
+        force: true,
+        skipCapture: true
+      });
+    }
     _irState.bookId = bookId;
     _irState.bookType = (meta.book_type === 'magazine') ? 'magazine' : 'novel';
     _irState.toc = (_irState.bookType === 'magazine' && Array.isArray(meta.toc)) ? meta.toc : [];
@@ -2026,7 +2367,52 @@ function irRenderPassage(raw, opts) {
 }
 
 var _irExplainAbort = null;
-var _irExplainSel = { text: '', context: '', rect: null };
+var _irExplainSel = { text: '', context: '', rect: null, source: 'passage' };
+
+function irRenderPlainParas(el, raw) {
+  if (!el) return;
+  el.innerHTML = '';
+  var text = (raw || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+  if (!text) {
+    el.textContent = '';
+    return;
+  }
+  var paras = text.split(/\n\s*\n/).map(function(p) {
+    return p.replace(/[ \t]+/g, ' ').trim();
+  }).filter(Boolean);
+  if (paras.length === 0) {
+    el.textContent = text;
+    return;
+  }
+  paras.forEach(function(p) {
+    var node = document.createElement('p');
+    node.className = 'ir-para';
+    node.textContent = p;
+    el.appendChild(node);
+  });
+}
+
+function irAnalysisExplainEnabled() {
+  var kind = _irState.activeKind;
+  var slot = (_irState.analyses || {})[kind];
+  if (!slot || slot.status !== 'done') return false;
+  return !!(slot.text || '').trim();
+}
+
+function irSelectionRootFromRange(range) {
+  if (!range) return null;
+  var anc = range.commonAncestorContainer;
+  function inEl(el) {
+    if (!el) return false;
+    return el.contains(anc) ||
+      (anc.nodeType === 3 && anc.parentNode && el.contains(anc.parentNode));
+  }
+  var pass = document.getElementById('irPassage');
+  if (inEl(pass)) return pass;
+  var analysis = document.getElementById('irAnalysis');
+  if (inEl(analysis) && irAnalysisExplainEnabled()) return analysis;
+  return null;
+}
 
 function irEnsureExplainUi() {
   var btn = document.getElementById('irExplainBtn');
@@ -2076,11 +2462,11 @@ function irHideExplainPop() {
 function irHideSelectionExplain() {
   irHideExplainBtn();
   irHideExplainPop();
-  _irExplainSel = { text: '', context: '', rect: null };
+  _irExplainSel = { text: '', context: '', rect: null, source: 'passage' };
 }
 
-function irFindIrPara(node) {
-  var root = document.getElementById('irPassage');
+function irFindIrPara(node, root) {
+  if (!root) return null;
   while (node && node !== root) {
     if (node.nodeType === 1 && node.classList && node.classList.contains('ir-para')) return node;
     node = node.parentNode;
@@ -2088,9 +2474,10 @@ function irFindIrPara(node) {
   return null;
 }
 
-function irBuildSelectionContext(range) {
-  var pass = document.getElementById('irPassage');
-  var paras = pass ? pass.querySelectorAll('.ir-para') : [];
+function irBuildSelectionContext(range, root) {
+  if (!range) return '';
+  if (!root) return range.toString();
+  var paras = root.querySelectorAll('.ir-para');
   var covered = [];
   var i;
   for (i = 0; i < paras.length; i++) {
@@ -2099,7 +2486,8 @@ function irBuildSelectionContext(range) {
     } catch (e) { /* older browsers / detached */ }
   }
   if (covered.length === 0) {
-    var para = irFindIrPara(range.commonAncestorContainer) || irFindIrPara(range.startContainer);
+    var para = irFindIrPara(range.commonAncestorContainer, root) ||
+      irFindIrPara(range.startContainer, root);
     if (para) {
       for (i = 0; i < paras.length; i++) {
         if (paras[i] === para) { covered.push(i); break; }
@@ -2146,11 +2534,10 @@ function irPlaceFixedNearRect(el, rect, preferBelow) {
 }
 
 function irOnPassageSelectionChange() {
-  var pass = document.getElementById('irPassage');
   var pane = document.getElementById('irReaderPane');
   var modal = document.getElementById('intensiveReadingModal');
   var ui = irEnsureExplainUi();
-  if (!pass || !pane || !modal || !modal.classList.contains('open')) {
+  if (!pane || !modal || !modal.classList.contains('open')) {
     irHideExplainBtn();
     return;
   }
@@ -2165,10 +2552,8 @@ function irOnPassageSelectionChange() {
     return;
   }
   var range = sel.getRangeAt(0);
-  var anc = range.commonAncestorContainer;
-  var inPassage = pass.contains(anc) ||
-    (anc.nodeType === 3 && anc.parentNode && pass.contains(anc.parentNode));
-  if (!inPassage) {
+  var root = irSelectionRootFromRange(range);
+  if (!root) {
     irHideExplainBtn();
     return;
   }
@@ -2189,9 +2574,10 @@ function irOnPassageSelectionChange() {
   irHideExplainPop();
   _irExplainSel = {
     text: text.slice(0, 2000),
-    context: irBuildSelectionContext(range).slice(0, 8000),
+    context: irBuildSelectionContext(range, root).slice(0, 8000),
     rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height,
-            right: rect.right, bottom: rect.bottom }
+            right: rect.right, bottom: rect.bottom },
+    source: (root && root.id === 'irAnalysis') ? 'analysis' : 'passage'
   };
   ui.btn.disabled = false;
   ui.btn.textContent = 'Explain';
@@ -2225,7 +2611,8 @@ async function irRunSelectionExplain() {
         selected_text: selected,
         context: _irExplainSel.context || selected,
         book_id: _irState.bookId || '',
-        title: (titleEl && titleEl.textContent) || ''
+        title: (titleEl && titleEl.textContent) || '',
+        source: _irExplainSel.source || 'passage'
       })
     });
     if (!r.ok) {
@@ -2311,6 +2698,7 @@ async function irRunSelectionExplain() {
 
 async function irLoadChunk(chunkIndex) {
   if (!_irState.bookId) return;
+  if (_irState.chunkLoading) return;
   if (irBusy()) {
     showToast('Wait for analysis to finish before changing chunk');
     return;
@@ -2318,6 +2706,11 @@ async function irLoadChunk(chunkIndex) {
   if (_irExplainAbort) {
     showToast('Wait for explanation to finish before changing chunk');
     return;
+  }
+  _irState.chunkLoading = true;
+  irCaptureSpeakingOral();
+  if (_irState.bookType === 'magazine') {
+    await irPersistSpeaking();
   }
   irHideSelectionExplain();
   irResetAnalyses();
@@ -2373,6 +2766,8 @@ async function irLoadChunk(chunkIndex) {
     irHideSelectionExplain();
     document.getElementById('irPassage').textContent = e.message;
     showToast(e.message);
+  } finally {
+    _irState.chunkLoading = false;
   }
 }
 
@@ -2383,6 +2778,8 @@ async function irLoadCachedAnalysis(chunkIndex) {
       '/chunks/' + encodeURIComponent(chunkIndex) + '/analysis');
     var d = await r.json().catch(function() { return {}; });
     if (!r.ok) {
+      _irState.speakingLoaded = true;
+      _irState.speakingDirty = false;
       irRenderTabs();
       return;
     }
@@ -2401,16 +2798,25 @@ async function irLoadCachedAnalysis(chunkIndex) {
         error: s.error || ''
       };
     });
-    // Prefer first tab with content, else first tab
+    if (d.speaking && typeof d.speaking === 'object') {
+      _irState.speaking = irEmptySpeaking();
+      Object.keys(_irState.speaking).forEach(function(k) {
+        if (d.speaking[k] != null) _irState.speaking[k] = d.speaking[k];
+      });
+    }
+    // Prefer first analysis tab with content (skip speaking)
     var pick = (_irState.tabs[0] && _irState.tabs[0].id) || 'vocab';
     for (var i = 0; i < (_irState.tabs || []).length; i++) {
       var id = _irState.tabs[i].id;
+      if (id === 'speaking') continue;
       var slot = _irState.analyses[id];
       if (slot && slot.text) { pick = id; break; }
     }
     _irState.activeKind = pick;
     _irState.tabPinned = false;
   } catch (e) { /* empty cache ok */ }
+  _irState.speakingLoaded = true;
+  _irState.speakingDirty = false;
   irRenderTabs();
 }
 
@@ -2492,6 +2898,12 @@ async function irPrevChunk() {
 function irUpdateContinueBtn() {
   var cbtn = document.getElementById('irContinueBtn');
   var gbtn = document.getElementById('irGenerateBtn');
+  if (_irState.activeKind === 'speaking') {
+    if (gbtn) gbtn.style.display = 'none';
+    if (cbtn) cbtn.style.display = 'none';
+    return;
+  }
+  if (gbtn) gbtn.style.display = '';
   var slot = _irState.analyses[_irState.activeKind] || irEmptyAnalysisSlot();
   if (gbtn) {
     gbtn.disabled = irBusy();
@@ -2513,6 +2925,7 @@ function irUpdateContinueBtn() {
 async function irGenerateActiveTab() {
   if (!_irState.bookId || irBusy()) return;
   var kind = _irState.activeKind;
+  if (kind === 'speaking') return;
   if (!kind || !_irState.analyses[kind]) {
     showToast('Select a tab first');
     return;
@@ -2533,6 +2946,7 @@ async function irContinueAnalyze() {
 
 async function irRunAnalyzeKind(kind, opts) {
   if (!_irState.bookId) return;
+  if (kind === 'speaking') return;
   opts = opts || {};
   var continueMode = !!opts.continueMode;
   var doPersist = opts.persist !== false;
@@ -2543,6 +2957,7 @@ async function irRunAnalyzeKind(kind, opts) {
   _irState.analyzing = true;
   slot.status = 'running';
   slot.error = '';
+  irHideSelectionExplain();
   irRenderTabs();
   irSetNavDisabled(true);
   var gbtn = document.getElementById('irGenerateBtn');
@@ -5155,6 +5570,9 @@ async function exportStockPdf(reportType, dataKey) {
     else { try { var r = await fetch('/api/stock/watchlist'); data = await r.json(); } catch(e) {} }
   } else if (reportType === 'national_team') {
     data = _pdfDataCache['nt'] || null;
+  } else if (reportType === 'quality_value') {
+    if (_pdfDataCache['qv']) { data = _pdfDataCache['qv']; }
+    else { try { var r = await fetch('/api/stock/quality-value/result'); data = await r.json(); } catch(e) {} }
   }
   if (!data || data.error) { showToast('暂无数据, 请先运行分析'); return; }
   if (!data.date) data.date = new Date().toISOString().split('T')[0];
@@ -6282,6 +6700,134 @@ async function loadLtDate(dateStr) {
     if (d.error) { el.innerHTML = '<p style="color:#f87171">' + d.error + '</p>'; return; }
     renderLtResult(d);
   } catch(e) { el.innerHTML = '<p style="color:#f87171">加载失败</p>'; }
+}
+
+let _qvPollTimer = null;
+function openQualityValueModal() {
+  document.getElementById('qualityValueModal').classList.add('open');
+  pollQvStatus();
+}
+function closeQualityValueModal() {
+  document.getElementById('qualityValueModal').classList.remove('open');
+  if (_qvPollTimer) { clearInterval(_qvPollTimer); _qvPollTimer = null; }
+}
+async function startQvScan() {
+  const st = document.getElementById('qvStatus');
+  st.textContent = '启动中...';
+  document.getElementById('btnQvStart').disabled = true;
+  document.getElementById('btnQvStop').disabled = false;
+  document.getElementById('qvProgress').style.display = 'block';
+  var useDs = document.getElementById('qvUseDeepseek').checked;
+  document.getElementById('qvResult').innerHTML = '<p style="color:#86efac">⏳ 正在筛选优质低估...' + (useDs ? ' (DeepSeek)' : '') + '</p>';
+  try {
+    const r = await fetch('/api/stock/quality-value/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({use_deepseek: useDs})});
+    const d = await r.json();
+    if (d.error) { st.textContent = d.error; document.getElementById('btnQvStart').disabled = false; return; }
+    st.textContent = '扫描进行中';
+    if (!_qvPollTimer) _qvPollTimer = setInterval(pollQvStatus, 3000);
+  } catch(e) { st.textContent = '启动失败'; document.getElementById('btnQvStart').disabled = false; }
+}
+async function stopQvScan() {
+  try { await fetch('/api/stock/quality-value/stop', {method:'POST'}); } catch(e) {}
+  document.getElementById('qvStatus').textContent = '正在停止...';
+}
+async function pollQvStatus() {
+  try {
+    const r = await fetch('/api/stock/quality-value/status');
+    const d = await r.json();
+    const st = document.getElementById('qvStatus');
+    const bar = document.getElementById('qvProgressBar');
+    const txt = document.getElementById('qvProgressText');
+    const phase = document.getElementById('qvPhase');
+    const prog = document.getElementById('qvProgress');
+    if (!d.status || d.status === '' || d.status === 'idle') {
+      document.getElementById('btnQvStart').disabled = false;
+      document.getElementById('btnQvStop').disabled = true;
+      return;
+    }
+    prog.style.display = 'block';
+    const steps = {layer1: '估值粗筛（排除创业板）...', layer2: '基本面排雷...', layer3: 'PB-ROE 排序...', layer4: 'DeepSeek 终审...', done: '完成'};
+    const pct = d.progress != null ? d.progress : 10;
+    if (d.status === 'done') {
+      bar.style.width = '100%'; txt.textContent = '完成'; phase.textContent = '';
+      st.textContent = '扫描完成';
+      document.getElementById('btnQvStart').disabled = false;
+      document.getElementById('btnQvStop').disabled = true;
+      if (_qvPollTimer) { clearInterval(_qvPollTimer); _qvPollTimer = null; }
+      try {
+        var fullR = await fetch('/api/stock/quality-value/result');
+        var fullD = await fullR.json();
+        if (!fullD.error) { renderQvResult(fullD); _cachePdfData('qv', fullD); } else { renderQvResult(d); }
+      } catch(_e) { renderQvResult(d); }
+    } else if (d.status === 'stopped') {
+      phase.textContent = '已停止'; st.textContent = '已停止';
+      document.getElementById('btnQvStart').disabled = false;
+      document.getElementById('btnQvStop').disabled = true;
+      if (_qvPollTimer) { clearInterval(_qvPollTimer); _qvPollTimer = null; }
+    } else if (d.status === 'error') {
+      phase.textContent = '错误: ' + (d.error || '未知'); st.textContent = '扫描失败';
+      document.getElementById('btnQvStart').disabled = false;
+      document.getElementById('btnQvStop').disabled = true;
+      if (_qvPollTimer) { clearInterval(_qvPollTimer); _qvPollTimer = null; }
+    } else if (d.status === 'running') {
+      bar.style.width = pct + '%'; txt.textContent = pct + '%';
+      phase.textContent = steps[d.step] || d.step || d.status;
+      document.getElementById('btnQvStart').disabled = true;
+      document.getElementById('btnQvStop').disabled = false;
+    }
+  } catch(e) {}
+}
+function renderQvResult(data) {
+  const el = document.getElementById('qvResult');
+  var picks = data.picks || [];
+  let h = '<p style="color:#8b8fa4;font-size:0.8em;margin:0 0 10px">⚠️ 不构成投资建议。持有口径约 6 个月～2 年。已排除创业板。</p>';
+  if (picks.length === 0) {
+    h += '<div style="text-align:center;padding:16px"><p style="color:#fbbf24">本次扫描: 暂无推荐（宁缺毋滥）</p>';
+    h += '<p style="color:#8b8fa4;font-size:0.82em">漏斗过严或当天没有同时满足优质+低估的标的——这是功能，不是故障。</p></div>';
+  } else {
+    h += '<h3 style="color:#22c55e;margin:0 0 10px">优质低估 (' + picks.length + ' 只)</h3>';
+    picks.forEach(function(p, i) {
+      var llm = p.llm || {};
+      h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:12px;margin-bottom:8px">';
+      h += '<div><span style="color:#22c55e;font-weight:700">#' + (i+1) + '</span> ';
+      h += '<span style="color:#60a5fa;font-weight:600">' + (p.name||'') + '</span> <span style="color:#8b8fa4">(' + (p.symbol||'') + ')</span>';
+      if (p.industry) h += ' <span style="color:#a78bfa">' + p.industry + '</span>';
+      h += '</div>';
+      h += '<div style="font-size:0.82em;color:#a0a4b8;margin-top:4px">PE ' + (p.pe!=null?p.pe:'-') + ' / PB ' + (p.pb!=null?p.pb:'-') + ' / 股息 ' + (p.div_yield!=null?p.div_yield:'-') + '% / ROE ' + (p.roe!=null?p.roe:'-') + ' / PB-ROE ' + (p.pb_roe!=null?p.pb_roe:'-') + '</div>';
+      if (p.pe_percentile_5y != null) h += '<div style="font-size:0.8em;color:#86efac">近5年PE分位: ' + p.pe_percentile_5y + '%</div>';
+      if (llm.cycle) h += '<div style="font-size:0.8em;color:#38bdf8">周期: ' + llm.cycle + (llm.trap ? ' · 价值陷阱' : '') + '</div>';
+      if (llm.reason || p.recommendation_reason) h += '<div style="margin-top:4px;color:#a3e635;font-size:0.85em">' + (llm.reason || p.recommendation_reason) + '</div>';
+      if (llm.risk) h += '<div style="color:#f87171;font-size:0.8em">风险: ' + llm.risk + '</div>';
+      if (p.llm_skipped) h += '<div style="color:#fbbf24;font-size:0.78em">未经 AI 终审</div>';
+      h += '</div>';
+    });
+  }
+  el.innerHTML = h;
+}
+async function loadQvHistory() {
+  const el = document.getElementById('qvResult');
+  el.innerHTML = '<p style="color:#86efac">加载历史...</p>';
+  try {
+    const r = await fetch('/api/stock/quality-value/history');
+    const d = await r.json();
+    const hist = d.history || [];
+    if (hist.length === 0) { el.innerHTML = '<p style="color:#6b7280">暂无历史记录</p>'; return; }
+    let h = '<h3 style="color:#86efac;margin:0 0 8px">优质低估历史</h3>';
+    hist.slice().reverse().forEach(function(entry) {
+      h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:6px;padding:8px;margin-bottom:6px;cursor:pointer" onclick="loadQvDate(\'' + entry.date + '\')">';
+      h += '<span style="color:#60a5fa">' + entry.date + '</span> <span style="color:#8b8fa4">' + (entry.picks||[]).length + ' 只</span></div>';
+    });
+    el.innerHTML = h;
+  } catch(e) { el.innerHTML = '<p style="color:#f87171">加载失败</p>'; }
+}
+async function loadQvDate(dateStr) {
+  try {
+    const r = await fetch('/api/stock/quality-value/result/' + dateStr);
+    const d = await r.json();
+    if (d.error) { document.getElementById('qvResult').innerHTML = '<p style="color:#f87171">' + d.error + '</p>'; return; }
+    renderQvResult(d);
+    _cachePdfData('qv', d);
+  } catch(e) { document.getElementById('qvResult').innerHTML = '<p style="color:#f87171">加载失败</p>'; }
 }
 
 // --- Price Prediction Training ---

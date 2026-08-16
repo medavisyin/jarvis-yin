@@ -44,6 +44,7 @@ ALLOWED_TYPES = frozenset(
         "price_prediction",
         "watchlist",
         "national_team",
+        "quality_value",
     }
 )
 
@@ -54,6 +55,7 @@ REPORT_TITLES = {
     "price_prediction": "价格预测报告",
     "watchlist": "自选股报告",
     "national_team": "国家队监控报告",
+    "quality_value": "优质低估选股报告",
 }
 
 # Register Chinese font (STSong-Light CID)
@@ -535,6 +537,64 @@ def _build_long_term(data: dict, elements: list) -> None:
         elements.append(Spacer(1, 4))
 
 
+def _build_quality_value(data: dict, elements: list) -> None:
+    date_str = _extract_date_str(data)
+    elements.append(Spacer(1, 24))
+    elements.append(Paragraph(_safe(REPORT_TITLES["quality_value"]), STYLES["title"]))
+    elements.append(Paragraph(_safe(date_str), STYLES["subtitle"]))
+    elements.append(
+        Paragraph("⚠️ 不构成投资建议。持有口径约 6 个月～2 年。已排除创业板。筛选仅供参考。", STYLES["body"]),
+    )
+    stats = data.get("stats") or {}
+    if stats:
+        elements.append(
+            Paragraph(
+                f"Layer1 入围: {_safe(stats.get('layer1_out', '—'))} &nbsp;|&nbsp; "
+                f"Layer2: {_safe(stats.get('layer2_out', '—'))} &nbsp;|&nbsp; "
+                f"DeepSeek: {'是' if data.get('use_deepseek') else '否'}",
+                STYLES["body_small"],
+            )
+        )
+    picks = data.get("picks") or []
+    if not picks:
+        elements.append(Paragraph("推荐: 暂无", STYLES["h1"]))
+        elements.append(
+            Paragraph("本次未选出标的（宁缺毋滥）。漏斗过严或当日没有同时满足优质+低估的股票。", STYLES["body"]),
+        )
+        return
+    elements.append(Paragraph(f"推荐 ({len(picks)} 只)", STYLES["h1"]))
+    for pick in picks:
+        llm = pick.get("llm") or {}
+        elements.append(
+            Paragraph(f"{_safe(pick.get('name', '—'))} ({_safe(pick.get('symbol', '—'))})", STYLES["h1"]),
+        )
+        elements.append(Paragraph(f"行业: {_safe(pick.get('industry'))}", STYLES["body"]))
+        elements.append(
+            Paragraph(
+                f"PE {_safe(pick.get('pe'))} / PB {_safe(pick.get('pb'))} / "
+                f"股息 {_safe(pick.get('div_yield'))} / ROE {_safe(pick.get('roe'))} / "
+                f"PB-ROE {_safe(pick.get('pb_roe'))}",
+                STYLES["body"],
+            )
+        )
+        if pick.get("pe_percentile_5y") is not None:
+            elements.append(
+                Paragraph(f"近5年PE分位: {_safe(pick.get('pe_percentile_5y'))}%", STYLES["body_small"]),
+            )
+        if llm.get("cycle"):
+            trap = " · 价值陷阱" if llm.get("trap") else ""
+            elements.append(Paragraph(f"周期: {_safe(llm.get('cycle'))}{trap}", STYLES["body_small"]))
+        reason = llm.get("reason") or pick.get("recommendation_reason")
+        if reason:
+            _append_body_paragraphs(elements, str(reason))
+        if llm.get("risk"):
+            elements.append(Paragraph("<b>风险</b>", STYLES["h3"]))
+            _append_body_paragraphs(elements, str(llm.get("risk")))
+        if pick.get("llm_skipped"):
+            elements.append(Paragraph("未经 AI 终审", STYLES["body_small"]))
+        elements.append(_hr())
+
+
 def _build_stock_analysis(data: dict, elements: list) -> None:
     sym = data.get("symbol", "—")
     elements.append(Spacer(1, 24))
@@ -758,7 +818,8 @@ def _build_national_team(data: dict, elements: list) -> None:
 def generate_stock_pdf(report_type: str, data: dict, output_dir: Optional[str] = None) -> str:
     """Generate a stock report PDF. Returns the absolute file path.
 
-    report_type: one of short_term, long_term, stock_analysis, price_prediction, watchlist, national_team
+    report_type: one of short_term, long_term, stock_analysis, price_prediction,
+    watchlist, national_team, quality_value
     data: the JSON data from the corresponding API endpoint
     output_dir: optional override for output directory
     """
@@ -790,6 +851,8 @@ def generate_stock_pdf(report_type: str, data: dict, output_dir: Optional[str] =
         _build_price_prediction(data, story)
     elif report_type == "watchlist":
         _build_watchlist(data, story)
+    elif report_type == "quality_value":
+        _build_quality_value(data, story)
     else:
         _build_national_team(data, story)
 

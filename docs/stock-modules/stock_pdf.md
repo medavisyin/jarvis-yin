@@ -7,7 +7,7 @@
 
 ## 1. 模块概述
 
-- **核心职责**: 为 Jarvis 股票相关能力提供**统一的 ReportLab (platypus) PDF 渲染**：**6 种报告类型**、**A4 页边距**、**中文字体 (STSong-Light CID 优先)**、**与深色 UI 协调的色板**、**表格/标题/脚注** 的一致样式。  
+- **核心职责**: 为 Jarvis 股票相关能力提供**统一的 ReportLab (platypus) PDF 渲染**：**7 种报告类型**、**A4 页边距**、**中文字体 (STSong-Light CID 优先)**、**与深色 UI 协调的色板**、**表格/标题/脚注** 的一致样式。  
 - **系统角色**: **输出层** — 将各 API/扫描结果 JSON 转为可下载/归档的 **PDF 文件**；不计算因子或生成文本结论（内容由上游 data 提供）。  
 - **上下游**  
   - 上游: Web/API 或脚本传入 `report_type` + `data: dict`（与各类 JSON 结果结构一致）。  
@@ -40,7 +40,7 @@ register CID font → build ParagraphStyle 字典 STYLES
 
 ### 3.1 核心数据结构
 
-- **`ALLOWED_TYPES`**: `short_term`, `long_term`, `stock_analysis`, `price_prediction`, `watchlist`, `national_team`（**frozenset**）。  
+- **`ALLOWED_TYPES`**: `short_term`, `long_term`, `stock_analysis`, `price_prediction`, `watchlist`, `national_team`, `quality_value`（**frozenset**）。  
 - **`REPORT_TITLES`**: 与类型一一对应的中文题头。  
 - **`COLORS`**: `primary/secondary/accent_* / text / bg_light / border / header_text` 等 **HexColor**。  
 - **`STYLES`**: `title`, `subtitle`, `h1`–`h3`, `body`, `body_small`, `bullet`, `table_cell`, `footer` — 均设 `fontName=_CHINESE_FONT`（在注册成功时）。  
@@ -58,7 +58,7 @@ register CID font → build ParagraphStyle 字典 STYLES
 | `_badge` / `_score_bar` | 内联标签与 10 格进度条。 |
 | `_extract_date_str` | `data["date"]` 或今日本地日期。 |
 | `_append_body_paragraphs` | 多段 `Paragraph` 追加。 |
-| `_build_short_term` / `_build_long_term` / `_build_stock_analysis` / `_build_price_prediction` / `_build_watchlist` / `_build_national_team` | 各类型 story 构建。 |
+| `_build_short_term` / `_build_long_term` / `_build_quality_value` / `_build_stock_analysis` / `_build_price_prediction` / `_build_watchlist` / `_build_national_team` | 各类型 story 构建。 |
 | `generate_stock_pdf(report_type, data, output_dir=None) -> str` | **公共 API**，返回 PDF **绝对路径**。 |
 | `_format_kv` | 将 dict/list **递归**格式化为纯文本，用于「趋势/异常」等块。 |
 
@@ -73,6 +73,10 @@ register CID font → build ParagraphStyle 字典 STYLES
    - 贵金属: `precious_metals.gold`/`silver` 多行表；`gold_silver_ratio`；`llm_outlook` 的 gold/silver/summary。  
    - 主题: `themes[]` 的 `name`, `logic`, `industries`, `catalysts`, 周期与置信。  
    - 长期标的: `picks[]` 含 `recommendation_reason`, `upside.dimensions` 与 `_score_bar`。  
+
+2b. **quality_value**（优质低估）  
+   - 合规声明 + Layer 统计；`picks[]` 含行业、PE/PB/股息/ROE/PB-ROE、5 年 PE 分位、LLM 周期/陷阱/风险。  
+   - `picks` 为空时写「宁缺毋滥 / 暂无」，仍生成 PDF。  
 
 3. **stock_analysis**（个股）  
    - 固定 7 键顺序输出（有则出）: `technical_report`, `fundamental_report`, `sentiment_report`, `fund_flow_report`, `xgb_report`, `prediction_report`, `deepseek_report` — **值为已渲染的长文本**（可 Markdown，经 `_markdown_to_plain` 简化）。需 `data["symbol"]`。  

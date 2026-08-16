@@ -274,15 +274,15 @@ Layer2 分数与分项、估值与价量、资金阶段、情绪、（若有）�
 
 ---
 
-## 8. 和另外三套的区别
+## 8. 和另外几套的区别
 
-| | 本功能（左右统一） | 单股 DeepSeek 分析 | 长期推荐 | 午盘 T+1 |
-|---|---|---|---|---|
-| 目的 | 全市场找短中期候选 | 深挖你指定的 1 只 | 主题/宏观约 3 个月～1 年 | 隔夜套利 |
-| DeepSeek | 与深度分析**同一人设**的终审（+左复核） | 写长研报（尺子源头） | 主题与精选 | 游资隔夜裁判 |
-| 输出数量 | 左 ≤5；右 ≤5（常为 0） | 1 份报告 | 主题 + ≤5 只 | 通常 0～3 |
-| AI 主周期 | 约 1～2 周情景 | 约 1～2 周情景 | 约 3 个月～1 年 | 隔夜 |
-| 共享行情 | ✅ 左右共享 | 不适用 | 另套信号 | 独立午盘快照 |
+| | 本功能（左右统一） | 单股 DeepSeek 分析 | 长期推荐 | 午盘 T+1 | 优质低估 |
+|---|---|---|---|---|---|
+| 目的 | 全市场找短中期候选 | 深挖你指定的 1 只 | 主题/宏观约 3 个月～1 年 | 隔夜套利 | 同业低估+质量，约 6 个月～2 年 |
+| DeepSeek | 与深度分析**同一人设**的终审（+左复核） | 写长研报（尺子源头） | 主题与精选 | 游资隔夜裁判 | **独立价值人设**（周期/陷阱/商誉） |
+| 输出数量 | 左 ≤5；右 ≤5（常为 0） | 1 份报告 | 主题 + ≤5 只 | 通常 0～3 | ≤5（常为 0） |
+| AI 主周期 | 约 1～2 周情景 | 约 1～2 周情景 | 约 3 个月～1 年 | 隔夜 | 约 6 个月～2 年 |
+| 共享行情 | ✅ 左右共享 | 不适用 | 另套信号 | 独立午盘快照 | 独立全市场快照 |
 
 ### 怎么配合用（极简）
 
@@ -291,6 +291,7 @@ Layer2 分数与分项、估值与价量、资金阶段、情绪、（若有）�
   → 看上某只 → 再开「A股分析 & AI预测」做 DeepSeek 深挖
   → 仍想隔夜搏一把 → 另用午盘（别和左右策略混仓位）
   → 想布局约 3 个月～1 年主题 → 看长期推荐
+  → 想中长期配置相对同行更便宜的优质股 → 看优质低估（已排除创业板）
 ```
 
 ---
@@ -299,7 +300,8 @@ Layer2 分数与分项、估值与价量、资金阶段、情绪、（若有）�
 
 - [unified_scanner.md](./unified_scanner.md) · [scanner.md](./scanner.md) · [right_side_scanner.md](./right_side_scanner.md) · [scan_cache.md](./scan_cache.md)
 - 入口导览：[stock-strategy-guide.md](../guides/stock-strategy-guide.md)
-- 另三篇策略：
+- 另几篇策略：
   - [strategy-ashare-analysis-deepseek.md](./strategy-ashare-analysis-deepseek.md)
   - [strategy-long-term-deepseek.md](./strategy-long-term-deepseek.md)
   - [strategy-midday-t1-deepseek.md](./strategy-midday-t1-deepseek.md)
+  - [strategy-quality-value-deepseek.md](./strategy-quality-value-deepseek.md)

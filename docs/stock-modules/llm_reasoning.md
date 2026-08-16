@@ -1,7 +1,7 @@
 # LLM 综合推理 (llm_reasoning) — 详细功能文档
 
 **文件路径**: `scripts/stock/llm_reasoning.py`  
-**最后更新**: 2026-08-05
+**最后更新**: 2026-08-16
 
 ---
 
@@ -9,6 +9,7 @@
 
 - **核心职责**: 为**单只股票**聚合并格式化 **技术分析、基本面、新闻情绪、（可选）XGBoost 方向预测、（DeepSeek 版）近 20 日 OHLCV、资金流向、价格预测、大盘情绪** 等多源信息，由 **Ollama 本地大模型** 或 **DeepSeek API** 生成**中文投资预测报告**（并写入 `STOCK_DATA_DIR/{symbol}/` 下 Markdown）。
 - **共享人设（2026-08）**: `deepseek_shared_persona_rules()` / `build_left_layer3_system_prompt()` / `build_right_layer3_system_prompt()` / `build_verdict_system_prompt()` 供扫描 Layer3 与轻量复核复用，与深度长报告同一决策尺子（交叉验证、约 1～2 周情景、空仓/轻仓/重仓），减轻「推荐买入 vs 深度偏谨慎」的口径冲突。
+- **价值选股人设（2026-08）**: `build_quality_value_system_prompt()` 供优质低估 Layer4 **一次批量 JSON 终审**；持有口径约 **6 个月～2 年**，**不**调用 `deepseek_shared_persona_rules()`，禁止按一两周交易节奏写买入理由。
 - **系统角色**: Stock 子系统的**「综合研判与叙事输出」**层，衔接 `technical_analysis.analyze`、`fundamental_analysis`、`sentiment`、`china_market_data`、`market_sentiment`、以及磁盘上的 `xgb_prediction.json` / `price_prediction.json`。
 - **上下游**  
   - 上游: 各分析模块与已缓存的 ML 输出。  
@@ -56,6 +57,7 @@
 | `generate_prediction_deepseek(symbol)` | 经 `deepseek_report_call`（首呼 high/8192；空 content 时重试 medium/16384）；仍空则 error、不写 header-only 文件；成功写 `prediction-report-deepseek.md`，返回 report/reasoning/usage/finish_reason。 |
 | `deepseek_report_call(call_fn, ...)` | **2026-08**：空 content / `finish_reason=length` / 正文 `<500` 字时，重试一次（**thinking disabled** + 16384）；成功则保留首呼 CoT；仍不完整则 error。注：DeepSeek 的 `medium` 会映射成 `high`，不能靠降 effort 省预算。 |
 | `generate_prediction_verdict(stock_dict)` | **2026-07 新增**：**轻量版**深度复核，供 `scanner._run_deepseek_recheck_for_picks` 对 Top5 复用。复用数据装配逻辑但用更轻 system prompt，输出结构化 `{direction: 看多/看空/中性, confidence, reason}`；JSON 解析含 `think` 标签与代码块剥离的兜底。看空 verdict 用于在左侧一致性修复中否决 Top5。 |
+| `build_quality_value_system_prompt()` | **2026-08 新增**：优质低估终审人设（周期上升/平稳/衰退、价值陷阱、商誉/减值、同业估值、最多 5 只 JSON 数组）。**不要**与短线共享尺子混用。 |
 | `_make_system_prompt` | 本地版**段落结构**要求（方向、信心、1–2 周、风险、操作、价位）。 |
 
 ### 3.3 算法与计算逻辑

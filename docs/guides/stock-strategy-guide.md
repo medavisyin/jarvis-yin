@@ -7,19 +7,19 @@ tags:
   - beginner
 category: guide
 status: current
-last-updated: 2026-08-05
+last-updated: 2026-08-16
 ---
 
 # Jarvis 股票策略导览（小白入口）
 
 写给**完全不懂炒股**的你：先搞清 Jarvis 有哪几套股票功能、大概什么区别、从哪点进去。  
-**详细金融策略与 DeepSeek 怎么判断**，请看下方四篇专文——本文只做导览，避免和专文说法重复打架。
+**详细金融策略与 DeepSeek 怎么判断**，请看下方专文——本文只做导览，避免和专文说法重复打架。
 
 > ⚠️ **合规提示**：本文只解释系统原理与入口，**不构成任何投资建议**。股市有风险，所有推荐都只是参考，买卖决策和盈亏由你自己负责。
 
 ---
 
-## 0. 四套功能 → 详解文档（先收藏）
+## 0. 几套功能 → 详解文档（先收藏）
 
 | 网页功能 | 一句话 | 详解（DeepSeek 策略 · 小白版） |
 |---|---|---|
@@ -27,6 +27,7 @@ last-updated: 2026-08-05
 | **AI 推荐（左侧+右侧）** | 一次扫描，抄底与跟趋势两份报告 | [strategy-unified-left-right-deepseek.md](../stock-modules/strategy-unified-left-right-deepseek.md) |
 | **AI 股票推荐(长期)** | 新闻主题 + 贵金属，约 3 个月～1 年布局 | [strategy-long-term-deepseek.md](../stock-modules/strategy-long-term-deepseek.md) |
 | **午盘极速隔夜套利 (T+1)** | 午休决策，尾盘买、次日早盘卖 | [strategy-midday-t1-deepseek.md](../stock-modules/strategy-midday-t1-deepseek.md) |
+| **优质低估** | 同业低估 + 财务排雷，约 6 个月～2 年 | [strategy-quality-value-deepseek.md](../stock-modules/strategy-quality-value-deepseek.md) |
 
 技术实现细节仍在 `docs/stock-modules/` 各模块文档（如 `scanner.md`、`midday_scanner.md`）。
 
@@ -80,7 +81,7 @@ last-updated: 2026-08-05
 
 ---
 
-## 3. 另外三套怎么选（极简）
+## 3. 另外几套怎么选（极简）
 
 | 你的情况 | 去哪 |
 |---|---|
@@ -88,6 +89,7 @@ last-updated: 2026-08-05
 | 想找短中期交易机会 | [左右统一推荐](../stock-modules/strategy-unified-left-right-deepseek.md) |
 | 想看未来约 3 个月～1 年主题 | [长期推荐](../stock-modules/strategy-long-term-deepseek.md) |
 | 能盯盘、要玩隔夜超短 | [午盘 T+1](../stock-modules/strategy-midday-t1-deepseek.md) |
+| 想中长期配置相对同行更便宜的优质股 | [优质低估](../stock-modules/strategy-quality-value-deepseek.md) |
 
 ---
 
@@ -122,4 +124,4 @@ A：见 [stock-new-strategy-guide.md](./stock-new-strategy-guide.md)。
 
 ---
 
-*导览对应 `scripts/stock/` 下多套扫描与 `llm_reasoning`。策略细节以 `docs/stock-modules/strategy-*-deepseek.md` 四篇为准；模块实现见同目录技术文档。*
+*导览对应 `scripts/stock/` 下多套扫描与 `llm_reasoning`。策略细节以 `docs/stock-modules/strategy-*-deepseek.md` 为准；模块实现见同目录技术文档。*

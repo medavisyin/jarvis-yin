@@ -1,7 +1,7 @@
 # Stock 模块详细文档索引
 
 **生成日期**: 2026-07-01  
-**最后更新**: 2026-08-05  
+**最后更新**: 2026-08-16  
 **文档语言**: 中文  
 **目的**: 为每个 stock 功能模块提供详细的技术实现与金融理论文档；并提供 DeepSeek 策略小白专文，便于学习和后续调整
 
@@ -17,6 +17,7 @@
 | AI 股票推荐（左侧+右侧 · 共享数据） | [strategy-unified-left-right-deepseek.md](./strategy-unified-left-right-deepseek.md) |
 | AI 股票推荐(长期) | [strategy-long-term-deepseek.md](./strategy-long-term-deepseek.md) |
 | AI 午盘极速隔夜套利 (T+1) | [strategy-midday-t1-deepseek.md](./strategy-midday-t1-deepseek.md) |
+| 优质低估选股 | [strategy-quality-value-deepseek.md](./strategy-quality-value-deepseek.md) |
 
 ---
 
@@ -32,7 +33,7 @@
 6. **使用示例与工作流** — 调用方式、模块协作
 7. **已知限制与改进方向** — 局限性、优化方向
 
-策略专文（`strategy-*-deepseek.md`）使用另一套小白模板（比喻 → 金融逻辑 → 漏斗 → DeepSeek 角色 → 行情适配 → 报告解读 → 纪律 → 四套对照）。
+策略专文（`strategy-*-deepseek.md`）使用另一套小白模板（比喻 → 金融逻辑 → 漏斗 → DeepSeek 角色 → 行情适配 → 报告解读 → 纪律 → 几套对照）。
 
 ---
 
@@ -85,14 +86,15 @@
 | `scan_cache.py` | [scan_cache.md](./scan_cache.md) | 扫描共享缓存：资金流向/OHLCV 单次抓取、左右侧复用 |
 | `midday_scanner.py` | [midday_scanner.md](./midday_scanner.md) | 午盘极速选股扫描器：12:30运行，全市场高可用快筛，3路大模型并发T+1套利决策 |
 | `long_term_scanner.py` | [long_term_scanner.md](./long_term_scanner.md) | 长线主题扫描器：新闻主题提取、贵金属分析、上涨空间评估 |
-| `llm_reasoning.py` | [llm_reasoning.md](./llm_reasoning.md) | LLM综合推理：多源融合（TA+FA+情绪+A股数据+ML）生成分析报告；含轻量 `generate_prediction_verdict` 供复核 |
+| `quality_value_scanner.py` | [quality_value_scanner.md](./quality_value_scanner.md) | 优质低估扫描器：同业 PE/PB + 财务排雷 + PB-ROE + DeepSeek 周期终审 |
+| `llm_reasoning.py` | [llm_reasoning.md](./llm_reasoning.md) | LLM综合推理：多源融合（TA+FA+情绪+A股数据+ML）生成分析报告；含轻量 `generate_prediction_verdict` 供复核；含 `build_quality_value_system_prompt` |
 
 ### 输出与报告层
 
 | 模块 | 文档 | 说明 |
 |------|------|------|
 | `report_technical.py` | [report_technical.md](./report_technical.md) | 技术分析中文报告生成 |
-| `stock_pdf.py` | [stock_pdf.md](./stock_pdf.md) | PDF报告生成：6种报告类型，ReportLab渲染 |
+| `stock_pdf.py` | [stock_pdf.md](./stock_pdf.md) | PDF报告生成：7种报告类型，ReportLab渲染 |
 
 ---
 
@@ -126,6 +128,8 @@ config.py ───────────────────────�
   │
   ├── long_term_scanner.py ──── (聚合: 新闻信号 + 贵金属 + 主题 + 黑天鹅)
   │
+  ├── quality_value_scanner.py ──── (聚合: 同业估值 + 年报排雷 + PB-ROE + 价值终审)
+  │
   └── stock_pdf.py ──── (输出: 将扫描/分析结果渲染为PDF)
 ```
 
@@ -143,7 +147,7 @@ config.py ───────────────────────�
 
 ## 相关文档
 
-- [`docs/guides/stock-strategy-guide.md`](../guides/stock-strategy-guide.md) — 股票策略**入口导览**（细节见上方四篇 `strategy-*-deepseek.md`）
+- [`docs/guides/stock-strategy-guide.md`](../guides/stock-strategy-guide.md) — 股票策略**入口导览**（细节见上方各篇 `strategy-*-deepseek.md`）
 - [`docs/guides/stock-new-strategy-guide.md`](../guides/stock-new-strategy-guide.md) — 新增策略插件接口规范与模板
 - [`docs/guides/stock-usage-guide.md`](../guides/stock-usage-guide.md) — 股票系统实用操作指南
 - [`docs/implementation/stock/`](../implementation/stock/) — 按功能分组的实现文档（英文）

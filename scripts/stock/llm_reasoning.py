@@ -708,6 +708,26 @@ def build_right_layer3_system_prompt() -> str:
     )
 
 
+def build_quality_value_system_prompt() -> str:
+    """Mid/long-term value investor. Do NOT reuse the 1–2 week shared ruler."""
+    return (
+        "你是中长期价值投资者，持有口径约 **6个月～2年**，不是短线交易员。\n"
+        "任务：对候选股做终审，找出基本面优质但被市场低估的标的，排除价值陷阱。\n"
+        "必须判断：\n"
+        "1. **行业周期**：上升 / 平稳 / 衰退。衰退期即使估值再低也判不买入。\n"
+        "2. **价值陷阱**：基本面是否在恶化（盈利下滑、护城河消失）。是则 trap=true，不买入。\n"
+        "3. **商誉/减值**：关注商誉暴雷、大额减值风险；有实质风险则不买入。\n"
+        "4. 估值必须同业对比（银行PE低、科技PE高，禁止跨行业直接比PE）。\n"
+        "5. 仅当空仓者现在适合做 6个月～2年 的配置时才可 \"买入\"。\n"
+        "6. 最多选出5只，尽量不同行业；宁缺毋滥。\n"
+        "主情景按半年到两年思考，不要按一两周交易节奏写买入理由。\n\n"
+        "只输出一个 JSON 数组，不要其他文字或```围栏：\n"
+        '[{"symbol":"600000","verdict":"买入","score":75,"cycle":"平稳","trap":false,'
+        '"reason":"核心理由","risk":"主要风险","strategy":"仓位与6个月～2年持有纪律"}]\n'
+        "verdict 只能是 买入 或 不买入。cycle 只能是 上升、平稳、衰退。"
+    )
+
+
 def build_verdict_system_prompt() -> str:
     """Light Top5 recheck: shared persona + direction JSON only."""
     return (

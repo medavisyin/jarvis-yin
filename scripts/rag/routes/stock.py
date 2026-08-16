@@ -29,7 +29,7 @@ _STOCK_MODULES = [
     "config", "fetch_market_data", "technical_analysis", "report_technical",
     "fundamental_analysis", "sentiment", "features", "model_xgboost",
     "model_price_predictor", "prediction_tracker", "llm_reasoning",
-    "watchlist", "scanner", "long_term_scanner", "hot_sectors", "market_sentiment",
+    "watchlist", "scanner", "long_term_scanner", "quality_value_scanner", "hot_sectors", "market_sentiment",
     "black_swan_detector", "china_market_data", "model_timing",
     "backtest_engine", "midday_scanner", "right_side_scanner",
     "scan_cache", "unified_scanner", "valuation", "data_quality",
@@ -573,6 +573,93 @@ def api_stock_lt_result_by_date(date_str):
         if result:
             return jsonify(result)
         return jsonify({"error": "该日期无长期推荐结果"}), 404
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+# --- Quality / undervalued scanner ---
+
+@stock_bp.route("/api/stock/quality-value/start", methods=["POST"])
+@_with_stock_imports
+def api_stock_qv_start():
+    try:
+        body = request.get_json(silent=True) or {}
+        use_ds = body.get("use_deepseek", False)
+        from quality_value_scanner import start_qv_scan
+        return jsonify(start_qv_scan(use_deepseek=use_ds))
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/quality-value/status", methods=["GET"])
+@_with_stock_imports
+def api_stock_qv_status():
+    try:
+        from quality_value_scanner import get_qv_status
+        return jsonify(get_qv_status())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/quality-value/stop", methods=["POST"])
+@_with_stock_imports
+def api_stock_qv_stop():
+    try:
+        from quality_value_scanner import stop_qv_scan
+        return jsonify(stop_qv_scan())
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/quality-value/result", methods=["GET"])
+@_with_stock_imports
+def api_stock_qv_result():
+    try:
+        from quality_value_scanner import get_qv_latest_result
+        result = get_qv_latest_result()
+        if result:
+            return jsonify(result)
+        return jsonify({"error": "暂无优质低估结果"}), 404
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/quality-value/history", methods=["GET"])
+@_with_stock_imports
+def api_stock_qv_history():
+    try:
+        from quality_value_scanner import get_qv_history
+        return jsonify({"history": get_qv_history()})
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/quality-value/dates", methods=["GET"])
+@_with_stock_imports
+def api_stock_qv_dates():
+    try:
+        from quality_value_scanner import list_qv_scan_dates
+        return jsonify({"dates": list_qv_scan_dates()})
+    except Exception as exc:
+        traceback.print_exc()
+        return jsonify({"error": str(exc)}), 500
+
+
+@stock_bp.route("/api/stock/quality-value/result/<date_str>", methods=["GET"])
+@_with_stock_imports
+def api_stock_qv_result_by_date(date_str):
+    try:
+        from quality_value_scanner import get_qv_result_by_date
+        result = get_qv_result_by_date(date_str)
+        if result:
+            return jsonify(result)
+        return jsonify({"error": "该日期无优质低估结果"}), 404
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500

@@ -229,15 +229,15 @@ Layer3 DeepSeek「游资隔夜裁判」（可 3 路并发，推理偏快）
 
 ---
 
-## 8. 和另外三套的区别
+## 8. 和另外几套的区别
 
-| | 午盘 T+1 | 左右统一推荐 | 长期推荐 | 单股 DeepSeek 分析 |
-|---|---|---|---|---|
-| 周期 | **隔夜** | 约 1～2 周（DeepSeek 终审） | 约 3 个月～1 年 | 约 1～2 周情景 |
-| 运行时刻 | 建议 12:30 后 | 任意交易时段（耗时长） | 任意（偏研究） | 任意 |
-| DeepSeek 人设 | 游资隔夜裁判 | 与单股深度分析**同一尺子**（左/右终审） | 主题研究员 | 综合分析师（尺子源头） |
-| 数量 | 0～3 | 左 ≤5 + 右 ≤5（常为 0） | ≤5 | 1 只深挖 |
-| 失败关键 | 次日早盘时间止损 | 波段止损/门控 | 催化剂落空 | 情景与仓位管理 |
+| | 午盘 T+1 | 左右统一推荐 | 长期推荐 | 单股 DeepSeek 分析 | 优质低估 |
+|---|---|---|---|---|---|
+| 周期 | **隔夜** | 约 1～2 周（DeepSeek 终审） | 约 3 个月～1 年 | 约 1～2 周情景 | 约 6 个月～2 年 |
+| 运行时刻 | 建议 12:30 后 | 任意交易时段（耗时长） | 任意（偏研究） | 任意 | 任意（首次拉年报较慢） |
+| DeepSeek 人设 | 游资隔夜裁判 | 与单股深度分析**同一尺子**（左/右终审） | 主题研究员 | 综合分析师（尺子源头） | 中长期价值投资者 |
+| 数量 | 0～3 | 左 ≤5 + 右 ≤5（常为 0） | ≤5 | 1 只深挖 | ≤5（常为 0） |
+| 失败关键 | 次日早盘时间止损 | 波段止损/门控 | 催化剂落空 | 情景与仓位管理 | 价值陷阱 / 行业衰退 |
 
 ---
 
@@ -245,7 +245,8 @@ Layer3 DeepSeek「游资隔夜裁判」（可 3 路并发，推理偏快）
 
 - 技术实现：[midday_scanner.md](./midday_scanner.md) · [china_market_data.md](./china_market_data.md)
 - 入口导览：[stock-strategy-guide.md](../guides/stock-strategy-guide.md)
-- 另三篇策略：
+- 另几篇策略：
   - [strategy-ashare-analysis-deepseek.md](./strategy-ashare-analysis-deepseek.md)
   - [strategy-unified-left-right-deepseek.md](./strategy-unified-left-right-deepseek.md)
   - [strategy-long-term-deepseek.md](./strategy-long-term-deepseek.md)
+  - [strategy-quality-value-deepseek.md](./strategy-quality-value-deepseek.md)

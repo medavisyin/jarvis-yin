@@ -194,14 +194,14 @@
 
 ---
 
-## 8. 和另外三套的区别
+## 8. 和另外几套的区别
 
-| | 长期推荐 | 左右统一推荐 | 单股分析 | 午盘 T+1 |
-|---|---|---|---|---|
-| 驱动 | 新闻/政策/贵金属主题 | 价量+资金+截面/反转 | 你指定个股深挖 | 上午盘量价资金 |
-| 周期 | 约 3 个月～1 年 | 约 1～2 周（DeepSeek 终审） | 约 1～2 周情景 | 隔夜 |
-| DeepSeek | 主题 + 终选 | 与深度分析**同一人设**的买入终审（+左复核） | 长研报 | 游资隔夜裁判 |
-| 典型输出 | 主题卡 + ≤5 股 | 左右列表 | 1 份深度报告 | 0～3 只极速内参 |
+| | 长期推荐 | 左右统一推荐 | 单股分析 | 午盘 T+1 | 优质低估 |
+|---|---|---|---|---|---|
+| 驱动 | 新闻/政策/贵金属主题 | 价量+资金+截面/反转 | 你指定个股深挖 | 上午盘量价资金 | 同业低估+财务排雷 |
+| 周期 | 约 3 个月～1 年 | 约 1～2 周（DeepSeek 终审） | 约 1～2 周情景 | 隔夜 | 约 6 个月～2 年 |
+| DeepSeek | 主题 + 终选 | 与深度分析**同一人设**的买入终审（+左复核） | 长研报 | 游资隔夜裁判 | 独立价值人设 |
+| 典型输出 | 主题卡 + ≤5 股 | 左右列表 | 1 份深度报告 | 0～3 只极速内参 | ≤5 只；可为 0 |
 
 ---
 
@@ -209,7 +209,8 @@
 
 - 技术实现：[long_term_scanner.md](./long_term_scanner.md) · [black_swan_detector.md](./black_swan_detector.md) · [hot_sectors.md](./hot_sectors.md)
 - 入口导览：[stock-strategy-guide.md](../guides/stock-strategy-guide.md)
-- 另三篇策略：
+- 另几篇策略：
   - [strategy-ashare-analysis-deepseek.md](./strategy-ashare-analysis-deepseek.md)
   - [strategy-unified-left-right-deepseek.md](./strategy-unified-left-right-deepseek.md)
   - [strategy-midday-t1-deepseek.md](./strategy-midday-t1-deepseek.md)
+  - [strategy-quality-value-deepseek.md](./strategy-quality-value-deepseek.md)
