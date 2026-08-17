@@ -7,6 +7,9 @@ from typing import Any
 PASSAGE_WINDOW = 12000
 
 KIND_VOCAB = "vocab"
+KIND_SPEAKING = "speaking"
+SPEAKING_TAB = {"id": KIND_SPEAKING, "label": "口语"}
+SPEAKING_EXERCISES = ("logic", "cue", "pressure")
 
 # --- Tab specs (id used as analysis_kind) ---
 
@@ -174,12 +177,16 @@ SYSTEM_PROMPT_INTENSIVE_READING = _SYSTEM_VOCAB
 def tabs_for_book_type(book_type: str) -> list[dict[str, str]]:
     bt = (book_type or "novel").strip().lower()
     if bt == "magazine":
-        return list(MAGAZINE_TABS)
+        return list(MAGAZINE_TABS) + [dict(SPEAKING_TAB)]
     return list(NOVEL_TABS)
 
 
 def allowed_kinds(book_type: str) -> set[str]:
-    return {t["id"] for t in tabs_for_book_type(book_type)}
+    """Analysis Generate kinds only — speaking is a separate magazine UI/API."""
+    bt = (book_type or "novel").strip().lower()
+    if bt == "magazine":
+        return {t["id"] for t in MAGAZINE_TABS}
+    return {t["id"] for t in NOVEL_TABS}
 
 
 def system_prompt_for_kind(analysis_kind: str) -> str:
@@ -292,8 +299,40 @@ Rules:
 - If the selection is ambiguous, say so briefly and give the best reading grounded in context.
 """
 
+_SYSTEM_SELECTION_EXPLAIN_ANALYSIS_ZH = """You are an expert English literary coach helping a university-level \
+Chinese learner (approx. 6000-word vocabulary / CEFR B2–C1).
 
-def selection_explain_system_prompt() -> str:
+The learner selected English text from an analysis of a longer passage. Explain the selection using the \
+surrounding context provided.
+
+Output ONLY this section heading (exactly, in English), then the content under it in Simplified Chinese:
+### 1. Meaning and Sense
+
+Under that heading, explain the meaning / sense of the selection in this analysis. Do not add other \
+numbered sections (no grammar/usage section, no separate context section).
+
+Rules:
+- Write the explanation body in Simplified Chinese.
+- Keep the heading exactly: ### 1. Meaning and Sense
+- When quoting the selection or context, keep those quotes in the original English.
+- Do not use English for the explanation body except for quoted source phrases.
+- Be concrete: quote short bits of the selection and context when helpful.
+- Keep the answer focused and suitable for a floating popover (structured short paragraphs or bullets).
+- Skip elementary vocabulary a B2 student already knows unless it is key to the selection.
+- If the selection is ambiguous, say so briefly and give the best reading grounded in context.
+"""
+
+
+def _normalize_explain_source(source: str | None) -> str:
+    src = (source or "passage").strip().lower()
+    if src not in ("passage", "analysis"):
+        return "passage"
+    return src
+
+
+def selection_explain_system_prompt(source: str = "passage") -> str:
+    if _normalize_explain_source(source) == "analysis":
+        return _SYSTEM_SELECTION_EXPLAIN_ANALYSIS_ZH
     return _SYSTEM_SELECTION_EXPLAIN
 
 
@@ -302,18 +341,141 @@ def selection_explain_user_message(
     selected_text: str,
     context: str,
     title: str = "",
+    source: str = "passage",
 ) -> str:
     selected = (selected_text or "").strip()
     if not selected:
         raise ValueError("selected_text is required")
     ctx = (context or "").strip() or selected
     title_line = f"Book/section: {title.strip()}\n" if (title or "").strip() else ""
+    if _normalize_explain_source(source) == "analysis":
+        closing = (
+            "Explain the selection under ### 1. Meaning and Sense only "
+            "(heading in English; meaning/sense body in Simplified Chinese; no other sections)."
+        )
+    else:
+        closing = (
+            "Explain the selection under ### 1. Meaning and Sense only "
+            "(meaning/sense in this passage; no other sections)."
+        )
     return (
         f"{title_line}"
         f"Surrounding context (selected paragraph plus nearby paragraphs when available):\n"
         f"\"\"\"\n{ctx}\n\"\"\"\n\n"
         f"Selected text to explain:\n"
         f"\"\"\"\n{selected}\n\"\"\"\n\n"
-        f"Explain the selection under ### 1. Meaning and Sense only "
-        f"(meaning/sense in this passage; no other sections)."
+        f"{closing}"
     )
+
+
+_SYSTEM_SPEAKING_LOGIC = """You are a demanding senior editor at The Economist.
+
+The learner is close-reading a magazine passage. Unpack compressed \
+"claim + data + implied attitude" sentences.
+
+Output in English only, with these sections:
+
+1. Logic skeleton
+   - List: core claim → three supporting arguments → likely objections.
+   - Then a causal chain in the form: A leads to B, but C constrains B.
+
+2. Sentence decompression
+   - Pick the three longest compound sentences.
+   - Break each into simple short sentences.
+   - In parentheses, label each short sentence's role: background / cause / result / concession.
+
+3. Attitude markers
+   - List value-laden verbs and adjectives (e.g. staggering, unduly optimistic).
+   - Say whether the author is coolly detached or quietly anxious.
+
+If the learner also pasted an oral retelling, briefly note where their retelling missed \
+a claim, a causal link, or an attitude marker. Do not add other numbered games or vocabulary lists.
+"""
+
+_SYSTEM_SPEAKING_CUE = """You are a speaking coach turning magazine prose into talk-show material.
+
+Based on the passage (and the learner's oral retelling when provided), produce a \
+minimal oral cue card in English.
+
+Requirements:
+- Delete passive voice and abstract nouns (e.g. implementation). Replace with active voice \
+and strong verbs (e.g. carry out).
+- Turn core figures into analogies (not just "grew 5%" — compare to something concrete \
+a general audience can feel).
+- Using a Problem-Solution-Benefit frame, compress the piece into three parallel short \
+questions (e.g. What went wrong? Who paid the price? What happens next?) as 1-minute \
+impromptu signposts.
+
+If an oral retelling is provided, rewrite that retelling into the cue card instead of \
+ignoring it. Output the cue card only, in English.
+"""
+
+_SYSTEM_SPEAKING_PRESSURE = """You are a top think-tank scholar who holds the opposite view \
+to the magazine passage (and to the learner's oral retelling of it).
+
+English only.
+
+If this is attack step 1:
+- Do one thing: attack logic gaps with a chain of "Yes, but..."
+- Be specific: is the evidence cherry-picked / over-generalized? Does the proposed \
+solution create second-order harm?
+- Do not yet give defense scripts or golden transition lines.
+
+If this is defense step 2 (the learner has replied to your attack):
+- Give a defense script that starts with: While I take your point, the immediate urgency lies in...
+- Then rewrite the learner's weakest gap into one idiomatic English transition sentence \
+they can memorize for the next rebuttal.
+"""
+
+_SPEAKING_SYSTEM = {
+    "logic": _SYSTEM_SPEAKING_LOGIC,
+    "cue": _SYSTEM_SPEAKING_CUE,
+    "pressure": _SYSTEM_SPEAKING_PRESSURE,
+}
+
+
+def speaking_system_prompt(exercise: str) -> str:
+    ex = (exercise or "").strip().lower()
+    if ex not in _SPEAKING_SYSTEM:
+        raise KeyError(f"Unknown speaking exercise: {ex!r}")
+    return _SPEAKING_SYSTEM[ex]
+
+
+def speaking_user_message(
+    *,
+    exercise: str,
+    passage: str,
+    oral: str = "",
+    pressure_step: int = 1,
+    user_reply: str = "",
+    pressure_attack: str = "",
+) -> str:
+    ex = (exercise or "").strip().lower()
+    if ex not in SPEAKING_EXERCISES:
+        raise ValueError(f"Unknown speaking exercise: {ex!r}")
+    text = (passage or "").strip()
+    if not text:
+        raise ValueError("passage is required")
+    oral_text = (oral or "").strip()
+    oral_block = (
+        f"Learner's oral retelling:\n\"\"\"\n{oral_text}\n\"\"\"\n\n"
+        if oral_text
+        else "Learner's oral retelling: (none provided)\n\n"
+    )
+    base = (
+        f"Magazine passage:\n\"\"\"\n{text}\n\"\"\"\n\n"
+        f"{oral_block}"
+    )
+    if ex == "pressure" and int(pressure_step) == 2:
+        return (
+            f"{base}"
+            f"Your previous Yes, but... attack:\n\"\"\"\n{(pressure_attack or '').strip()}\n\"\"\"\n\n"
+            f"Learner's reply:\n\"\"\"\n{(user_reply or '').strip()}\n\"\"\"\n\n"
+            "This is defense step 2. Give the defense script and the memorisable transition line."
+        )
+    if ex == "pressure":
+        return base + "This is attack step 1. Attack with Yes, but... only."
+    if ex == "cue":
+        return base + "Produce the oral cue card now."
+    return base + "Unpack the logic skeleton, decompress three long sentences, and mark attitude."
+

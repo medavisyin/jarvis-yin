@@ -270,6 +270,129 @@ def chunk_magazine_from_outline(
     return chunks
 
 
+_NON_CHAPTER_TITLE = re.compile(
+    r"^(cover|title\s*page|copyright|contents|table\s+of\s+contents|"
+    r"dedication|acknowledgments?|illustration|also by|about the author|"
+    r"title|halftitle|colophon)\b",
+    re.I,
+)
+_PART_OR_BOOK_TITLE = re.compile(
+    r"^(part|book|volume|卷|部)\b",
+    re.I,
+)
+
+
+def filter_novel_chapter_outline(outline: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep chapter-level bookmarks; drop nested leaves and front-matter titles.
+
+    Needs at least two surviving entries, otherwise return [] so callers fall back.
+    """
+    entries = [dict(e) for e in (outline or []) if (e.get("title") or "").strip()]
+    cleaned: list[dict[str, Any]] = []
+    for e in entries:
+        title = (e.get("title") or "").strip()
+        if _NON_CHAPTER_TITLE.match(title):
+            continue
+        cleaned.append(e)
+    if len(cleaned) < 2:
+        return []
+    levels = [int(e.get("level") or 0) for e in cleaned]
+    min_level = min(levels)
+    if max(levels) > min_level:
+        top = [e for e in cleaned if int(e.get("level") or 0) == min_level]
+        if len(top) >= 2:
+            if all(_PART_OR_BOOK_TITLE.match((e.get("title") or "").strip()) for e in top):
+                child_level = min_level + 1
+                children = [
+                    e for e in cleaned if int(e.get("level") or 0) == child_level
+                ]
+                if len(children) >= 2:
+                    return children
+            return top
+    return cleaned
+
+
+def chunk_novel_from_outline(
+    pages: list[str],
+    outline: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Split novel PDF pages by chapter bookmarks (reuse magazine page ranges)."""
+    chapters = filter_novel_chapter_outline(outline)
+    if len(chapters) < 2:
+        return []
+    return chunk_magazine_from_outline(pages, chapters)
+
+
+_NOVEL_TOC_LINE = re.compile(
+    r"^(?:chapter\s+(\d+)|第([一二三四五六七八九十百零〇0-9]+)[章节回卷部])"
+    r"\s*[:.\s]*"
+    r"([A-Za-z][^\.\n]{0,80}?)?"
+    r"\s*(?:\.{2,}|\s{2,})\s*"
+    r"(\d{1,4})\s*$",
+    re.I,
+)
+
+
+def _novel_printed_page_to_index(
+    pages: list[str], printed: int, title: str
+) -> Optional[int]:
+    """Map novel Contents page numbers. Do NOT use _map_printed_page_to_index."""
+    n = len(pages or [])
+    if n == 0:
+        return None
+    guess = printed - 1 if printed >= 1 else 0
+    needle = re.sub(r"\s+", " ", (title or "")).strip().lower()
+    key = needle[:24]
+    if key:
+        for i, page in enumerate(pages or []):
+            if is_toc_text(page or ""):
+                continue
+            head = re.sub(r"\s+", " ", (page or "")[:200]).strip().lower()
+            if key in head and re.search(re.escape(key) + r"(?!\d)", head):
+                return i
+    if 0 <= guess < n:
+        return guess
+    return None
+
+
+def outline_from_novel_contents(pages: list[str]) -> list[dict[str, Any]]:
+    """Build a chapter outline from a printed Contents page (dotted page numbers)."""
+    found: list[dict[str, Any]] = []
+    scan = (pages or [])[:8]
+    for page in scan:
+        if not page:
+            continue
+        if not (
+            is_toc_text(page) or _TOC_HEADING.search(page) or _PAGE_DOTS.search(page)
+        ):
+            continue
+        for raw in page.splitlines():
+            m = _NOVEL_TOC_LINE.search(raw.strip())
+            if not m:
+                continue
+            num = m.group(1) or m.group(2) or ""
+            name = (m.group(3) or "").strip(" .")
+            printed = int(m.group(4))
+            title = f"Chapter {num} {name}".strip() if name else f"Chapter {num}"
+            idx = _novel_printed_page_to_index(pages, printed, title)
+            if idx is None or idx < 0 or idx >= len(pages):
+                continue
+            found.append({"title": title, "page": int(idx), "level": 0})
+    seen: set[int] = set()
+    out: list[dict[str, Any]] = []
+    for e in found:
+        if e["page"] in seen:
+            continue
+        seen.add(e["page"])
+        out.append(e)
+    if len(out) < 2:
+        return []
+    pages_idx = [e["page"] for e in out]
+    if pages_idx != sorted(set(pages_idx)):
+        return []
+    return out
+
+
 def _looks_like_page_heading(line: str) -> bool:
     """Heuristic article title at/near the top of a magazine page."""
     stripped = re.sub(r"\s+", " ", (line or "")).strip()

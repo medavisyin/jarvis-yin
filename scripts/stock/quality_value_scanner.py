@@ -20,8 +20,29 @@ from board_filters import is_chinext
 log = logging.getLogger("quality_value_scanner")
 
 LAYER1_CAP = 100
+HORIZON_LONG = "long"
+HORIZON_MEDIUM = "medium"
 _FINANCE_INDUSTRIES = ("银行", "非银金融", "保险", "证券", "多元金融")
 _ST_MARKERS = ("ST", "*ST", "退市")
+
+
+def normalize_qv_horizon(raw) -> str:
+    text = str(raw or "").strip().lower()
+    if text in ("medium", "m1-6", "1-6", "m16"):
+        return HORIZON_MEDIUM
+    return HORIZON_LONG
+
+
+def qv_horizon_label(horizon: str) -> str:
+    if normalize_qv_horizon(horizon) == HORIZON_MEDIUM:
+        return "约 1 个月～6 个月"
+    return "约 6 个月～2 年"
+
+
+def _qv_result_stem(date_str: str, horizon: str) -> str:
+    if normalize_qv_horizon(horizon) == HORIZON_MEDIUM:
+        return f"{date_str}-m1-6"
+    return date_str
 
 
 def is_finance_industry(industry: str | None) -> bool:
@@ -299,6 +320,35 @@ def apply_layer4_batch(cands: list[dict], raw: str) -> list[dict]:
         item["llm"] = llm
         merged.append(item)
     return select_final_picks(merged, max_n=5)
+
+
+def attach_prediction_trade_levels(picks: list[dict]) -> list[dict]:
+    """Attach 1–2 week AI-prediction prices. Never drop a pick if the overlay says 不买入."""
+    from llm_reasoning import generate_prediction_trade_levels
+
+    out = []
+    n = len(picks)
+    for i, p in enumerate(picks):
+        item = dict(p)
+        if i >= 5:
+            out.append(item)
+            continue
+        if sys._qv_stop_event.is_set():
+            item["prediction"] = {"ok": False, "error": "stopped"}
+            out.append(item)
+            continue
+        try:
+            pred = generate_prediction_trade_levels(str(item.get("symbol") or ""))
+            if not isinstance(pred, dict):
+                pred = {"ok": False, "error": "empty prediction"}
+            item["prediction"] = pred
+        except Exception as e:
+            log.warning("预测买卖价失败 %s: %s", item.get("symbol"), e)
+            item["prediction"] = {"ok": False, "error": str(e)}
+        if n:
+            _set_status(progress=92 + int(7 * (i + 1) / min(n, 5)), step="predict")
+        out.append(item)
+    return out
 
 
 VALUE_CLIST_FIELDS = (
@@ -692,48 +742,159 @@ def _set_status(**kwargs):
     _save_progress(st)
 
 
+def _fetch_eastmoney_clist() -> list[dict]:
+    """Direct Eastmoney clist. Empty payload is a failure (caller falls back)."""
+    import requests
+    proxies = None
+    try:
+        from config import STOCK_PROXY
+        if STOCK_PROXY:
+            proxies = {"http": STOCK_PROXY, "https": STOCK_PROXY}
+    except Exception:
+        pass
+    url = "https://push2.eastmoney.com/api/qt/clist/get"
+    params = {
+        "pn": "1", "pz": "5500", "po": "1", "np": "1",
+        "ut": "bd1d9dd10319470d11d3d66416f1c148",
+        "fltt": "2", "invt": "2", "fid": "f3",
+        "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:1 t:80",
+        "fields": VALUE_CLIST_FIELDS,
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Referer": "https://quote.eastmoney.com/",
+    }
+    resp = requests.get(url, params=params, headers=headers, timeout=15, proxies=proxies)
+    resp.raise_for_status()
+    payload = resp.json()
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise ValueError("东财API返回空数据")
+    diff = data.get("diff") or []
+    if not diff:
+        raise ValueError("东财API返回空数据")
+    rows = [parse_clist_row(item) for item in diff if item.get("f12")]
+    if not rows:
+        raise ValueError("东财快照解析后为空")
+    return rows
+
+
+def _ensure_stock_config():
+    """Background scan outlives Flask `_with_stock_imports`; restore stock config.
+
+    Otherwise `from valuation import ...` hits RAG config (no STOCK_CACHE_DIR).
+    """
+    cfg = sys.modules.get("config")
+    if cfg is not None and hasattr(cfg, "STOCK_CACHE_DIR"):
+        return
+    stock_dir = os.path.dirname(os.path.abspath(__file__))
+    if stock_dir not in sys.path:
+        sys.path.insert(0, stock_dir)
+    import importlib.util as _ilu
+    spec = _ilu.spec_from_file_location("config", os.path.join(stock_dir, "config.py"))
+    loaded = _ilu.module_from_spec(spec)
+    spec.loader.exec_module(loaded)
+    sys.modules["config"] = loaded
+    sys.modules.pop("valuation", None)
+
+
+def _market_spot_cache_path() -> str:
+    root = os.path.dirname(QUALITY_VALUE_DIR)
+    return os.path.join(root, ".cache", ".valuation", "market_spot.csv")
+
+
+def _cache_file_is_today(path: str, now: datetime | None = None) -> bool:
+    if not os.path.isfile(path):
+        return False
+    now = now or datetime.now()
+    mtime = datetime.fromtimestamp(os.path.getmtime(path))
+    return mtime.date() == now.date()
+
+
+def _fetch_akshare_spot() -> list[dict]:
+    import akshare as ak
+    df = ak.stock_zh_a_spot_em()
+    rows = rows_from_spot_df(df)
+    if not rows:
+        raise ValueError("akshare 快照为空")
+    return rows
+
+
+def _fetch_sina_spot() -> list[dict]:
+    """Sina paginated A-share list (PE/PB). Dividend usually missing → keep."""
+    from valuation import _fetch_market_spot_sina
+    df = _fetch_market_spot_sina()
+    rows = rows_from_spot_df(df)
+    if not rows:
+        raise ValueError("新浪快照为空")
+    return rows
+
+
+def _fetch_cached_spot() -> list[dict]:
+    """Same-calendar-day prefetch CSV only. Stale cache is skipped (live fetch instead)."""
+    path = _market_spot_cache_path()
+    if not os.path.isfile(path):
+        raise ValueError("本地快照缓存不存在")
+    if not _cache_file_is_today(path):
+        raise ValueError("本地快照缓存非当天，跳过")
+    df = pd.read_csv(path, encoding="utf-8-sig")
+    rows = rows_from_spot_df(df)
+    if not rows:
+        raise ValueError("本地快照缓存为空")
+    return rows
+
+
+_SNAPSHOT_SOURCE = ""
+
+
 def _fetch_market_snapshot_rows() -> list[dict]:
-    """Eastmoney clist with PB/div fields, then akshare spot. Tests monkeypatch this."""
-    try:
-        import requests
-        url = "https://push2.eastmoney.com/api/qt/clist/get"
-        params = {
-            "pn": "1", "pz": "5500", "po": "1", "np": "1",
-            "ut": "bd1d9dd10319470d11d3d66416f1c148",
-            "fltt": "2", "invt": "2", "fid": "f3",
-            "fs": "m:0 t:6,m:0 t:80,m:1 t:2,m:1 t:23,m:1 t:80",
-            "fields": VALUE_CLIST_FIELDS,
-        }
-        headers = {
-            "User-Agent": "Mozilla/5.0",
-            "Referer": "https://quote.eastmoney.com/",
-        }
-        resp = requests.get(url, params=params, headers=headers, timeout=15)
-        resp.raise_for_status()
-        diff = (resp.json().get("data") or {}).get("diff") or []
-        return [parse_clist_row(item) for item in diff if item.get("f12")]
-    except Exception as e:
-        log.warning("东财快照失败, 尝试 akshare: %s", e)
-    try:
-        import akshare as ak
-        df = ak.stock_zh_a_spot_em()
-        return rows_from_spot_df(df)
-    except Exception as e:
-        log.error("全市场快照失败: %s", e)
-        return []
+    """Eastmoney → akshare → sina → prefetch cache. Tests monkeypatch this or the source fns."""
+    global _SNAPSHOT_SOURCE
+    _SNAPSHOT_SOURCE = ""
+    chain = (
+        ("eastmoney", _fetch_eastmoney_clist),
+        ("akshare", _fetch_akshare_spot),
+        ("sina", _fetch_sina_spot),
+        ("cache", _fetch_cached_spot),
+    )
+    for name, fn in chain:
+        try:
+            rows = fn()
+            if rows:
+                _SNAPSHOT_SOURCE = name
+                log.info("优质低估快照来源 %s: %d 只", name, len(rows))
+                return rows
+            log.warning("快照 %s 为空", name)
+        except Exception as e:
+            log.warning("快照 %s 失败: %s", name, e)
+    log.error("全市场快照失败: 东财/akshare/新浪均无数据，且无当天缓存")
+    return []
 
 
-def _generate_report(picks: list[dict], stats: dict, use_deepseek: bool) -> str:
+def _generate_report(picks: list[dict], stats: dict, use_deepseek: bool, horizon: str = "long") -> str:
     date_str = datetime.now().strftime("%Y-%m-%d")
+    horizon = normalize_qv_horizon(horizon)
     lines = [
         f"# 优质低估选股报告 — {date_str}",
         "",
         "> ⚠️ **不构成投资建议**。筛选仅供参考，最终投资决策需自行判断。",
         "",
+        f"- 持有口径: {qv_horizon_label(horizon)}",
         f"- DeepSeek 终审: {'失败（未用规则层顶替，宁缺毋滥）' if stats.get('llm_failed') else ('是' if use_deepseek else '否（规则层 Top5，未经 AI 终审）')}",
         f"- Layer1 入围: {stats.get('layer1_out', 0)}",
         "",
     ]
+    if use_deepseek and picks:
+        lines.append("- 买卖价为约 **1～2周** 操作参考（与持有口径不同，不构成投资建议）")
+        lines.append("")
+    if stats.get("snapshot_failed"):
+        lines.extend([
+            "## 扫描失败: 行情快照为空",
+            "",
+            "东财、akshare、新浪均未拉到全市场行情，且没有当天的本地快照。漏斗未执行。**这不是宁缺毋滥。**请稍后重试。",
+            "",
+        ])
+        return "\n".join(lines)
     if not picks:
         lines.extend([
             "## 推荐: 暂无",
@@ -749,6 +910,19 @@ def _generate_report(picks: list[dict], stats: dict, use_deepseek: bool) -> str:
         lines.append(f"- 行业: {p.get('industry', '')}")
         lines.append(f"- PE / PB / 股息率: {p.get('pe')} / {p.get('pb')} / {p.get('div_yield')}")
         lines.append(f"- ROE / PB-ROE: {p.get('roe')} / {p.get('pb_roe')}")
+        pred = p.get("prediction") or {}
+        if pred.get("ok"):
+            lines.append("- **约1～2周操作参考**（与价值持有口径不同）")
+            lines.append(f"- 短线判断: {pred.get('verdict') or '—'}")
+            lines.append(
+                f"- 建议买入区间: {pred.get('buy_low')} ~ {pred.get('buy_high')}"
+            )
+            lines.append(f"- 止损: {pred.get('stop_loss')}")
+            lines.append(f"- 目标抛售参考: {pred.get('target_price')}")
+            if pred.get("reason"):
+                lines.append(f"- 短线理由: {pred.get('reason')}")
+        elif pred:
+            lines.append("- 预测未出")
         lines.append("")
     return "\n".join(lines)
 
@@ -761,12 +935,16 @@ def _index_report_to_rag(report_path: str, date_str: str, item_type: str, title:
         log.warning("RAG 索引失败: %s", e)
 
 
-def _save_results(picks: list[dict], stats: dict, use_deepseek: bool):
+def _save_results(picks: list[dict], stats: dict, use_deepseek: bool, horizon: str = "long"):
     _ensure_dirs()
+    horizon = normalize_qv_horizon(horizon)
     date_str = datetime.now().strftime("%Y-%m-%d")
-    result_path = os.path.join(QUALITY_VALUE_DIR, f"{date_str}.json")
+    stem = _qv_result_stem(date_str, horizon)
+    result_path = os.path.join(QUALITY_VALUE_DIR, f"{stem}.json")
     payload = {
         "date": date_str,
+        "horizon": horizon,
+        "horizon_label": qv_horizon_label(horizon),
         "picks": picks,
         "stats": stats,
         "use_deepseek": use_deepseek,
@@ -774,14 +952,17 @@ def _save_results(picks: list[dict], stats: dict, use_deepseek: bool):
     }
     with open(result_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, indent=2, default=str)
-    report = _generate_report(picks, stats, use_deepseek)
-    report_path = os.path.join(QUALITY_VALUE_DIR, f"{date_str}-report.md")
+    report = _generate_report(picks, stats, use_deepseek, horizon)
+    report_path = os.path.join(QUALITY_VALUE_DIR, f"{stem}-report.md")
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report)
-    _index_report_to_rag(report_path, date_str, "stock_scan_quality_value", f"优质低估 {date_str}")
+    _index_report_to_rag(
+        report_path, date_str, "stock_scan_quality_value",
+        f"优质低估 {qv_horizon_label(horizon)} {date_str}",
+    )
 
 
-def _call_value_llm(cands: list[dict]) -> str:
+def _call_value_llm(cands: list[dict], horizon: str = "long") -> str:
     """One batch DeepSeek/Ollama call. Tests may monkeypatch this."""
     try:
         from llm_reasoning import build_quality_value_system_prompt
@@ -796,7 +977,7 @@ def _call_value_llm(cands: list[dict]) -> str:
             )
         user = "请对以下候选做价值终审，输出JSON数组：\n" + "\n".join(lines)
         result = call_deepseek(
-            build_quality_value_system_prompt(),
+            build_quality_value_system_prompt(horizon),
             user,
         )
         if isinstance(result, dict):
@@ -807,19 +988,36 @@ def _call_value_llm(cands: list[dict]) -> str:
         return ""
 
 
-def _run_qv_scan(use_deepseek: bool = False):
+def _run_qv_scan(use_deepseek: bool = False, horizon: str = "long"):
+    horizon = normalize_qv_horizon(horizon)
     _set_status(
         status="running", progress=5, step="layer1",
         started_at=datetime.now().isoformat(), error=None, picks_count=0,
+        horizon=horizon,
     )
     try:
+        _ensure_stock_config()
         if sys._qv_stop_event.is_set():
             _set_status(status="stopped", step="stopped")
             return
         rows = _fetch_market_snapshot_rows()
+        stats = {
+            "snapshot_count": len(rows),
+            "snapshot_failed": len(rows) == 0,
+            "snapshot_source": _SNAPSHOT_SOURCE or None,
+        }
+        if not rows:
+            _save_results([], stats, use_deepseek, horizon)
+            _set_status(
+                status="error", progress=100, step="error",
+                error="全市场行情快照为空（东财/akshare/新浪均未拉到，且无当天缓存）",
+                picks_count=0,
+            )
+            return
         rows = attach_industry(rows)
         layer1, l1_stats = layer1_coarse_filter(rows)
-        stats = {"layer1_in": l1_stats.get("in", 0), "layer1_out": l1_stats.get("out", 0)}
+        stats["layer1_in"] = l1_stats.get("in", 0)
+        stats["layer1_out"] = l1_stats.get("out", 0)
         _set_status(progress=40, step="layer2")
         if sys._qv_stop_event.is_set():
             _set_status(status="stopped", step="stopped")
@@ -850,7 +1048,7 @@ def _run_qv_scan(use_deepseek: bool = False):
             stats["layer3_out"] = len(ranked)
             _set_status(progress=88, step="layer4")
             if use_deepseek:
-                raw = _call_value_llm(ranked[:10])
+                raw = _call_value_llm(ranked[:10], horizon)
                 if raw:
                     picks = apply_layer4_batch(ranked[:10], raw)
                 else:
@@ -860,21 +1058,29 @@ def _run_qv_scan(use_deepseek: bool = False):
                 picks = ranked[:5]
                 for p in picks:
                     p["llm_skipped"] = True
-        _save_results(picks, stats, use_deepseek)
+            if use_deepseek and picks:
+                _set_status(progress=92, step="predict")
+                picks = attach_prediction_trade_levels(picks)
+                if sys._qv_stop_event.is_set():
+                    _save_results(picks, stats, use_deepseek, horizon)
+                    _set_status(status="stopped", step="stopped", picks_count=len(picks))
+                    return
+        _save_results(picks, stats, use_deepseek, horizon)
         _set_status(status="done", progress=100, step="done", picks_count=len(picks))
     except Exception as e:
         log.exception("优质低估扫描失败")
         _set_status(status="error", error=str(e), step="error")
 
 
-def start_qv_scan(use_deepseek: bool = False) -> dict:
+def start_qv_scan(use_deepseek: bool = False, horizon: str = "long") -> dict:
     with sys._qv_scan_lock:
         t = getattr(sys, "_qv_thread", None)
         if t is not None and t.is_alive():
             return {"ok": False, "error": "优质低估扫描正在进行中", "status": get_qv_status()}
         sys._qv_stop_event.clear()
         sys._qv_thread = threading.Thread(
-            target=_run_qv_scan, kwargs={"use_deepseek": use_deepseek},
+            target=_run_qv_scan,
+            kwargs={"use_deepseek": use_deepseek, "horizon": normalize_qv_horizon(horizon)},
             daemon=True, name="qv-scanner",
         )
         sys._qv_thread.start()
@@ -888,9 +1094,12 @@ def stop_qv_scan() -> dict:
 
 def get_qv_latest_result() -> dict | None:
     _ensure_dirs()
-    files = sorted(
-        [f for f in os.listdir(QUALITY_VALUE_DIR)
-         if f.endswith(".json") and f not in ("qv_progress.json", "history.json")],
+    files = [
+        f for f in os.listdir(QUALITY_VALUE_DIR)
+        if f.endswith(".json") and f not in ("qv_progress.json", "history.json")
+    ]
+    files.sort(
+        key=lambda f: os.path.getmtime(os.path.join(QUALITY_VALUE_DIR, f)),
         reverse=True,
     )
     if not files:

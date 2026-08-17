@@ -16,6 +16,7 @@ import base64
 import glob
 import json
 import logging
+import mimetypes
 import os
 import re
 import uuid
@@ -125,6 +126,7 @@ init_memory_store(
 )
 
 app = Flask(__name__)
+mimetypes.add_type("font/woff2", ".woff2")
 # Cap multipart uploads (Intensive Reading books, etc.)
 app.config["MAX_CONTENT_LENGTH"] = 80 * 1024 * 1024
 

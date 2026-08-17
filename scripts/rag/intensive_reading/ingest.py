@@ -18,11 +18,13 @@ from intensive_reading.chunking import (
     chunk_magazine_by_page_headings,
     chunk_magazine_from_outline,
     chunk_magazine_text,
+    chunk_novel_from_outline,
     chunk_novel_pages,
     is_toc_text,
     is_weak_magazine_title,
     next_readable_index,
     normalize_magazine_section_title,
+    outline_from_novel_contents,
 )
 from intensive_reading.extract import extract_book
 
@@ -363,30 +365,40 @@ def build_chunks(extracted: dict[str, Any], book_type: str) -> list[dict[str, An
 
     # novel / ebook
     if extracted.get("pages") is not None:
-        return _split_oversized_chunks(
-            chunk_novel_pages(extracted["pages"], pages_per_chunk=2)
-        )
+        pages = extracted["pages"]
+        outline = extracted.get("outline") or []
+        chunks = chunk_novel_from_outline(pages, outline) if outline else []
+        if not chunks:
+            printed = outline_from_novel_contents(pages)
+            if printed:
+                chunks = chunk_novel_from_outline(pages, printed)
+        if not chunks:
+            chunks = chunk_novel_pages(pages, pages_per_chunk=2)
+        return _split_oversized_chunks(chunks)
     if extracted.get("sections"):
-        texts = [s.get("text") or "" for s in extracted["sections"] if s.get("text")]
-        # Prefer section-as-chunk when sections are already chapter-sized
-        if len(texts) >= 2 and all(len(t.split()) < 1600 for t in texts):
-            chunks = []
-            for i, s in enumerate(extracted["sections"]):
-                text = (s.get("text") or "").strip()
-                if not text:
-                    continue
-                from intensive_reading.chunking import is_toc_text
-
-                chunks.append(
-                    {
-                        "chunk_index": len(chunks),
-                        "text": text,
-                        "title": s.get("title") or f"Part {len(chunks) + 1}",
-                        "is_toc": is_toc_text(text),
-                    }
-                )
-            return _split_oversized_chunks(chunks)
-        return _split_oversized_chunks(chunk_by_words(texts, target_words=1000))
+        chunks = []
+        for s in extracted["sections"]:
+            text = (s.get("text") or "").strip()
+            if not text:
+                continue
+            chunks.append(
+                {
+                    "chunk_index": len(chunks),
+                    "text": text,
+                    "title": s.get("title") or f"Part {len(chunks) + 1}",
+                    "is_toc": is_toc_text(text),
+                }
+            )
+        if len(chunks) < 2:
+            texts = [c["text"] for c in chunks]
+            return _split_oversized_chunks(chunk_by_words(texts, target_words=1000))
+        words = [len(c["text"].split()) for c in chunks]
+        words_sorted = sorted(words)
+        median = words_sorted[len(words_sorted) // 2]
+        if len(chunks) > 15 and median < 400:
+            texts = [c["text"] for c in chunks]
+            return _split_oversized_chunks(chunk_by_words(texts, target_words=1000))
+        return _split_oversized_chunks(chunks)
     return []
 
 
@@ -435,8 +447,8 @@ def save_book_files(
     with open(os.path.join(book_dir, "chunks.json"), "w", encoding="utf-8") as f:
         json.dump(chunks, f, ensure_ascii=False, indent=1)
 
-    if book_type == BOOK_TYPE_MAGAZINE:
-        write_toc_json(book_dir, chunks)
+    if book_type in (BOOK_TYPE_MAGAZINE, BOOK_TYPE_NOVEL):
+        write_toc_json(book_dir, chunks, book_type=book_type)
 
     readable = next_readable_index(chunks, start=0)
     if readable is None:
@@ -522,17 +534,31 @@ def get_chunk(books_dir: str, book_id: str, chunk_index: int) -> Optional[dict[s
     return None
 
 
-def build_toc_entries(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """TOC list for magazine Articles UI (skips pure TOC chrome chunks)."""
+_PART_SUFFIX = re.compile(r"\s*\(\d+\)\s*$")
+
+
+def build_toc_entries(
+    chunks: list[dict[str, Any]],
+    book_type: str | None = None,
+) -> list[dict[str, Any]]:
+    """TOC list for Articles/Chapters UI (skips pure TOC chrome chunks)."""
     entries: list[dict[str, Any]] = []
+    seen_chapters: set[str] = set()
+    collapse = (book_type or "").lower() == BOOK_TYPE_NOVEL
     for c in chunks or []:
         if c.get("is_toc"):
             continue
         title = (c.get("title") or "").strip()
         if not title:
             continue
+        display = _PART_SUFFIX.sub("", title).strip() if collapse else title
+        if collapse:
+            key = display.lower()
+            if key in seen_chapters:
+                continue
+            seen_chapters.add(key)
         entry: dict[str, Any] = {
-            "title": title,
+            "title": display,
             "chunk_index": int(c.get("chunk_index", len(entries))),
         }
         if c.get("start_page") is not None:
@@ -543,8 +569,12 @@ def build_toc_entries(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return entries
 
 
-def write_toc_json(book_dir: str, chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    toc = build_toc_entries(chunks)
+def write_toc_json(
+    book_dir: str,
+    chunks: list[dict[str, Any]],
+    book_type: str | None = None,
+) -> list[dict[str, Any]]:
+    toc = build_toc_entries(chunks, book_type=book_type)
     with open(os.path.join(book_dir, "toc.json"), "w", encoding="utf-8") as f:
         json.dump(toc, f, ensure_ascii=False, indent=1)
     return toc
@@ -560,7 +590,11 @@ def load_toc(books_dir: str, book_id: str) -> list[dict[str, Any]]:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data if isinstance(data, list) else []
-    return build_toc_entries(load_chunks(books_dir, book_id))
+    meta = load_meta(books_dir, book_id) or {}
+    return build_toc_entries(
+        load_chunks(books_dir, book_id),
+        book_type=meta.get("book_type"),
+    )
 
 
 def update_meta_fields(books_dir: str, book_id: str, fields: dict[str, Any]) -> Optional[dict[str, Any]]:
@@ -694,8 +728,8 @@ def rebuild_magazine_from_original(
     reindex_rag: bool = True,
 ) -> dict[str, Any]:
     """
-    Re-extract + re-chunk a magazine from original.* , clear analysis cache.
-    Novels are rejected. Returns updated meta.
+    Re-extract + re-chunk a book from original.*, clear analysis cache.
+    Accepts magazine and novel. Returns updated meta.
     """
     if not is_valid_book_id(book_id):
         raise InvalidBookId(f"Invalid book_id: {book_id!r}")
@@ -703,23 +737,23 @@ def rebuild_magazine_from_original(
     if not meta:
         raise FileNotFoundError(f"Book not found: {book_id}")
     book_type = (meta.get("book_type") or "").strip().lower()
-    if book_type != BOOK_TYPE_MAGAZINE:
-        raise ValueError("rebuild_magazine_from_original only accepts magazine books")
+    if book_type not in (BOOK_TYPE_MAGAZINE, BOOK_TYPE_NOVEL):
+        raise ValueError("rebuild_magazine_from_original only accepts magazine or novel books")
 
     book_dir = resolve_book_dir(books_dir, book_id)
     src = _original_file_path(book_dir)
     if not src:
-        raise FileNotFoundError(f"No original.* file for magazine: {book_id}")
+        raise FileNotFoundError(f"No original.* file for book: {book_id}")
 
     extracted = extract_book(src)
-    chunks = build_chunks(extracted, BOOK_TYPE_MAGAZINE)
+    chunks = build_chunks(extracted, book_type)
     if not chunks:
         return update_meta_fields(
             books_dir,
             book_id,
             {
                 "status": "error",
-                "error": "No text extracted on magazine rebuild",
+                "error": "No text extracted on rebuild",
                 "chunk_count": 0,
                 "rag_status": "skipped",
             },
@@ -729,7 +763,7 @@ def rebuild_magazine_from_original(
         c["chunk_index"] = i
     with open(os.path.join(book_dir, "chunks.json"), "w", encoding="utf-8") as f:
         json.dump(chunks, f, ensure_ascii=False, indent=1)
-    write_toc_json(book_dir, chunks)
+    write_toc_json(book_dir, chunks, book_type=book_type)
 
     from intensive_reading.analysis_cache import clear_book_analyses
 
@@ -766,7 +800,7 @@ def rebuild_magazine_from_original(
     count, err = index_chunks_to_rag(
         book_id,
         meta.get("title") or book_id,
-        BOOK_TYPE_MAGAZINE,
+        book_type,
         chunks,
     )
     if count > 0 and not err:

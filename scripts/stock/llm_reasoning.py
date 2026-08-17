@@ -4,8 +4,9 @@ AI 综合预测 — 将技术面、基本面、情绪分析汇总, 由 LLM 生�
 使用 HEAVY 模型 (prediction_reasoning 配置), 输出完整的中文预测分析报告.
 """
 import json
-import os
 import logging
+import os
+import re
 from datetime import datetime
 
 import requests
@@ -708,8 +709,30 @@ def build_right_layer3_system_prompt() -> str:
     )
 
 
-def build_quality_value_system_prompt() -> str:
-    """Mid/long-term value investor. Do NOT reuse the 1–2 week shared ruler."""
+def build_quality_value_system_prompt(horizon: str = "long") -> str:
+    """Value funnel Layer4 persona. long=6m–2y; medium=1–6m analysis style (not 1–2 week ruler)."""
+    hz = str(horizon or "long").strip().lower()
+    if hz in ("medium", "m1-6", "1-6"):
+        return (
+            "你是A股分析师，持有口径约 **1个月～6个月**（波段配置，不是一两周短线，也不是两年价值长持）。\n"
+            "任务：对候选股做终审。漏斗已筛过同业低估与基本面，你负责交叉验证与概率化裁决。\n"
+            "决策尺子：\n"
+            "1. **多维度交叉验证**：把估值、盈利质量、行业周期放在一起看共振或矛盾，不要逐条罗列后直接喊买入。\n"
+            "2. **概率化判断**：给出大致概率（例如「约60%概率在1～6个月内基本面兑现」），不要空泛「可能会涨」。\n"
+            "3. **A股特色**：考虑T+1、涨跌停与追高风险。\n"
+            "4. **仓位检查**：仅当空仓者现在适合做 1个月～6个月 配置时才可 \"买入\"。\n"
+            "必须判断：\n"
+            "5. **行业周期**：上升 / 平稳 / 衰退。衰退期不买入。\n"
+            "6. **价值陷阱**：基本面恶化则 trap=true，不买入。\n"
+            "7. **商誉/减值**：有实质暴雷风险则不买入。\n"
+            "8. 估值必须同业对比，禁止跨行业直接比PE。\n"
+            "9. 最多选出5只，尽量不同行业；宁缺毋滥。\n"
+            "主情景按1个月到6个月思考。\n\n"
+            "只输出一个 JSON 数组，不要其他文字或```围栏：\n"
+            '[{"symbol":"600000","verdict":"买入","score":75,"cycle":"平稳","trap":false,'
+            '"reason":"核心理由","risk":"主要风险","strategy":"仓位与1个月～6个月持有纪律"}]\n'
+            "verdict 只能是 买入 或 不买入。cycle 只能是 上升、平稳、衰退。"
+        )
     return (
         "你是中长期价值投资者，持有口径约 **6个月～2年**，不是短线交易员。\n"
         "任务：对候选股做终审，找出基本面优质但被市场低估的标的，排除价值陷阱。\n"
@@ -740,6 +763,99 @@ def build_verdict_system_prompt() -> str:
         '{"direction":"看空","confidence":65,"reason":"一句话核心理由","veto_reason":"若看空给出否决依据，否则留空"}\n'
         "direction 只能是 \"看多\" / \"看空\" / \"中性\"。confidence 0-100。"
     )
+
+
+def build_prediction_trade_levels_system_prompt() -> str:
+    """Same 1–2 week ruler as A-share analysis & AI prediction; JSON prices only."""
+    return (
+        deepseek_shared_persona_rules()
+        + "\n"
+        "你当前任务是给已入选的价值股补一层**与「A股分析&AI预测」同一尺子**的短线操作价"
+        "（约**1周/2周**主情景），不是改写中长期持有结论。\n"
+        "即使你认为现在不适合买入，也必须给出参考买入区间、止损价和目标抛售价，供用户对照。\n"
+        "只输出一个JSON对象，不要任何其他文字或```json围栏：\n"
+        '{"verdict":"不买入","buy_low":9.50,"buy_high":10.00,"stop_loss":9.10,"target_price":10.80,'
+        '"reason":"交叉验证结论（约1～2周）","risk":"主要风险"}\n'
+        "verdict 只能是 \"买入\" 或 \"不买入\"。仅当空仓者现在适合建仓才填\"买入\"。\n"
+        "buy_low/buy_high 为建议买入价区间。stop_loss 为严格止损价。"
+        "target_price 为约1～2周情景下的短周期目标抛售参考价。"
+    )
+
+
+def _trade_level_float(val):
+    try:
+        if val in (None, "", "-"):
+            return None
+        return round(float(val), 2)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_prediction_trade_levels(raw: str) -> dict:
+    """Parse structured buy/stop/target JSON from the AI-prediction overlay."""
+    text = str(raw or "").strip()
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+    m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if m:
+        text = m.group(1)
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    if start < 0 or end <= start:
+        return {"ok": False, "error": "no json"}
+    try:
+        parsed = json.loads(text[start:end].replace("'", '"'))
+    except (ValueError, json.JSONDecodeError):
+        return {"ok": False, "error": "json parse failed"}
+    if not isinstance(parsed, dict):
+        return {"ok": False, "error": "json not object"}
+    verdict_raw = str(parsed.get("verdict", "")).strip()
+    verdict = "买入" if ("买入" in verdict_raw and "不" not in verdict_raw) else "不买入"
+    buy_low = _trade_level_float(parsed.get("buy_low"))
+    buy_high = _trade_level_float(parsed.get("buy_high"))
+    stop_loss = _trade_level_float(parsed.get("stop_loss"))
+    target_price = _trade_level_float(parsed.get("target_price"))
+    if all(v is None for v in (buy_low, buy_high, stop_loss, target_price)):
+        return {"ok": False, "error": "no prices", "verdict": verdict}
+    return {
+        "ok": True,
+        "verdict": verdict,
+        "buy_low": buy_low,
+        "buy_high": buy_high,
+        "stop_loss": stop_loss,
+        "target_price": target_price,
+        "reason": str(parsed.get("reason") or ""),
+        "risk": str(parsed.get("risk") or ""),
+    }
+
+
+def generate_prediction_trade_levels(symbol: str, realtime_quote: dict | None = None) -> dict:
+    """Light AI-prediction overlay: same data assembly as the deep report, JSON prices only."""
+    from config import call_deepseek
+
+    log.info("优质低估短线买卖价 %s ...", symbol)
+    data = _load_or_compute(symbol, sentiment_provider="deepseek")
+    if realtime_quote:
+        data["realtime_quote"] = realtime_quote
+    elif not data.get("realtime_quote"):
+        try:
+            from fetch_market_data import fetch_realtime_quote
+            data["realtime_quote"] = fetch_realtime_quote(symbol)
+        except Exception as e:
+            log.warning("买卖价获取实时行情失败: %s", e)
+
+    analysis_text = _build_deepseek_prompt(symbol, data)
+    result = call_deepseek(
+        build_prediction_trade_levels_system_prompt(),
+        analysis_text,
+        max_tokens=1500,
+        reasoning_effort="medium",
+        thinking=False,
+    )
+    if not result.get("ok"):
+        return {"ok": False, "error": result.get("error", "DeepSeek 调用失败")}
+    parsed = parse_prediction_trade_levels(result.get("content") or "")
+    parsed["usage"] = result.get("usage", {})
+    return parsed
 
 
 def generate_prediction_deepseek(symbol: str, realtime_quote: dict | None = None, cost_price: float | None = None) -> dict:

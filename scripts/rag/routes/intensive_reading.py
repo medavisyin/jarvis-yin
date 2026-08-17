@@ -42,10 +42,13 @@ from intensive_reading.progress import load_all_progress, load_progress, save_pr
 from intensive_reading.prompts import (
     PASSAGE_WINDOW,
     KIND_VOCAB,
+    SPEAKING_EXERCISES,
     allowed_kinds,
     analysis_user_message,
     selection_explain_system_prompt,
     selection_explain_user_message,
+    speaking_system_prompt,
+    speaking_user_message,
     slice_passage,
     system_prompt_for_kind,
     tabs_payload,
@@ -208,8 +211,7 @@ def api_get_book(book_id: str):
         return jsonify({"error": "Book not found"}), 404
     prog = load_progress(book_id)
     meta["progress"] = prog
-    if (meta.get("book_type") or "").lower() == BOOK_TYPE_MAGAZINE:
-        meta["toc"] = load_toc(_books_dir(), book_id)
+    meta["toc"] = load_toc(_books_dir(), book_id)
     return jsonify(meta)
 
 
@@ -359,14 +361,32 @@ def api_put_chunk_analysis(book_id: str, chunk_index: int):
     tabs = data.get("tabs")
     kind = (data.get("kind") or "").strip()
     slot = data.get("slot")
+    speaking = data.get("speaking") if "speaking" in data else None
+    if kind == "speaking":
+        return jsonify({
+            "error": "speaking is not an analysis tab; send it as the speaking field",
+        }), 400
     if tabs is None and kind and isinstance(slot, dict):
         tabs = {kind: slot}
+    if tabs is None:
+        tabs = {}
     if not isinstance(tabs, dict):
+        return jsonify({"error": "tabs object (or kind+slot) required"}), 400
+    if "speaking" in tabs:
+        return jsonify({
+            "error": "speaking is not an analysis tab; send it as the speaking field",
+        }), 400
+    if not tabs and speaking is None:
         return jsonify({"error": "tabs object (or kind+slot) required"}), 400
     merge = data.get("merge", True)
     try:
         doc = save_chunk_analysis(
-            _books_dir(), book_id, chunk_index, tabs, merge=bool(merge)
+            _books_dir(),
+            book_id,
+            chunk_index,
+            tabs,
+            merge=bool(merge),
+            speaking=speaking if isinstance(speaking, dict) else None,
         )
     except InvalidBookId:
         return jsonify({"error": "Invalid book_id"}), 400
@@ -557,16 +577,18 @@ def api_explain_selection():
         if meta and not title:
             title = (meta.get("title") or book_id).strip()
 
+    source = (data.get("source") or "passage")
     try:
         user_msg = selection_explain_user_message(
             selected_text=selected_text,
             context=context,
             title=title,
+            source=source,
         )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    system_prompt = selection_explain_system_prompt()
+    system_prompt = selection_explain_system_prompt(source)
     host, model = _ollama_settings()
 
     def generate():
@@ -585,6 +607,129 @@ def api_explain_selection():
                     "stream": True,
                     "think": False,
                     "options": {"num_predict": 1024, "temperature": 0.4},
+                },
+                stream=True,
+                timeout=180,
+            )
+            if resp.status_code >= 400:
+                err_msg = f"Ollama error HTTP {resp.status_code}"
+                yield f"data: {json.dumps({'type': 'error', 'content': err_msg})}\n\n"
+                return
+            for line in resp.iter_lines():
+                if not line:
+                    continue
+                try:
+                    chunk_j = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                msg = chunk_j.get("message") or {}
+                token = msg.get("content") or ""
+                if not token:
+                    token = msg.get("thinking") or ""
+                if token:
+                    full += token
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                if chunk_j.get("done"):
+                    break
+            if not full.strip():
+                yield f"data: {json.dumps({'type': 'error', 'content': 'Ollama returned empty content. Check model and try again.'})}\n\n"
+                return
+            yield f"data: {json.dumps({'type': 'done', 'content': full})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+
+    return Response(
+        generate(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+_MAX_ORAL_CHARS = 8000
+
+
+@intensive_reading_bp.route("/api/intensive-reading/speaking", methods=["POST"])
+def api_speaking():
+    data = request.get_json(silent=True) or {}
+    book_id = (data.get("book_id") or "").strip()
+    chunk_index = data.get("chunk_index")
+    if not book_id or chunk_index is None:
+        return jsonify({"error": "book_id and chunk_index required"}), 400
+    err = _require_book_id(book_id)
+    if err:
+        return err
+    meta = load_meta(_books_dir(), book_id)
+    if not meta:
+        return jsonify({"error": "Book not found"}), 404
+    book_type = (meta.get("book_type") or "novel").strip().lower()
+    if book_type != BOOK_TYPE_MAGAZINE:
+        return jsonify({"error": "Speaking practice is only available for magazine books"}), 400
+    chunk = get_chunk(_books_dir(), book_id, int(chunk_index))
+    if not chunk:
+        return jsonify({"error": "Chunk not found"}), 404
+    if chunk.get("is_toc"):
+        return jsonify({"error": "Cannot run speaking practice on a TOC chunk"}), 400
+
+    exercise = (data.get("exercise") or "").strip().lower()
+    if exercise not in SPEAKING_EXERCISES:
+        return jsonify({"error": f"exercise must be one of {list(SPEAKING_EXERCISES)}"}), 400
+
+    oral_text = (data.get("oral_text") or "").strip()
+    if len(oral_text) > _MAX_ORAL_CHARS:
+        return jsonify({"error": f"oral_text is too long (max {_MAX_ORAL_CHARS} characters)"}), 400
+    if exercise == "pressure" and not oral_text:
+        return jsonify({"error": "oral_text is required for pressure practice"}), 400
+
+    try:
+        pressure_step = int(data.get("pressure_step") or 1)
+    except (TypeError, ValueError):
+        pressure_step = 1
+    if pressure_step not in (1, 2):
+        pressure_step = 1
+    user_reply = (data.get("user_reply") or "").strip()
+    if len(user_reply) > _MAX_ORAL_CHARS:
+        return jsonify({"error": f"user_reply is too long (max {_MAX_ORAL_CHARS} characters)"}), 400
+    pressure_attack = (data.get("pressure_attack") or "").strip()[:8000]
+    if exercise == "pressure" and pressure_step == 2 and not user_reply:
+        return jsonify({"error": "user_reply is required for pressure step 2"}), 400
+
+    passage = (chunk.get("text") or "").strip()
+    if not passage:
+        return jsonify({"error": "Empty passage"}), 400
+    if len(passage) > PASSAGE_WINDOW:
+        passage = passage[:PASSAGE_WINDOW]
+
+    try:
+        user_msg = speaking_user_message(
+            exercise=exercise,
+            passage=passage,
+            oral=oral_text,
+            pressure_step=pressure_step,
+            user_reply=user_reply,
+            pressure_attack=pressure_attack,
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    system_prompt = speaking_system_prompt(exercise)
+    host, model = _ollama_settings()
+
+    def generate():
+        import requests as req_mod
+
+        full = ""
+        try:
+            resp = req_mod.post(
+                f"{host}/api/chat",
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    "stream": True,
+                    "think": False,
+                    "options": {"num_predict": 1600, "temperature": 0.5},
                 },
                 stream=True,
                 timeout=180,

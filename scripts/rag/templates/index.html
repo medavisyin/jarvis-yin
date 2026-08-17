@@ -182,19 +182,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 .modal-overlay.open{display:flex}
 @media (max-width:720px){.ir-split{grid-template-columns:1fr !important}}
 #intensiveReadingModal .modal-panel{max-width:min(1280px,96vw)!important;width:96vw;height:90vh}
-#intensiveReadingModal .ir-split{grid-template-columns:1.45fr 1fr;gap:14px}
-#irPassage{padding:18px 22px!important;font-size:1.05em!important;line-height:1.85!important;
-  color:#e8eaf2!important;white-space:normal!important;background:#12141c}
-#irPassage .ir-para{margin:0 0 1.05em;text-indent:1.6em;text-align:justify;
-  hyphens:auto;-webkit-hyphens:auto;overflow-wrap:break-word}
-#irPassage .ir-para.ir-title{text-indent:0;font-weight:600;font-size:1.12em;color:#c4c8f0;
+#intensiveReadingModal .ir-split{grid-template-columns:1.6fr 1fr;gap:14px}
+@font-face{font-family:Literata;font-style:normal;font-weight:400;font-display:swap;
+  src:url("/static/fonts/literata-latin-400-normal.woff2") format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:Literata;font-style:italic;font-weight:400;font-display:swap;
+  src:url("/static/fonts/literata-latin-400-italic.woff2") format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:Literata;font-style:normal;font-weight:600;font-display:swap;
+  src:url("/static/fonts/literata-latin-600-normal.woff2") format("woff2");
+  unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+#irPassage{padding:28px 20px 40px!important;font-size:18px!important;line-height:1.72!important;
+  color:#d6d2c8!important;white-space:normal!important;background:#16141a;
+  font-family:Literata,Georgia,"Iowan Old Style","Palatino Linotype",Palatino,"Times New Roman",serif;
+  letter-spacing:0.01em;overflow-wrap:break-word}
+#irPassage .ir-reading-col{max-width:38em;margin:0 auto}
+#irPassage .ir-para{text-align:left;hyphens:none;overflow-wrap:break-word}
+#irPassage.ir-kind-novel .ir-para{margin:0 0 0.28em;text-indent:1.25em}
+#irPassage.ir-kind-magazine .ir-para{margin:0 0 0.9em;text-indent:0}
+#irPassage .ir-para.ir-title{text-indent:0;font-weight:600;font-size:1.12em;color:#e4e0d4;
   margin-bottom:0.85em;line-height:1.4;text-align:left}
 #irPassage .ir-para.ir-kicker{text-indent:0;font-size:0.82em;letter-spacing:0.04em;
-  text-transform:uppercase;color:#8b8fa4;margin-bottom:0.35em;text-align:left}
+  text-transform:uppercase;color:#9a9588;margin-bottom:0.35em;text-align:left}
 #irChunkTitle{display:none;flex:1 1 220px;min-width:0;font-size:0.92em;font-weight:600;
   color:#e8eaf2;line-height:1.35}
 #irPassage .ir-article-title{margin:0 0 0.85em;padding:0 0 0.55em;border-bottom:1px solid #2a2d3a;
-  text-indent:0;text-align:left;font-weight:650;font-size:1.22em;line-height:1.35;color:#f0f2fa}
+  text-indent:0;text-align:left;font-weight:600;font-size:1.22em;line-height:1.35;color:#e8e4da}
 #irExplainBtn{position:fixed;z-index:500;display:none;padding:5px 10px;font-size:0.78em;
   border-radius:6px;border:1px solid #4a5080;background:#2a2f4a;color:#e8eaf2;cursor:pointer;
   box-shadow:0 4px 14px rgba(0,0,0,.45);line-height:1.2}
@@ -721,7 +734,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
           <span id="irChunkTitle"></span>
           <span id="irReaderMeta" style="font-size:0.78em;color:#8b8fa4;margin-left:auto"></span>
         </div>
-        <div style="display:grid;grid-template-columns:1.45fr 1fr;gap:14px;flex:1;min-height:0" class="ir-split">
+        <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:14px;flex:1;min-height:0" class="ir-split">
           <div style="display:flex;flex-direction:column;min-height:0;border:1px solid #2a2d3a;border-radius:8px;overflow:hidden">
             <div style="padding:6px 10px;background:#1e2030;font-size:0.75em;color:#8b8fa4;border-bottom:1px solid #2a2d3a;display:flex;align-items:center;gap:10px">
               <span>Passage</span>
@@ -1256,6 +1269,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" id="btnQvStop" onclick="stopQvScan()" style="font-size:0.78em" disabled>&#9724; 停止</button>
         <button type="button" class="toolbar-btn" onclick="loadQvHistory()" style="font-size:0.78em">&#128203; 历史记录</button>
         <button type="button" class="toolbar-btn" id="btnQvPdf" onclick="exportStockPdf('quality_value','qv')" style="font-size:0.78em">&#128196; 导出PDF</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;margin-left:8px">
+          <span>持有口径</span>
+          <select id="qvHorizon" style="background:#1a1d2e;color:#e0e0e0;border:1px solid #2a2d3e;border-radius:4px;padding:4px 6px;font-size:0.95em">
+            <option value="long">6 个月～2 年</option>
+            <option value="medium">1 个月～6 个月</option>
+          </select>
+        </label>
         <label style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#a0a4b8;cursor:pointer;margin-left:8px" title="使用 DeepSeek 做行业周期与价值陷阱终审">
           <input type="checkbox" id="qvUseDeepseek" style="accent-color:#22c55e">
           <span>&#128171; DeepSeek</span>
@@ -1271,7 +1291,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <div id="qvPhase" style="font-size:0.76em;color:#8b8fa4;margin-top:4px"></div>
       </div>
       <div id="qvResult" style="max-height:62vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:14px;background:#1a1d2e;font-size:0.84em;line-height:1.6;color:#c4c8f0">
-        <p style="color:#6b7280">点击「开始扫描」筛选优质低估 A 股（约 6 个月～2 年）。流程：</p>
+        <p style="color:#6b7280">点击「开始扫描」筛选优质低估 A 股。可选持有口径：约 6 个月～2 年，或约 1 个月～6 个月。流程：</p>
         <p style="color:#6b7280">1. 同业 PE/PB + 股息粗筛（排除创业板 ST）→ 2. 基本面排雷 → 3. PB-ROE 排序 → 4. DeepSeek 周期/陷阱终审，最多 5 只</p>
         <p style="color:#6b7280;font-size:0.9em;margin-top:8px">不构成投资建议。0 只是宁缺毋滥。</p>
       </div>
@@ -2070,8 +2090,14 @@ function irCloseArticlesPop() {
 function irSyncArticlesUi() {
   var wrap = document.getElementById('irArticlesWrap');
   if (!wrap) return;
-  var show = _irState.bookType === 'magazine' && !!_irState.bookId;
+  var toc = Array.isArray(_irState.toc) ? _irState.toc : [];
+  var pageish = toc.filter(function(e) { return /^Pages\s+\d/i.test(e.title || ''); }).length;
+  var real = toc.length && pageish / toc.length < 0.8;
+  var show = !!_irState.bookId && real &&
+    (_irState.bookType === 'magazine' || _irState.bookType === 'novel');
   wrap.style.display = show ? 'inline-flex' : 'none';
+  var btn = document.getElementById('irArticlesBtn');
+  if (btn) btn.textContent = (_irState.bookType === 'novel') ? 'Chapters ▾' : 'Articles ▾';
   if (!show) irCloseArticlesPop();
   else irRenderArticlesPop();
 }
@@ -2081,14 +2107,17 @@ function irRenderArticlesPop() {
   if (!pop) return;
   var toc = Array.isArray(_irState.toc) ? _irState.toc : [];
   if (!toc.length) {
-    pop.innerHTML = '<div class="ir-toc-empty">No articles list yet</div>';
+    var empty = (_irState.bookType === 'novel') ? 'No chapters list yet' : 'No articles list yet';
+    pop.innerHTML = '<div class="ir-toc-empty">' + empty + '</div>';
     return;
   }
   pop.innerHTML = '';
-  toc.forEach(function(entry) {
+  toc.forEach(function(entry, i) {
+    var nextStart = (i + 1 < toc.length) ? toc[i + 1].chunk_index : Infinity;
+    var active = _irState.chunkIndex >= entry.chunk_index && _irState.chunkIndex < nextStart;
     var btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'ir-toc-item' + (entry.chunk_index === _irState.chunkIndex ? ' active' : '');
+    btn.className = 'ir-toc-item' + (active ? ' active' : '');
     btn.setAttribute('role', 'option');
     btn.textContent = entry.title || ('Chunk ' + (entry.chunk_index + 1));
     btn.title = btn.textContent;
@@ -2103,7 +2132,7 @@ function irRenderArticlesPop() {
 
 function irToggleArticlesPop(ev) {
   if (ev) ev.stopPropagation();
-  if (_irState.bookType !== 'magazine') return;
+  if (_irState.bookType !== 'magazine' && _irState.bookType !== 'novel') return;
   var pop = document.getElementById('irArticlesPop');
   if (!pop) return;
   if (pop.classList.contains('open')) {
@@ -2302,7 +2331,7 @@ async function irOpenBook(bookId) {
     }
     _irState.bookId = bookId;
     _irState.bookType = (meta.book_type === 'magazine') ? 'magazine' : 'novel';
-    _irState.toc = (_irState.bookType === 'magazine' && Array.isArray(meta.toc)) ? meta.toc : [];
+    _irState.toc = Array.isArray(meta.toc) ? meta.toc : [];
     await irLoadTabs(_irState.bookType);
     irResetAnalyses();
     document.getElementById('irReaderTitle').textContent = meta.title || bookId;
@@ -2319,31 +2348,33 @@ function irRenderPassage(raw, opts) {
   opts = opts || {};
   var el = document.getElementById('irPassage');
   if (!el) return;
+  var isMagazine = opts.bookType === 'magazine';
+  el.className = isMagazine ? 'ir-passage ir-kind-magazine' : 'ir-passage ir-kind-novel';
   el.innerHTML = '';
   el.style.flex = '1';
   el.style.overflowY = 'auto';
+  var col = document.createElement('div');
+  col.className = 'ir-reading-col';
+  el.appendChild(col);
   var text = (raw || '').replace(/\r\n/g, '\n').trim();
   var articleTitle = (opts.articleTitle || '').replace(/\s+/g, ' ').trim();
-  var isMagazine = opts.bookType === 'magazine';
   if (!text && !articleTitle) {
-    el.textContent = '';
     return;
   }
   var paras = text ? text.split(/\n\s*\n/).map(function(p) {
     return p.replace(/\n/g, ' ').replace(/[ \t]+/g, ' ').trim();
   }).filter(Boolean) : [];
-  if (isMagazine && articleTitle) {
-    // Avoid duplicating the same title as the first paragraph
+  if (articleTitle) {
     if (paras.length && paras[0].replace(/\s+/g, ' ').trim().toLowerCase() === articleTitle.toLowerCase()) {
       paras = paras.slice(1);
     }
     var heading = document.createElement('h2');
     heading.className = 'ir-article-title';
     heading.textContent = articleTitle;
-    el.appendChild(heading);
+    col.appendChild(heading);
   }
   if (paras.length === 0) {
-    if (!isMagazine || !articleTitle) el.textContent = text;
+    if (!articleTitle) col.textContent = text;
     return;
   }
   paras.forEach(function(p, idx) {
@@ -2362,7 +2393,7 @@ function irRenderPassage(raw, opts) {
       node.className = 'ir-para';
     }
     node.textContent = p;
-    el.appendChild(node);
+    col.appendChild(node);
   });
 }
 
@@ -6718,9 +6749,10 @@ async function startQvScan() {
   document.getElementById('btnQvStop').disabled = false;
   document.getElementById('qvProgress').style.display = 'block';
   var useDs = document.getElementById('qvUseDeepseek').checked;
+  var horizon = (document.getElementById('qvHorizon') && document.getElementById('qvHorizon').value) || 'long';
   document.getElementById('qvResult').innerHTML = '<p style="color:#86efac">⏳ 正在筛选优质低估...' + (useDs ? ' (DeepSeek)' : '') + '</p>';
   try {
-    const r = await fetch('/api/stock/quality-value/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({use_deepseek: useDs})});
+    const r = await fetch('/api/stock/quality-value/start', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({use_deepseek: useDs, horizon: horizon})});
     const d = await r.json();
     if (d.error) { st.textContent = d.error; document.getElementById('btnQvStart').disabled = false; return; }
     st.textContent = '扫描进行中';
@@ -6746,7 +6778,7 @@ async function pollQvStatus() {
       return;
     }
     prog.style.display = 'block';
-    const steps = {layer1: '估值粗筛（排除创业板）...', layer2: '基本面排雷...', layer3: 'PB-ROE 排序...', layer4: 'DeepSeek 终审...', done: '完成'};
+    const steps = {layer1: '估值粗筛（排除创业板）...', layer2: '基本面排雷...', layer3: 'PB-ROE 排序...', layer4: 'DeepSeek 终审...', predict: 'A股分析买卖价...', done: '完成'};
     const pct = d.progress != null ? d.progress : 10;
     if (d.status === 'done') {
       bar.style.width = '100%'; txt.textContent = '完成'; phase.textContent = '';
@@ -6769,6 +6801,15 @@ async function pollQvStatus() {
       document.getElementById('btnQvStart').disabled = false;
       document.getElementById('btnQvStop').disabled = true;
       if (_qvPollTimer) { clearInterval(_qvPollTimer); _qvPollTimer = null; }
+      var showQvError = function() {
+        document.getElementById('qvResult').innerHTML = '<p style="color:#f87171">' + (d.error || '扫描失败') + '</p>';
+      };
+      try {
+        var fullR = await fetch('/api/stock/quality-value/result');
+        var fullD = await fullR.json();
+        if (!fullD.error) { renderQvResult(fullD); _cachePdfData('qv', fullD); }
+        else { showQvError(); }
+      } catch(_e) { showQvError(); }
     } else if (d.status === 'running') {
       bar.style.width = pct + '%'; txt.textContent = pct + '%';
       phase.textContent = steps[d.step] || d.step || d.status;
@@ -6780,10 +6821,20 @@ async function pollQvStatus() {
 function renderQvResult(data) {
   const el = document.getElementById('qvResult');
   var picks = data.picks || [];
-  let h = '<p style="color:#8b8fa4;font-size:0.8em;margin:0 0 10px">⚠️ 不构成投资建议。持有口径约 6 个月～2 年。已排除创业板。</p>';
+  var stats = data.stats || {};
+  var hz = data.horizon === 'medium' ? '约 1 个月～6 个月' : '约 6 个月～2 年';
+  let h = '<p style="color:#8b8fa4;font-size:0.8em;margin:0 0 10px">⚠️ 不构成投资建议。持有口径' + hz + '。已排除创业板。';
+  var hasPred = !!(data.use_deepseek) || picks.some(function(x){ return x.prediction; });
+  if (hasPred) h += '买卖价为约1～2周操作参考。';
+  h += '</p>';
   if (picks.length === 0) {
-    h += '<div style="text-align:center;padding:16px"><p style="color:#fbbf24">本次扫描: 暂无推荐（宁缺毋滥）</p>';
-    h += '<p style="color:#8b8fa4;font-size:0.82em">漏斗过严或当天没有同时满足优质+低估的标的——这是功能，不是故障。</p></div>';
+    if (stats.snapshot_failed) {
+      h += '<div style="text-align:center;padding:16px"><p style="color:#f87171">行情快照拉取失败</p>';
+      h += '<p style="color:#8b8fa4;font-size:0.82em">东财、akshare、新浪均未拉到实时行情，且没有当天本地快照。漏斗未执行。请稍后重试，这不是宁缺毋滥。</p></div>';
+    } else {
+      h += '<div style="text-align:center;padding:16px"><p style="color:#fbbf24">本次扫描: 暂无推荐（宁缺毋滥）</p>';
+      h += '<p style="color:#8b8fa4;font-size:0.82em">漏斗过严或当天没有同时满足优质+低估的标的——这是功能，不是故障。</p></div>';
+    }
   } else {
     h += '<h3 style="color:#22c55e;margin:0 0 10px">优质低估 (' + picks.length + ' 只)</h3>';
     picks.forEach(function(p, i) {
@@ -6798,6 +6849,18 @@ function renderQvResult(data) {
       if (llm.cycle) h += '<div style="font-size:0.8em;color:#38bdf8">周期: ' + llm.cycle + (llm.trap ? ' · 价值陷阱' : '') + '</div>';
       if (llm.reason || p.recommendation_reason) h += '<div style="margin-top:4px;color:#a3e635;font-size:0.85em">' + (llm.reason || p.recommendation_reason) + '</div>';
       if (llm.risk) h += '<div style="color:#f87171;font-size:0.8em">风险: ' + llm.risk + '</div>';
+      var pred = p.prediction || {};
+      if (pred.ok) {
+        h += '<div style="margin-top:8px;padding-top:6px;border-top:1px dashed #2a2d3e;font-size:0.82em">';
+        h += '<div style="color:#fbbf24">约1～2周操作参考 · 短线判断: <b>' + (pred.verdict || '-') + '</b></div>';
+        h += '<div style="color:#86efac">建议买入区间: ¥' + (pred.buy_low != null ? pred.buy_low : '-') + ' ~ ¥' + (pred.buy_high != null ? pred.buy_high : '-') + '</div>';
+        h += '<div style="color:#f87171">止损: ¥' + (pred.stop_loss != null ? pred.stop_loss : '-') + '</div>';
+        h += '<div style="color:#60a5fa">目标抛售参考: ¥' + (pred.target_price != null ? pred.target_price : '-') + '</div>';
+        if (pred.reason) h += '<div style="color:#a0a4b8;margin-top:2px">' + pred.reason + '</div>';
+        h += '</div>';
+      } else if (pred && (pred.error || pred.ok === false)) {
+        h += '<div style="color:#fbbf24;font-size:0.78em;margin-top:4px">预测未出</div>';
+      }
       if (p.llm_skipped) h += '<div style="color:#fbbf24;font-size:0.78em">未经 AI 终审</div>';
       h += '</div>';
     });

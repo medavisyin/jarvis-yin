@@ -542,8 +542,14 @@ def _build_quality_value(data: dict, elements: list) -> None:
     elements.append(Spacer(1, 24))
     elements.append(Paragraph(_safe(REPORT_TITLES["quality_value"]), STYLES["title"]))
     elements.append(Paragraph(_safe(date_str), STYLES["subtitle"]))
+    horizon = str(data.get("horizon") or "long")
+    hz = "约 1 个月～6 个月" if horizon == "medium" else "约 6 个月～2 年"
     elements.append(
-        Paragraph("⚠️ 不构成投资建议。持有口径约 6 个月～2 年。已排除创业板。筛选仅供参考。", STYLES["body"]),
+        Paragraph(
+            f"⚠️ 不构成投资建议。持有口径{hz}。已排除创业板。筛选仅供参考。"
+            "若含买卖价，为约1～2周操作参考，与持有口径不同。",
+            STYLES["body"],
+        ),
     )
     stats = data.get("stats") or {}
     if stats:
@@ -557,6 +563,15 @@ def _build_quality_value(data: dict, elements: list) -> None:
         )
     picks = data.get("picks") or []
     if not picks:
+        if stats.get("snapshot_failed"):
+            elements.append(Paragraph("扫描失败: 行情快照为空", STYLES["h1"]))
+            elements.append(
+                Paragraph(
+                    "东财、akshare、新浪均未拉到全市场行情，且没有当天的本地快照。漏斗未执行。这不是宁缺毋滥。请稍后重试。",
+                    STYLES["body"],
+                ),
+            )
+            return
         elements.append(Paragraph("推荐: 暂无", STYLES["h1"]))
         elements.append(
             Paragraph("本次未选出标的（宁缺毋滥）。漏斗过严或当日没有同时满足优质+低估的股票。", STYLES["body"]),
@@ -590,6 +605,22 @@ def _build_quality_value(data: dict, elements: list) -> None:
         if llm.get("risk"):
             elements.append(Paragraph("<b>风险</b>", STYLES["h3"]))
             _append_body_paragraphs(elements, str(llm.get("risk")))
+        pred = pick.get("prediction") or {}
+        if pred.get("ok"):
+            elements.append(Paragraph("约1～2周操作参考", STYLES["h3"]))
+            elements.append(
+                Paragraph(
+                    f"短线判断: {_safe(pred.get('verdict'))}；"
+                    f"建议买入 {_safe(pred.get('buy_low'))} ~ {_safe(pred.get('buy_high'))}；"
+                    f"止损 {_safe(pred.get('stop_loss'))}；"
+                    f"目标抛售参考 {_safe(pred.get('target_price'))}",
+                    STYLES["body"],
+                )
+            )
+            if pred.get("reason"):
+                _append_body_paragraphs(elements, str(pred.get("reason")))
+        elif pred:
+            elements.append(Paragraph("预测未出", STYLES["body_small"]))
         if pick.get("llm_skipped"):
             elements.append(Paragraph("未经 AI 终审", STYLES["body_small"]))
         elements.append(_hr())

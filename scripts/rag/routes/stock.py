@@ -586,8 +586,9 @@ def api_stock_qv_start():
     try:
         body = request.get_json(silent=True) or {}
         use_ds = body.get("use_deepseek", False)
+        horizon = body.get("horizon", "long")
         from quality_value_scanner import start_qv_scan
-        return jsonify(start_qv_scan(use_deepseek=use_ds))
+        return jsonify(start_qv_scan(use_deepseek=use_ds, horizon=horizon))
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500

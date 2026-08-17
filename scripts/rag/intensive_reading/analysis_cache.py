@@ -34,6 +34,45 @@ def empty_slot() -> dict[str, Any]:
     }
 
 
+_SPEAKING_PHASES = ("idle", "attacked", "done")
+
+
+def empty_speaking() -> dict[str, Any]:
+    return {
+        "oral": "",
+        "logic": "",
+        "cue": "",
+        "pressure_attack": "",
+        "user_reply": "",
+        "pressure_defense": "",
+        "phase": "idle",
+        "error": "",
+        "active_exercise": "",
+    }
+
+
+def normalize_speaking(raw: Any) -> dict[str, Any]:
+    base = empty_speaking()
+    if not isinstance(raw, dict):
+        return base
+    out = dict(base)
+    for key in (
+        "oral",
+        "logic",
+        "cue",
+        "pressure_attack",
+        "user_reply",
+        "pressure_defense",
+        "error",
+        "active_exercise",
+    ):
+        if key in raw:
+            out[key] = str(raw.get(key) or "")
+    phase = str(raw.get("phase") or "idle")
+    out["phase"] = phase if phase in _SPEAKING_PHASES else "idle"
+    return out
+
+
 def normalize_slot(raw: Any) -> dict[str, Any]:
     base = empty_slot()
     if not isinstance(raw, dict):
@@ -80,6 +119,7 @@ def load_chunk_analysis(
         "chunk_index": int(chunk_index),
         "updated_at": None,
         "tabs": {},
+        "speaking": empty_speaking(),
     }
     if not os.path.isfile(path):
         return empty
@@ -95,11 +135,13 @@ def load_chunk_analysis(
             if not isinstance(kind, str) or not kind:
                 continue
             tabs[kind] = normalize_slot(slot)
+    speaking_in = data.get("speaking") if isinstance(data, dict) else None
     return {
         "book_id": book_id,
         "chunk_index": int(chunk_index),
         "updated_at": data.get("updated_at") if isinstance(data, dict) else None,
         "tabs": tabs,
+        "speaking": normalize_speaking(speaking_in),
     }
 
 
@@ -110,20 +152,30 @@ def save_chunk_analysis(
     tabs: dict[str, Any],
     *,
     merge: bool = True,
+    speaking: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Persist analysis tabs for a chunk.
 
     If merge=True, update only provided kinds on top of existing file.
+    `speaking` is stored beside `tabs` and is preserved when omitted
+    (including merge=False, which replaces tabs only).
     """
     path = _analysis_path(books_dir, book_id, chunk_index)
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    existing = load_chunk_analysis(books_dir, book_id, chunk_index) if merge else {
-        "book_id": book_id,
-        "chunk_index": int(chunk_index),
-        "tabs": {},
-    }
+    existing_file = load_chunk_analysis(books_dir, book_id, chunk_index)
+    if merge:
+        existing = existing_file
+    else:
+        existing = {
+            "book_id": book_id,
+            "chunk_index": int(chunk_index),
+            "tabs": {},
+            "speaking": existing_file.get("speaking") or empty_speaking(),
+        }
     out_tabs = dict(existing.get("tabs") or {})
+    if tabs is None:
+        tabs = {}
     if not isinstance(tabs, dict):
         raise ValueError("tabs must be an object")
     applied = 0
@@ -133,6 +185,10 @@ def save_chunk_analysis(
             skipped += 1
             continue
         out_tabs[kind] = normalize_slot(slot)
+        applied += 1
+    out_speaking = normalize_speaking(existing.get("speaking"))
+    if speaking is not None:
+        out_speaking = normalize_speaking(speaking)
         applied += 1
     if applied == 0:
         raise ValueError(
@@ -144,6 +200,7 @@ def save_chunk_analysis(
         "chunk_index": int(chunk_index),
         "updated_at": datetime.now().isoformat(),
         "tabs": out_tabs,
+        "speaking": out_speaking,
     }
     tmp = f"{path}.tmp-{os.getpid()}"
     try:
