@@ -999,12 +999,22 @@ def api_stock_train_status():
     """Get daily training progress."""
     try:
         from config import STOCK_REPORTS_ROOT
+        from watchlist import list_stocks, project_train_progress_to_watchlist
         path = os.path.join(STOCK_REPORTS_ROOT, "train_progress.json")
         if not os.path.isfile(path):
             return jsonify({"status": "idle"})
         with open(path, encoding="utf-8") as f:
             progress = json.load(f)
         progress["running"] = _train_thread is not None and _train_thread.is_alive()
+        stocks = list_stocks()
+        progress = project_train_progress_to_watchlist(progress, stocks)
+        try:
+            from prediction_tracker import get_aggregate_stats
+            progress["aggregate_stats"] = get_aggregate_stats(
+                [s.get("symbol") for s in stocks if s.get("symbol")]
+            )
+        except Exception:
+            pass
         return jsonify(progress)
     except Exception as exc:
         traceback.print_exc()

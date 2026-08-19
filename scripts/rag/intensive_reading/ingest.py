@@ -543,7 +543,7 @@ def build_toc_entries(
 ) -> list[dict[str, Any]]:
     """TOC list for Articles/Chapters UI (skips pure TOC chrome chunks)."""
     entries: list[dict[str, Any]] = []
-    seen_chapters: set[str] = set()
+    last_collapsed_key: str | None = None
     collapse = (book_type or "").lower() == BOOK_TYPE_NOVEL
     for c in chunks or []:
         if c.get("is_toc"):
@@ -554,9 +554,9 @@ def build_toc_entries(
         display = _PART_SUFFIX.sub("", title).strip() if collapse else title
         if collapse:
             key = display.lower()
-            if key in seen_chapters:
+            if last_collapsed_key == key:
                 continue
-            seen_chapters.add(key)
+            last_collapsed_key = key
         entry: dict[str, Any] = {
             "title": display,
             "chunk_index": int(c.get("chunk_index", len(entries))),

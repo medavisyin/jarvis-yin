@@ -1,0 +1,28 @@
+{
+  "book_id": "magbook-aaa111",
+  "chunk_index": 0,
+  "updated_at": "2026-08-15T18:58:45.267219",
+  "tabs": {
+    "speaking": {
+      "text": "nope",
+      "status": "done",
+      "offset": 0,
+      "part": 1,
+      "hasMore": false,
+      "genTrunc": false,
+      "lastOffset": 0,
+      "error": ""
+    }
+  },
+  "speaking": {
+    "oral": "",
+    "logic": "",
+    "cue": "",
+    "pressure_attack": "",
+    "user_reply": "",
+    "pressure_defense": "",
+    "phase": "idle",
+    "error": "",
+    "active_exercise": ""
+  }
+}

@@ -4,6 +4,7 @@ Watchlist management for stock tracking.
 Manages a personal list of stocks to monitor daily.
 Supports add/remove, batch data refresh, and status overview.
 """
+import copy
 import json
 import os
 import logging
@@ -48,6 +49,53 @@ def _save(data: dict):
 def list_stocks() -> list[dict]:
     """返回 watchlist 中所有股票."""
     return _load_raw().get("stocks", [])
+
+
+def project_train_progress_to_watchlist(progress: dict, stocks: list[dict]) -> dict:
+    """Return a copy of train_progress aligned to the current watchlist.
+
+    Drops symbols that are no longer watched, keeps existing rows (including
+    errors) for current symbols, and inserts ``pending`` placeholders for
+    watchlist names that have no result yet. Does not mutate ``progress``.
+    """
+    out = copy.deepcopy(progress) if progress else {}
+    wanted = [s for s in (stocks or []) if s.get("symbol")]
+    wanted_syms = [s["symbol"] for s in wanted]
+    wanted_set = set(wanted_syms)
+    names = {s["symbol"]: s.get("name") or "" for s in wanted}
+
+    existing: dict[str, dict] = {}
+    for row in out.get("results") or []:
+        sym = row.get("symbol")
+        if sym in wanted_set and sym not in existing:
+            existing[sym] = copy.deepcopy(row)
+
+    ordered = []
+    for sym in wanted_syms:
+        if sym in existing:
+            row = existing[sym]
+            if names[sym]:
+                row["name"] = names[sym]
+            ordered.append(row)
+        else:
+            ordered.append({"symbol": sym, "name": names[sym], "pending": True})
+
+    out["results"] = ordered
+    out["verifications"] = [
+        v for v in (out.get("verifications") or []) if v.get("symbol") in wanted_set
+    ]
+    agg = out.get("aggregate_stats")
+    if isinstance(agg, dict) and isinstance(agg.get("per_symbol"), list):
+        agg = dict(agg)
+        agg["per_symbol"] = [
+            p for p in agg["per_symbol"] if p.get("symbol") in wanted_set
+        ]
+        agg["symbol_count"] = len(wanted_syms)
+        out["aggregate_stats"] = agg
+    out["total"] = len(wanted_syms)
+    if out.get("status") != "running":
+        out["completed"] = len(wanted_syms)
+    return out
 
 
 def add_stock(symbol: str, name: str = "", sector: str = "", notes: str = "") -> dict:

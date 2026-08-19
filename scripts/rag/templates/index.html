@@ -198,7 +198,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   letter-spacing:0.01em;overflow-wrap:break-word}
 #irPassage .ir-reading-col{max-width:38em;margin:0 auto}
 #irPassage .ir-para{text-align:left;hyphens:none;overflow-wrap:break-word}
-#irPassage.ir-kind-novel .ir-para{margin:0 0 0.28em;text-indent:1.25em}
+#irPassage.ir-kind-novel .ir-para{margin:0 0 1em;text-indent:1.25em}
 #irPassage.ir-kind-magazine .ir-para{margin:0 0 0.9em;text-indent:0}
 #irPassage .ir-para.ir-title{text-indent:0;font-weight:600;font-size:1.12em;color:#e4e0d4;
   margin-bottom:0.85em;line-height:1.4;text-align:left}
@@ -7139,12 +7139,20 @@ function renderFullTrainReport(verifications, results, sentiment, blackSwan, agg
   }
 
   // === Section 3: New Predictions ===
-  const valid = results.filter(r => !r.error);
-  if (valid.length > 0) {
+  const rows = results || [];
+  if (rows.length > 0) {
     h += '<h3 style="color:#10b981;margin:12px 0 10px">&#127919; 明日价格预测</h3>';
     h += '<table style="width:100%;border-collapse:collapse;font-size:0.84em">';
     h += '<tr style="border-bottom:1px solid #2a2d3e;color:#8b8fa4"><th style="text-align:left;padding:6px">股票</th><th>当前价</th><th>预测收盘</th><th>预测最高</th><th>预测最低</th><th>涨跌幅/方向</th><th>健康</th></tr>';
-    valid.forEach(r => {
+    rows.forEach(r => {
+      const isPending = r.pending || r.error || !r.predictions;
+      h += '<tr style="border-bottom:1px solid #1a1d2e">';
+      h += '<td style="padding:6px;font-weight:600">' + (r.name || r.symbol) + '<br><span style="color:#8b8fa4;font-weight:400;font-size:0.85em">' + r.symbol + '</span></td>';
+      if (isPending) {
+        h += '<td colspan="6" style="text-align:center;padding:6px;color:#8b8fa4">待训练</td>';
+        h += '</tr>';
+        return;
+      }
       const p = r.predictions || {};
       const c = r.change_pct || {};
       const chgVal = c.close || 0;
@@ -7153,8 +7161,6 @@ function renderFullTrainReport(verifications, results, sentiment, blackSwan, agg
       const hl = r.health || {};
       const dirLabel = r.direction_label || '';
       const dirColor = dirLabel === '看涨' ? '#ef4444' : dirLabel === '看跌' ? '#10b981' : '#8b8fa4';
-      h += '<tr style="border-bottom:1px solid #1a1d2e">';
-      h += '<td style="padding:6px;font-weight:600">' + (r.name || r.symbol) + '<br><span style="color:#8b8fa4;font-weight:400;font-size:0.85em">' + r.symbol + '</span></td>';
       h += '<td style="text-align:center;padding:6px;color:#8b8fa4">' + (r.current_close ? '&yen;'+r.current_close.toFixed(2) : '-') + '</td>';
       h += '<td style="text-align:center;padding:6px;color:#fbbf24;font-weight:600">&yen;' + (p.close||0).toFixed(2) + '</td>';
       h += '<td style="text-align:center;padding:6px;color:#ef4444">&yen;' + (p.high||0).toFixed(2) + '</td>';
