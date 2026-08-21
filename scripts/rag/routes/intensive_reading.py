@@ -45,6 +45,8 @@ from intensive_reading.prompts import (
     SPEAKING_EXERCISES,
     allowed_kinds,
     analysis_user_message,
+    normalize_learner_level,
+    normalize_output_lang,
     selection_explain_system_prompt,
     selection_explain_user_message,
     speaking_system_prompt,
@@ -77,6 +79,22 @@ def _ollama_settings() -> tuple[str, str]:
 
         host = getattr(agent_mod, "OLLAMA_HOST", host)
         model = getattr(agent_mod, "OLLAMA_MODEL", model)
+    except Exception:
+        pass
+    return host, model
+
+
+def _ollama_fast_settings() -> tuple[str, str]:
+    """Host + small model for selection Explain (default qwen3:1.7b)."""
+    host, _main = _ollama_settings()
+    env_model = (os.environ.get("RAG_AGENT_FAST_MODEL") or "").strip()
+    if env_model:
+        return host, env_model
+    model = "qwen3:1.7b"
+    try:
+        import agent as agent_mod
+
+        model = getattr(agent_mod, "OLLAMA_MODEL_FAST", model) or model
     except Exception:
         pass
     return host, model
@@ -473,7 +491,14 @@ def api_analyze():
     except (TypeError, ValueError):
         return jsonify({"error": "Invalid part"}), 400
     previous_analysis = (data.get("previous_analysis") or "")[:8000]
-    system_prompt = system_prompt_for_kind(analysis_kind)
+    learner_level = normalize_learner_level(data.get("learner_level"))
+    output_lang = normalize_output_lang(data.get("output_lang"))
+    system_prompt = system_prompt_for_kind(
+        analysis_kind,
+        learner_level=learner_level,
+        output_lang=output_lang,
+    )
+    num_predict = 4096 if analysis_kind == KIND_VOCAB else 2048
 
     host, model = _ollama_settings()
     user_msg = analysis_user_message(
@@ -485,6 +510,8 @@ def api_analyze():
         previous_analysis=previous_analysis,
         analysis_kind=analysis_kind,
         book_type=book_type,
+        learner_level=learner_level,
+        output_lang=output_lang,
     )
 
     def generate():
@@ -505,7 +532,7 @@ def api_analyze():
                     # qwen3.5 defaults to thinking-only tokens; without this,
                     # message.content stays empty and the UI shows no analysis.
                     "think": False,
-                    "options": {"num_predict": 2048, "temperature": 0.4},
+                    "options": {"num_predict": num_predict, "temperature": 0.4},
                 },
                 stream=True,
                 timeout=300,
@@ -578,6 +605,7 @@ def api_explain_selection():
             title = (meta.get("title") or book_id).strip()
 
     source = (data.get("source") or "passage")
+    learner_level = normalize_learner_level(data.get("learner_level"))
     try:
         user_msg = selection_explain_user_message(
             selected_text=selected_text,
@@ -588,8 +616,8 @@ def api_explain_selection():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    system_prompt = selection_explain_system_prompt(source)
-    host, model = _ollama_settings()
+    system_prompt = selection_explain_system_prompt(source, learner_level=learner_level)
+    host, model = _ollama_fast_settings()
 
     def generate():
         import requests as req_mod

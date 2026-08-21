@@ -183,6 +183,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 @media (max-width:720px){.ir-split{grid-template-columns:1fr !important}}
 #intensiveReadingModal .modal-panel{max-width:min(1280px,96vw)!important;width:96vw;height:90vh}
 #intensiveReadingModal .ir-split{grid-template-columns:1.6fr 1fr;gap:14px}
+#irLearnerLevel,#irVocabLang{background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:2px 6px;font-size:0.95em}
 @font-face{font-family:Literata;font-style:normal;font-weight:400;font-display:swap;
   src:url("/static/fonts/literata-latin-400-normal.woff2") format("woff2");
   unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
@@ -746,7 +747,22 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
             <div id="irPassage" class="ir-passage"></div>
           </div>
           <div style="display:flex;flex-direction:column;min-height:0;border:1px solid #2a2d3a;border-radius:8px;overflow:hidden">
-            <div style="padding:6px 10px;background:#1e2030;font-size:0.75em;color:#8b8fa4;border-bottom:1px solid #2a2d3a">Analysis (English)</div>
+            <div style="padding:6px 10px;background:#1e2030;font-size:0.75em;color:#8b8fa4;border-bottom:1px solid #2a2d3a;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+              <span>Analysis</span>
+              <label style="margin-left:auto;display:flex;align-items:center;gap:4px;font-size:0.95em">难度
+                <select id="irLearnerLevel" onchange="irOnLearnerPrefsChange()">
+                  <option value="university">大学</option>
+                  <option value="high_school">高中</option>
+                  <option value="middle_school">初中</option>
+                </select>
+              </label>
+              <label style="display:flex;align-items:center;gap:4px;font-size:0.95em">好词好句
+                <select id="irVocabLang" onchange="irOnLearnerPrefsChange()">
+                  <option value="en">英文</option>
+                  <option value="zh">中文</option>
+                </select>
+              </label>
+            </div>
             <div id="irTabBar" style="display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;border-bottom:1px solid #2a2d3a;background:#181a24"></div>
             <div id="irAnalysis" style="flex:1;overflow-y:auto;padding:16px 18px;font-size:0.88em;line-height:1.65;color:#c4c8f0"></div>
             <div style="padding:6px 10px;border-top:1px solid #2a2d3a;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
@@ -1661,6 +1677,57 @@ var _irState = {
   speakingLoaded: false, speakingDirty: false, chunkLoading: false
 };
 
+function irGetLearnerLevel() {
+  var el = document.getElementById('irLearnerLevel');
+  var v = (el && el.value) || 'university';
+  if (v === 'high_school' || v === 'middle_school') return v;
+  return 'university';
+}
+function irGetOutputLang() {
+  var el = document.getElementById('irVocabLang');
+  return (el && el.value === 'zh') ? 'zh' : 'en';
+}
+function irTabCacheKey(kind) {
+  if (!kind || kind === 'speaking') return kind;
+  var lv = irGetLearnerLevel();
+  if (kind === 'vocab') return kind + '__' + lv + '__' + irGetOutputLang();
+  return kind + '__' + lv;
+}
+function irLegacyKindFallback(kind) {
+  if (kind === 'vocab') return irGetLearnerLevel() === 'university' && irGetOutputLang() === 'en';
+  return irGetLearnerLevel() === 'university';
+}
+async function irOnLearnerPrefsChange() {
+  if (irBusy()) {
+    irLoadLearnerPrefs();
+    showToast('Wait for generation to finish');
+    return;
+  }
+  irSaveLearnerPrefs();
+  if (!_irState.bookId) return;
+  irCaptureSpeakingOral();
+  if (_irState.bookType === 'magazine') {
+    await irPersistSpeaking();
+  }
+  await irLoadCachedAnalysis(_irState.chunkIndex);
+}
+function irLoadLearnerPrefs() {
+  try {
+    var lv = localStorage.getItem('jarvis.ir.learnerLevel');
+    var lang = localStorage.getItem('jarvis.ir.outputLang');
+    var lvEl = document.getElementById('irLearnerLevel');
+    var langEl = document.getElementById('irVocabLang');
+    if (lvEl && (lv === 'university' || lv === 'high_school' || lv === 'middle_school')) lvEl.value = lv;
+    if (langEl && (lang === 'en' || lang === 'zh')) langEl.value = lang;
+  } catch (e) {}
+}
+function irSaveLearnerPrefs() {
+  try {
+    localStorage.setItem('jarvis.ir.learnerLevel', irGetLearnerLevel());
+    localStorage.setItem('jarvis.ir.outputLang', irGetOutputLang());
+  } catch (e) {}
+}
+
 function irEmptyAnalysisSlot() {
   return { text: '', offset: 0, part: 1, hasMore: false, genTrunc: false, lastOffset: 0, status: 'idle', error: '' };
 }
@@ -1684,8 +1751,12 @@ function irBusy() {
 function irSetNavDisabled(disabled) {
   var next = document.getElementById('irNextBtn');
   var back = document.getElementById('irBackBtn');
+  var lv = document.getElementById('irLearnerLevel');
+  var lang = document.getElementById('irVocabLang');
   if (next) next.disabled = disabled || !_irState.nextIndex;
   if (back) back.disabled = disabled || (_irState.prevIndex == null);
+  if (lv) lv.disabled = !!disabled;
+  if (lang) lang.disabled = !!disabled;
 }
 
 function irResetAnalyses() {
@@ -2042,6 +2113,7 @@ async function irRunSpeaking(exercise, pressureStep) {
 }
 
 function openIntensiveReadingModal() {
+  irLoadLearnerPrefs();
   document.getElementById('intensiveReadingModal').classList.add('open');
   irShowLibrary();
   irRefreshBooks();
@@ -2643,7 +2715,8 @@ async function irRunSelectionExplain() {
         context: _irExplainSel.context || selected,
         book_id: _irState.bookId || '',
         title: (titleEl && titleEl.textContent) || '',
-        source: _irExplainSel.source || 'passage'
+        source: _irExplainSel.source || 'passage',
+        learner_level: irGetLearnerLevel()
       })
     });
     if (!r.ok) {
@@ -2815,9 +2888,11 @@ async function irLoadCachedAnalysis(chunkIndex) {
       return;
     }
     var tabs = d.tabs || {};
-    Object.keys(tabs).forEach(function(kind) {
-      if (!_irState.analyses[kind]) return;
-      var s = tabs[kind] || {};
+    Object.keys(_irState.analyses).forEach(function(kind) {
+      if (kind === 'speaking') return;
+      var s = tabs[irTabCacheKey(kind)];
+      if (!s && irLegacyKindFallback(kind) && tabs[kind]) s = tabs[kind];
+      if (!s) return;
       _irState.analyses[kind] = {
         text: s.text || '',
         status: s.status || (s.text ? 'done' : 'idle'),
@@ -2859,7 +2934,7 @@ async function irPersistSlot(bookId, chunkIndex, kind, slot) {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        kind: kind,
+        kind: irTabCacheKey(kind),
         slot: {
           text: slot.text || '',
           status: slot.status || 'idle',
@@ -2868,7 +2943,9 @@ async function irPersistSlot(bookId, chunkIndex, kind, slot) {
           hasMore: !!slot.hasMore,
           genTrunc: !!slot.genTrunc,
           lastOffset: slot.lastOffset || 0,
-          error: slot.error || ''
+          error: slot.error || '',
+          learner_level: irGetLearnerLevel(),
+          output_lang: kind === 'vocab' ? irGetOutputLang() : 'en'
         },
         merge: true
       })
@@ -3028,7 +3105,9 @@ async function irRunAnalyzeKind(kind, opts) {
         analysis_kind: kind,
         offset: offset,
         part: part,
-        previous_analysis: previous
+        previous_analysis: previous,
+        learner_level: irGetLearnerLevel(),
+        output_lang: irGetOutputLang()
       })
     });
     if (!r.ok) {

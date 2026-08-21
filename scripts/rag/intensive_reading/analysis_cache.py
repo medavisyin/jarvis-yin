@@ -31,6 +31,8 @@ def empty_slot() -> dict[str, Any]:
         "genTrunc": False,
         "lastOffset": 0,
         "error": "",
+        "learner_level": "",
+        "output_lang": "",
     }
 
 
@@ -98,6 +100,10 @@ def normalize_slot(raw: Any) -> dict[str, Any]:
             out[key] = bool(raw[key])
     if "error" in raw:
         out["error"] = str(raw.get("error") or "")
+    if "learner_level" in raw:
+        out["learner_level"] = str(raw.get("learner_level") or "")
+    if "output_lang" in raw:
+        out["output_lang"] = str(raw.get("output_lang") or "")
     # Never persist "running" across sessions
     if out["status"] == "running":
         out["status"] = "idle" if not out["text"] else "done"

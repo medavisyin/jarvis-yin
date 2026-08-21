@@ -11,6 +11,71 @@ KIND_SPEAKING = "speaking"
 SPEAKING_TAB = {"id": KIND_SPEAKING, "label": "口语"}
 SPEAKING_EXERCISES = ("logic", "cue", "pressure")
 
+LEARNER_LEVELS = ("university", "high_school", "middle_school")
+OUTPUT_LANGS = ("en", "zh")
+
+_LEVEL_ALIASES = {
+    "university": "university",
+    "uni": "university",
+    "大学": "university",
+    "high_school": "high_school",
+    "high-school": "high_school",
+    "highschool": "high_school",
+    "高中": "high_school",
+    "middle_school": "middle_school",
+    "middle-school": "middle_school",
+    "middleschool": "middle_school",
+    "junior": "middle_school",
+    "初中": "middle_school",
+}
+_LANG_ALIASES = {
+    "en": "en",
+    "english": "en",
+    "英文": "en",
+    "英语": "en",
+    "zh": "zh",
+    "cn": "zh",
+    "chinese": "zh",
+    "中文": "zh",
+    "汉语": "zh",
+}
+
+_LEVEL_LEARNER = {
+    "university": "a university-level learner (approx. 6000-word vocabulary / CEFR B2–C1)",
+    "high_school": "a high-school learner (CEFR B1–B2)",
+    "middle_school": "a junior-high / middle-school learner (CEFR A2–B1)",
+}
+_LEVEL_SKIP_VOCAB = {
+    "university": "Do NOT explain elementary vocabulary a B2 student already knows.",
+    "high_school": "Skip items a typical B1 student already knows; include B1–B2 stretch items.",
+    "middle_school": (
+        "Skip only the most basic words (the, is, very); include useful A2–B1 items and any stretch."
+    ),
+}
+
+
+def normalize_learner_level(value: str | None) -> str:
+    raw = (value or "").strip().lower()
+    return _LEVEL_ALIASES.get(raw, "university")
+
+
+def normalize_output_lang(value: str | None) -> str:
+    raw = (value or "").strip().lower()
+    return _LANG_ALIASES.get(raw, "en")
+
+
+def analysis_slot_key(
+    analysis_kind: str,
+    learner_level: str = "university",
+    output_lang: str = "en",
+) -> str:
+    kind = (analysis_kind or KIND_VOCAB).strip().lower() or KIND_VOCAB
+    level = normalize_learner_level(learner_level)
+    lang = normalize_output_lang(output_lang)
+    if kind == KIND_VOCAB:
+        return f"{kind}__{level}__{lang}"
+    return f"{kind}__{level}"
+
 # --- Tab specs (id used as analysis_kind) ---
 
 NOVEL_TABS: list[dict[str, str]] = [
@@ -41,24 +106,38 @@ Shared rules:
 - If this is a continuation, do NOT repeat points already covered in the prior analysis; add NEW material only.
 """
 
-_SYSTEM_VOCAB = """You are an expert English literary coach helping a university-level learner \
-(approx. 6000-word vocabulary / CEFR B2–C1).
+def _vocab_system_prompt(learner_level: str, output_lang: str) -> str:
+    level = normalize_learner_level(learner_level)
+    lang = normalize_output_lang(output_lang)
+    learner = _LEVEL_LEARNER[level]
+    skip = _LEVEL_SKIP_VOCAB[level]
+    if lang == "zh":
+        lang_rules = """- Write explanations and example notes in Simplified Chinese.
+- Keep quoted source phrases in the original English.
+- Do not write the explanation body in English except for those quotes."""
+    else:
+        lang_rules = """- Do not use Chinese."""
+    return f"""You are an expert English literary coach helping {learner}.
 
 Focus ONLY on language worth learning from the passage:
-1. Worth-learning vocabulary and multi-word expressions (skip basic/common words)
+1. Worth-learning vocabulary and multi-word expressions (skip words below this learner's level)
 2. Idioms, proverbs, and set phrases
 3. Distinctive grammar or rhetorical usage (inversion, hedging, irony, register shifts)
 4. Brief natural example sentences for each item you highlight
 
 Rules:
-- Do NOT explain elementary vocabulary a B2 student already knows.
-- Prefer quality over quantity (typically 5–12 items).
+- {skip}
+- Include every item worth learning at this level. Do not cap the list at a fixed number.
+- Prefer quality: do not pad with weak or below-level items, but do not omit good items.
 - Quote the original phrase, then explain, then give one example.
-- If the passage is mostly simple, say so briefly and still find 2–3 stretch items.
+- If the passage is mostly simple, say so briefly and still find stretch items that remain.
 - Do not summarize the whole plot unless needed to clarify a phrase.
-- Do not use Chinese.
+{lang_rules}
 - If this is a continuation, do not repeat items already covered in prior analysis; find NEW items only.
 """
+
+
+_SYSTEM_VOCAB = _vocab_system_prompt("university", "en")
 
 _SYSTEM_PLOT = """You are a narrative-structure coach for close reading of fiction.
 """ + _BASE_RULES + """
@@ -189,11 +268,23 @@ def allowed_kinds(book_type: str) -> set[str]:
     return {t["id"] for t in NOVEL_TABS}
 
 
-def system_prompt_for_kind(analysis_kind: str) -> str:
+def system_prompt_for_kind(
+    analysis_kind: str,
+    learner_level: str = "university",
+    output_lang: str = "en",
+) -> str:
     kind = (analysis_kind or KIND_VOCAB).strip().lower()
     if kind not in _KIND_SYSTEM:
         raise KeyError(f"Unknown analysis_kind: {kind!r}")
-    return _KIND_SYSTEM[kind]
+    level = normalize_learner_level(learner_level)
+    lang = normalize_output_lang(output_lang)
+    if kind == KIND_VOCAB:
+        return _vocab_system_prompt(level, lang)
+    coach = (
+        f"You are coaching {_LEVEL_LEARNER[level]}. "
+        "Calibrate explanation depth and assumed knowledge to that level.\n"
+    )
+    return coach + _KIND_SYSTEM[kind]
 
 
 def slice_passage(text: str, offset: int = 0, window: int = PASSAGE_WINDOW) -> tuple[str, int, bool]:
@@ -247,6 +338,8 @@ def analysis_user_message(
     previous_analysis: str = "",
     analysis_kind: str = KIND_VOCAB,
     book_type: str = "novel",
+    learner_level: str = "university",
+    output_lang: str = "en",
 ) -> str:
     kind = (analysis_kind or KIND_VOCAB).strip().lower()
     cont = ""
@@ -261,7 +354,10 @@ def analysis_user_message(
         if has_more
         else ""
     )
-    task = _KIND_USER_TASK.get(kind, _KIND_USER_TASK[KIND_VOCAB])
+    if kind == KIND_VOCAB:
+        task = _vocab_user_task(learner_level, output_lang)
+    else:
+        task = _KIND_USER_TASK.get(kind, _KIND_USER_TASK[KIND_VOCAB])
     return (
         f"Book/section: {title}\n"
         f"Book type: {book_type}\n"
@@ -274,53 +370,45 @@ def analysis_user_message(
     )
 
 
+def _vocab_user_task(learner_level: str, output_lang: str) -> str:
+    level = normalize_learner_level(learner_level)
+    lang = normalize_output_lang(output_lang)
+    if level == "middle_school":
+        task = (
+            "Extract every A2–B1+ item worth learning from this passage "
+            "(not only advanced words)."
+        )
+    elif level == "high_school":
+        task = (
+            "Extract B1–B2 stretch usages worth learning from this passage "
+            "(not only university-advanced words)."
+        )
+    else:
+        task = "Extract advanced / interesting English usages from this passage."
+    if lang == "zh":
+        task += (
+            " Write explanations and example notes in Simplified Chinese; "
+            "keep quoted phrases in English."
+        )
+    return task
+
+
 def tabs_payload(book_type: str) -> dict[str, Any]:
     return {"book_type": (book_type or "novel").lower(), "tabs": tabs_for_book_type(book_type)}
 
 
-_SYSTEM_SELECTION_EXPLAIN = """You are an expert English literary coach helping a university-level learner \
-(approx. 6000-word vocabulary / CEFR B2–C1).
-
-The learner selected a word, phrase, or sentence from a longer passage. Explain the selection using the \
-surrounding context provided.
-
-Output ONLY this section heading, then the content under it:
-### 1. Meaning and Sense
-
-Under that heading, explain the meaning / sense of the selection in this passage. Do not add other \
-numbered sections (no grammar/usage section, no separate context section).
-
-Rules:
-- Respond entirely in English.
-- Do not use Chinese.
-- Be concrete: quote short bits of the selection and context when helpful.
-- Keep the answer focused and suitable for a floating popover (structured short paragraphs or bullets).
-- Skip elementary vocabulary a B2 student already knows unless it is key to the selection.
-- If the selection is ambiguous, say so briefly and give the best reading grounded in context.
-"""
-
-_SYSTEM_SELECTION_EXPLAIN_ANALYSIS_ZH = """You are an expert English literary coach helping a university-level \
-Chinese learner (approx. 6000-word vocabulary / CEFR B2–C1).
-
-The learner selected English text from an analysis of a longer passage. Explain the selection using the \
-surrounding context provided.
-
-Output ONLY this section heading (exactly, in English), then the content under it in Simplified Chinese:
-### 1. Meaning and Sense
-
-Under that heading, explain the meaning / sense of the selection in this analysis. Do not add other \
-numbered sections (no grammar/usage section, no separate context section).
-
-Rules:
-- Write the explanation body in Simplified Chinese.
-- Keep the heading exactly: ### 1. Meaning and Sense
-- When quoting the selection or context, keep those quotes in the original English.
-- Do not use English for the explanation body except for quoted source phrases.
-- Be concrete: quote short bits of the selection and context when helpful.
-- Keep the answer focused and suitable for a floating popover (structured short paragraphs or bullets).
-- Skip elementary vocabulary a B2 student already knows unless it is key to the selection.
-- If the selection is ambiguous, say so briefly and give the best reading grounded in context.
-"""
+_LEVEL_SKIP_EXPLAIN = {
+    "university": (
+        "Skip elementary vocabulary a B2 student already knows unless it is key to the selection."
+    ),
+    "high_school": (
+        "Skip items a typical B1 student already knows unless they are key to the selection."
+    ),
+    "middle_school": (
+        "Explain useful A2–B1 wording; skip only the most basic words unless they are key "
+        "to the selection."
+    ),
+}
 
 
 def _normalize_explain_source(source: str | None) -> str:
@@ -330,10 +418,41 @@ def _normalize_explain_source(source: str | None) -> str:
     return src
 
 
-def selection_explain_system_prompt(source: str = "passage") -> str:
-    if _normalize_explain_source(source) == "analysis":
-        return _SYSTEM_SELECTION_EXPLAIN_ANALYSIS_ZH
-    return _SYSTEM_SELECTION_EXPLAIN
+def selection_explain_system_prompt(
+    source: str = "passage",
+    learner_level: str = "university",
+) -> str:
+    level = normalize_learner_level(learner_level)
+    learner = _LEVEL_LEARNER[level]
+    skip = _LEVEL_SKIP_EXPLAIN[level]
+    src = _normalize_explain_source(source)
+    if src == "analysis":
+        where = "an analysis of a longer passage"
+        loc = "this analysis"
+    else:
+        where = "a longer passage"
+        loc = "this passage"
+    return f"""You are an expert English literary coach helping {learner} who is a Chinese learner.
+
+The learner selected English text from {where}. Explain the selection using the \
+surrounding context provided.
+
+Output ONLY this section heading (exactly, in English), then the content under it in Simplified Chinese:
+### 1. Meaning and Sense
+
+Under that heading, explain the meaning / sense of the selection in {loc}. Do not add other \
+numbered sections (no grammar/usage section, no separate context section).
+
+Rules:
+- Write the explanation body in Simplified Chinese.
+- Keep the heading exactly: ### 1. Meaning and Sense
+- When quoting the selection or context, keep those quotes in the original English.
+- Do not use English for the explanation body except for quoted source phrases.
+- Be concrete: quote short bits of the selection and context when helpful.
+- Keep the answer focused and suitable for a floating popover (structured short paragraphs or bullets).
+- {skip}
+- If the selection is ambiguous, say so briefly and give the best reading grounded in context.
+"""
 
 
 def selection_explain_user_message(
@@ -348,16 +467,11 @@ def selection_explain_user_message(
         raise ValueError("selected_text is required")
     ctx = (context or "").strip() or selected
     title_line = f"Book/section: {title.strip()}\n" if (title or "").strip() else ""
-    if _normalize_explain_source(source) == "analysis":
-        closing = (
-            "Explain the selection under ### 1. Meaning and Sense only "
-            "(heading in English; meaning/sense body in Simplified Chinese; no other sections)."
-        )
-    else:
-        closing = (
-            "Explain the selection under ### 1. Meaning and Sense only "
-            "(meaning/sense in this passage; no other sections)."
-        )
+    loc = "this analysis" if _normalize_explain_source(source) == "analysis" else "this passage"
+    closing = (
+        f"Explain the selection under ### 1. Meaning and Sense only "
+        f"(heading in English; meaning/sense body in Simplified Chinese for {loc}; no other sections)."
+    )
     return (
         f"{title_line}"
         f"Surrounding context (selected paragraph plus nearby paragraphs when available):\n"
