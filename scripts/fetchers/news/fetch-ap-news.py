@@ -21,16 +21,13 @@ sys.path.insert(0, os.path.join(SCRIPT_DIR, ".."))
 from proxy_strategy import get_proxy_for_playwright
 
 SOURCE_NAME = "ap-news"
-MAX_ITEMS = 3
-DRILL_DOWN_COUNT = 2
+MAX_ITEMS = 8
+DRILL_DOWN_COUNT = 3
 OUTPUT_DIR = sys.argv[1] if len(sys.argv) > 1 else "."
 
 WEBSITE_SECTIONS = [
-    ("world", "https://apnews.com/world-news"),
     ("politics", "https://apnews.com/politics"),
     ("business", "https://apnews.com/business"),
-    ("technology", "https://apnews.com/technology"),
-    ("science", "https://apnews.com/science"),
 ]
 
 CATEGORY_MAP = {

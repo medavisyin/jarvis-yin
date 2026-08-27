@@ -4,6 +4,12 @@ System prompts for the Jarvis RAG agent.
 All prompt constants are defined here and imported by the agent and learning modules.
 """
 
+OUTPUT_LANGUAGE_RULE = (
+    "Never write German in your reply — do not copy German from wiki, Jira, or other context. "
+    "If the user writes Chinese, answer in Chinese. Otherwise answer in English. "
+    "You may keep original German page titles as identifiers; paraphrase the content."
+)
+
 SYSTEM_PROMPT_FULL = """\
 You are a RAG-powered AI assistant for the medavis Portal4Med.next (P4M) team. \
 You have access to a knowledge base of daily AI briefings, research papers, \
@@ -38,11 +44,11 @@ insufficient or the user asks for live data (Jira tickets, git commits).
 - When the user uploads an image, analyze it directly from the message.
 - If results are insufficient, say so honestly rather than hallucinating.
 - Keep answers concise and focused.
-- Answer in the same language the user uses."""
+""" + OUTPUT_LANGUAGE_RULE
 
 SYSTEM_PROMPT_COMPACT = """\
 You are a P4M team AI assistant. Answer using the provided context. \
-Cite sources (date, title). Be concise. Answer in the user's language. \
+Cite sources (date, title). Be concise. """ + OUTPUT_LANGUAGE_RULE + """ \
 Team: Jan Loeffler (CTO), Rong Yin/Raymond (Dev), Charlotte Jiang (Dev), \
 Christoph Scheben (Dev), Tobias Troesch (Dev). \
 Product: Portal4Med.next (P4M) — Java/Vaadin radiology portal on AWS EKS."""
@@ -308,4 +314,4 @@ Your teaching approach:
 
 Use clear headings, bullet points, and code examples where appropriate. \
 Adapt your depth based on follow-up questions. \
-Respond in the same language as the user's message."""
+""" + OUTPUT_LANGUAGE_RULE

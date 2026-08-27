@@ -177,4 +177,29 @@ TOOL_SCHEMAS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "finance_news_summary",
+            "description": (
+                "Summarize Daily Fetch finance news in Chinese for a date range and "
+                "categories: markets, china-policy, us-political, crypto, gold, oil. "
+                "USE WHEN: user asks about gold/oil/crypto/Fed/NFP/China policy news "
+                "for a period."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                    "start": {"type": "string", "description": "Start date YYYY-MM-DD"},
+                    "end": {"type": "string", "description": "End date YYYY-MM-DD"},
+                    "categories": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Category ids: markets, china-policy, us-political, crypto, gold, oil",
+                    },
+                },
+            },
+        },
+    },
 ]

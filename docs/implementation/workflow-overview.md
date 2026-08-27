@@ -104,7 +104,7 @@ last-updated: 2026-05-07
 
 ---
 
-### MEDAVIS — Work / Enterprise (5 features)
+### MEDAVIS — Work / Enterprise (6 features)
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -127,6 +127,10 @@ last-updated: 2026-05-07
 │ ⑤ Commit Summary (commit-summary-impl.md)                               │
 │    REPO_CONFIG + auto-discover → git log → author alias                 │
 │    → Markdown summary + Bitbucket links + team activity                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│ ⑥ Platform Updates (platform-updates-impl.md)                           │
+│    Catalog repos → git fetch → origin/master log → group by JIRA key    │
+│    → FE+BE task blurb + Jira/Bitbucket links                            │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -137,6 +141,7 @@ last-updated: 2026-05-07
 | 3 | Project Dependency Graph | [project-graph-impl.md](./medavis/project-graph-impl.md) |
 | 4 | Codebase Indexing | [codebase-indexing-impl.md](./medavis/codebase-indexing-impl.md) |
 | 5 | Commit Summary | [commit-summary-impl.md](./medavis/commit-summary-impl.md) |
+| 6 | Platform Updates | [platform-updates-impl.md](./medavis/platform-updates-impl.md) |
 
 ---
 

@@ -1,12 +1,11 @@
 """
-Finance News Orchestrator: fetches market-impact news from Reuters Markets,
-CNBC, Yahoo Finance, and China finance sources in parallel, merges + filters
-into finance-news-data.json, then optionally translates via Ollama.
+Finance News Orchestrator: fetches catalog sources in parallel, merges +
+filters into finance-news-data.json, then optionally translates via Ollama.
 
 Usage:
   python run-finance-news.py --output-dir <dir>
+  python run-finance-news.py --output-dir <dir> --sources kitco,eia
   python run-finance-news.py --output-dir <dir> --no-fetch --no-translate
-  python run-finance-news.py  # uses _finance_news_tmp in cwd
 
 Dependencies: pip install feedparser playwright && playwright install chromium
 """
@@ -19,7 +18,6 @@ import os
 import re
 import sys
 import time
-from collections import defaultdict
 from datetime import datetime
 
 import requests as _requests
@@ -30,48 +28,38 @@ SCRIPTS_ROOT = os.path.normpath(os.path.join(SCRIPT_DIR, ".."))
 if SCRIPT_DIR not in sys.path:
     sys.path.insert(0, SCRIPT_DIR)
 
-from finance_news_filter import filter_and_rank_items  # noqa: E402
-
-FETCH_SCRIPTS = [
-    "fetchers/news/fetch-reuters.py",
-    "fetchers/news/fetch-cnbc-markets.py",
-    "fetchers/news/fetch-yahoo-finance.py",
-    "fetchers/news/fetch-china-news.py",
-]
-
-SOURCE_META = {
-    "reuters": {"display": "Reuters Markets", "priority": 1},
-    "cnbc-markets": {"display": "CNBC Markets", "priority": 2},
-    "yahoo-finance": {"display": "Yahoo Finance", "priority": 3},
-    "china-news": {"display": "中国财经 (财联社/新浪/人民日报/…)", "priority": 0},
-}
-
-CATEGORY_ORDER = ["macro", "policy", "markets", "corporate", "geopolitics-market"]
-CATEGORY_LABELS = {
-    "macro": "Macro & Central Banks",
-    "policy": "Policy & Regulation",
-    "markets": "Markets & Trading",
-    "corporate": "Corporate & Earnings",
-    "geopolitics-market": "Geopolitics (Market Impact)",
-}
+from finance_sources import (  # noqa: E402
+    load_catalog,
+    merge_source_jsons,
+    resolve_enabled,
+)
 
 PER_SCRIPT_TIMEOUT = 120
+_SETTINGS_FILE = os.path.join(SCRIPTS_ROOT, "rag", ".global_settings.json")
 
-_MACRO_RE = re.compile(
-    r"Fed|FOMC|PBOC|BOJ|ECB|央行|利率|降准|通胀|CPI|GDP|非农|yield|美元",
-    re.I,
-)
-_POLICY_RE = re.compile(r"监管|SEC|证监会|政策|财政|刺激|制裁|tariff|关税|反垄断", re.I)
-_CORP_RE = re.compile(r"财报|earnings|IPO|并购|M&A|指引|guidance", re.I)
-_GEO_RE = re.compile(r"特朗普|Trump|战争|war|geopolit|贸易战|trade\s*war", re.I)
+def _load_user_settings() -> dict:
+    if not os.path.isfile(_SETTINGS_FILE):
+        return {}
+    try:
+        with open(_SETTINGS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f) or {}
+    except Exception:
+        return {}
 
 
-async def run_script(script_name: str, output_dir: str) -> dict:
+async def run_script(
+    script_name: str,
+    output_dir: str,
+    source_id: str = "",
+    timeout: int | None = None,
+) -> dict:
     """Run a single fetch script as a subprocess."""
     script_path = os.path.join(SCRIPTS_ROOT, script_name)
+    limit = int(timeout) if timeout else PER_SCRIPT_TIMEOUT
     t0 = time.monotonic()
     result = {
         "script": script_name,
+        "source_id": source_id,
         "success": False,
         "seconds": 0,
         "exit_code": None,
@@ -80,20 +68,23 @@ async def run_script(script_name: str, output_dir: str) -> dict:
     }
 
     try:
+        cmd = [sys.executable, script_path, output_dir]
+        if source_id:
+            cmd.append(source_id)
         proc = await asyncio.create_subprocess_exec(
-            sys.executable, script_path, output_dir,
+            *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=PER_SCRIPT_TIMEOUT
+            proc.communicate(), timeout=limit
         )
         result["exit_code"] = proc.returncode
         result["stdout"] = stdout.decode("utf-8", errors="replace").strip()
         result["stderr"] = stderr.decode("utf-8", errors="replace").strip()
         result["success"] = proc.returncode == 0
     except asyncio.TimeoutError:
-        result["stderr"] = f"TIMEOUT after {PER_SCRIPT_TIMEOUT}s"
+        result["stderr"] = f"TIMEOUT after {limit}s"
         try:
             proc.kill()
         except Exception:
@@ -114,138 +105,10 @@ async def run_script(script_name: str, output_dir: str) -> dict:
     return result
 
 
-def normalize_category(item: dict) -> str:
-    """Map legacy/fetcher categories to finance taxonomy."""
-    raw = (item.get("category") or "").strip().lower()
-    if raw in CATEGORY_ORDER:
-        return raw
-    text = f"{item.get('title', '')} {item.get('summary', '')}"
-    if _GEO_RE.search(text):
-        return "geopolitics-market"
-    if _MACRO_RE.search(text):
-        return "macro"
-    if _POLICY_RE.search(text) or raw in ("politics", "policy"):
-        return "policy"
-    if _CORP_RE.search(text):
-        return "corporate"
-    if raw in ("economics", "business", "finance", "technology", "science"):
-        return "markets"
-    return "markets"
-
-
-def _build_merged_item(it: dict) -> dict:
-    """Build a clean merged item dict, preserving filter + optional *_zh fields."""
-    out = {
-        "title": it["title"],
-        "url": it.get("url", ""),
-        "date": it.get("date", ""),
-        "summary": it.get("summary", ""),
-        "points": it.get("points", []),
-        "source": it.get("_source_display") or it.get("source", ""),
-        "region": it.get("region", "global"),
-        "impact_score": it.get("impact_score", 0),
-    }
-    if it.get("date_uncertain"):
-        out["date_uncertain"] = True
-    if it.get("title_zh"):
-        out["title_zh"] = it["title_zh"]
-    if it.get("summary_zh"):
-        out["summary_zh"] = it["summary_zh"]
-    return out
-
-
 def merge_news(output_dir: str, report_date: str | None = None) -> dict:
-    """Merge per-source JSON files, apply market-impact filter, categorize."""
+    """Merge per-source JSON files using the finance source catalog."""
     report_date = report_date or datetime.now().strftime("%Y-%m-%d")
-    all_items = []
-    sources_used = []
-    sources_unavailable = []
-
-    for source_name, meta in SOURCE_META.items():
-        json_path = os.path.join(output_dir, f"{source_name}.json")
-        if not os.path.exists(json_path):
-            sources_unavailable.append(meta["display"])
-            continue
-
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        items = data.get("items", [])
-        if not items:
-            sources_unavailable.append(meta["display"])
-            continue
-
-        sources_used.append(meta["display"])
-        for item in items:
-            item = dict(item)
-            item["_source"] = source_name
-            item["_source_display"] = meta["display"]
-            item["_priority"] = meta["priority"]
-            if not item.get("source"):
-                item["source"] = meta["display"]
-            all_items.append(item)
-
-    seen_titles = set()
-    deduped = []
-    for item in sorted(all_items, key=lambda x: x.get("_priority", 99)):
-        title = item.get("title", "")
-        if not title:
-            continue
-        title_key = title.lower().strip()[:80]
-        if title_key not in seen_titles:
-            seen_titles.add(title_key)
-            deduped.append(item)
-
-    filtered = filter_and_rank_items(deduped, report_date=report_date)
-
-    by_category = defaultdict(list)
-    for item in filtered:
-        cat = normalize_category(item)
-        item["category"] = cat
-        by_category[cat].append(item)
-
-    categories = []
-    for cat_key in CATEGORY_ORDER:
-        cat_items = by_category.get(cat_key, [])
-        if not cat_items:
-            continue
-        categories.append({
-            "category": cat_key,
-            "label": CATEGORY_LABELS.get(cat_key, cat_key.title()),
-            "items": [_build_merged_item(it) for it in cat_items],
-        })
-
-    for cat_key, cat_items in by_category.items():
-        if cat_key in CATEGORY_ORDER:
-            continue
-        categories.append({
-            "category": cat_key,
-            "label": cat_key.replace("-", " ").title(),
-            "items": [_build_merged_item(it) for it in cat_items],
-        })
-
-    total = sum(len(c["items"]) for c in categories)
-    non_china = sum(
-        1
-        for c in categories
-        for it in c["items"]
-        if it.get("region") != "china"
-    )
-    warnings = []
-    if total > 0 and non_china == 0:
-        warnings.append("no_international_finance_items")
-        print("  WARNING: no non-China finance items after filter")
-
-    result = {
-        "sources_used": sources_used,
-        "sources_unavailable": sources_unavailable,
-        "total_items": total,
-        "categories": categories,
-        "report_date": report_date,
-    }
-    if warnings:
-        result["warnings"] = warnings
-    return result
+    return merge_source_jsons(output_dir, report_date)
 
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -363,6 +226,11 @@ async def main():
         default=None,
         help="YYYY-MM-DD used for same-day scoring (default: today, or parent folder name if it looks like a date)",
     )
+    parser.add_argument(
+        "--sources",
+        default=None,
+        help="Comma-separated catalog source ids (overrides Global Settings)",
+    )
     args = parser.parse_args()
 
     if args.proxy:
@@ -391,13 +259,23 @@ async def main():
 
     grand_t0 = time.monotonic()
     results = []
+    catalog = load_catalog()
+    if args.sources:
+        source_ids = [s.strip() for s in args.sources.split(",") if s.strip()]
+        enabled = resolve_enabled(catalog, source_ids=source_ids)
+    else:
+        enabled = resolve_enabled(catalog, settings=_load_user_settings())
 
     if args.no_fetch:
         print("=== Finance News Merge-only (--no-fetch) ===")
     else:
-        print(f"=== Finance News Fetch ({len(FETCH_SCRIPTS)} sources, parallel) ===")
-        tasks = [run_script(s, output_dir) for s in FETCH_SCRIPTS]
-        results = await asyncio.gather(*tasks)
+        to_run = [s for s in catalog if s["id"] in enabled]
+        print(f"=== Finance News Fetch ({len(to_run)} sources, parallel) ===")
+        tasks = [
+            run_script(s["fetcher"], output_dir, s["id"], timeout=s.get("timeout"))
+            for s in to_run
+        ]
+        results = await asyncio.gather(*tasks) if tasks else []
 
         succeeded = sum(1 for r in results if r["success"])
         failed = [r["script"] for r in results if not r["success"]]
@@ -407,7 +285,7 @@ async def main():
 
     print("\n=== Merge + market-impact filter ===")
     t = time.monotonic()
-    merged = merge_news(output_dir, report_date=report_date)
+    merged = merge_source_jsons(output_dir, report_date, enabled_ids=enabled)
     merge_seconds = round(time.monotonic() - t, 2)
 
     if not args.no_translate:

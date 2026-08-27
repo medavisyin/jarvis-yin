@@ -43,6 +43,7 @@ class Intent(str, Enum):
     EXPLAIN_TOPIC = "explain_topic"         # Deep explanation of a topic (Explain This)
     TREND_ANALYSIS = "trend_analysis"       # Trend analysis across knowledge base
     AI_NEWS_KB = "ai_news_kb"              # AI news knowledge base queries
+    FINANCE_NEWS = "finance_news"          # Finance news by date range + category
 
     # Learning modes (sidebar sessions)
     LEARNING_AI = "learning_ai"             # AI/ML learning session
@@ -104,6 +105,9 @@ JARVIS_CAPABILITIES = """Jarvis is an AI assistant for the medavis P4M developme
 9. STOCK ANALYSIS: A-share stock analysis, watchlists, scanning, recommendations
 
 10. IMAGE ANALYSIS: Analyze uploaded images using vision capabilities
+
+11. FINANCE NEWS: Summarize fetched finance news by date range and category
+    (China policy, US political/macro, crypto, gold, oil, general markets)
 
 Things Jarvis CANNOT do:
 - Execute arbitrary code or access the internet in real-time
@@ -224,6 +228,22 @@ def _keyword_heuristic(query: str) -> Optional[IntentResult]:
             suggested_tools=["project_query"],
         )
 
+    # Finance news by date/category (before stock: "分析" is too broad)
+    finance_kw = (
+        "finance news", "金融新闻", "黄金新闻", "石油新闻", "比特币", "btc",
+        "非农", "失业率", "美联储", "kitco", "coindesk", "oil price",
+        "china policy", "中国政策", "数字货币新闻",
+    )
+    if any(kw in q for kw in finance_kw):
+        return IntentResult(
+            intent=Intent.FINANCE_NEWS,
+            confidence=0.88,
+            enhanced_query=query,
+            original_query=query,
+            reasoning="Finance news keyword detected",
+            suggested_tools=["finance_news_summary"],
+        )
+
     # Stock analysis (Chinese keywords common)
     stock_kw = ("stock", "股票", "自选股", "watchlist", "scanner",
                 "推荐", "行情", "k线", "涨跌", "分析", "预测")
@@ -270,6 +290,7 @@ def _llm_classify(query: str, enhanced_query: str,
         "- explain_topic: Requesting a deep explanation or tutorial on a specific topic",
         "- trend_analysis: Analyzing trends over time in the knowledge base",
         "- ai_news_kb: About recent AI industry news, research papers, tech developments",
+        "- finance_news: Summarize finance news by date range and category (gold, oil, crypto, China policy, US political, markets)",
         "- stock_analysis: About stock market, A-shares, investment analysis",
         "- smalltalk: Greetings, thanks, or casual non-task conversation",
         "- out_of_scope: Request that Jarvis cannot fulfill (e.g., sending emails, browsing live web)",
@@ -345,6 +366,7 @@ def _intent_to_tools(intent: Intent) -> list[str]:
         Intent.TEAM_ACTIVITY: ["commit_summary", "jira_report"],
         Intent.KNOWLEDGE_QA: ["rag_search"],
         Intent.AI_NEWS_KB: ["briefing_search"],
+        Intent.FINANCE_NEWS: ["finance_news_summary"],
         Intent.EXPLAIN_TOPIC: ["rag_search"],
         Intent.TREND_ANALYSIS: ["rag_search"],
     }
@@ -423,7 +445,7 @@ def process_query(query: str, session_type: str | None = None,
     # RAG capability check for knowledge-based intents
     rag_intents = {
         Intent.KNOWLEDGE_QA, Intent.EXPLAIN_TOPIC, Intent.AI_NEWS_KB,
-        Intent.TREND_ANALYSIS, Intent.CONFLUENCE_WIKI,
+        Intent.TREND_ANALYSIS, Intent.CONFLUENCE_WIKI, Intent.FINANCE_NEWS,
     }
     if result.intent in rag_intents:
         rag_conf, rag_score = check_rag_capability(enhanced)

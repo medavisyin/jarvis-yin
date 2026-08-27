@@ -325,6 +325,38 @@ def tool_project_query(query_type: str = "list", project_name: str = "") -> str:
     return "Invalid query_type. Use: list, info, dependencies, dependents, impact, relationships"
 
 
+def tool_finance_news_summary(start: str = "", end: str = "",
+                              categories: list[str] | None = None) -> str:
+    """Chinese-oriented finance news listing for a date range (disk reports)."""
+    import sys
+    from datetime import datetime as _dt
+    from config import REPORTS_ROOT
+
+    today = _dt.now().strftime("%Y-%m-%d")
+    start = (start or today)[:10]
+    end = (end or today)[:10]
+    if end < start:
+        start, end = end, start
+    scripts_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    pipeline = os.path.join(scripts_root, "pipeline")
+    if pipeline not in sys.path:
+        sys.path.insert(0, pipeline)
+    from finance_sources import load_finance_items_from_reports
+
+    cats = [c for c in (categories or []) if isinstance(c, str) and c.strip()]
+    items = load_finance_items_from_reports(REPORTS_ROOT, start, end, cats or None)
+    if not items:
+        return f"No finance news on disk for {start}..{end} (categories={cats or 'all'})."
+    lines = [f"Finance news {start} to {end} ({len(items)} items):"]
+    for it in items[:40]:
+        title = it.get("title_zh") or it.get("title") or ""
+        lines.append(
+            f"- [{it.get('category')}] {it.get('source')}: {title}"
+            + (f" {it.get('url')}" if it.get("url") else "")
+        )
+    return "\n".join(lines)
+
+
 def get_all_tool_functions() -> dict[str, Any]:
     """Return a dict mapping tool names to their implementation functions."""
     return {
@@ -335,4 +367,5 @@ def get_all_tool_functions() -> dict[str, Any]:
         "commit_summary": tool_commit_summary,
         "analyze_image": tool_analyze_image,
         "project_query": tool_project_query,
+        "finance_news_summary": tool_finance_news_summary,
     }

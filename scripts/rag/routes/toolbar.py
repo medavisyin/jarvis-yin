@@ -26,6 +26,13 @@ from config import REPORTS_ROOT
 
 from rag_engine import COLLECTION, get_embed_model as _get_embed_model, get_qdrant as _get_qdrant
 
+from platform_updates import (
+    PLATFORM_CATALOG,
+    UnknownPlatformError,
+    build_platform_report,
+    clip_report,
+    resolve_date_range,
+)
 from tools import tool_commit_summary, tool_jira_report
 
 toolbar_bp = Blueprint("toolbar", __name__)
@@ -166,6 +173,7 @@ def api_toolbar_reindex():
 
 @toolbar_bp.route("/api/toolbar/reindex/<job_id>", methods=["GET"])
 @toolbar_bp.route("/api/toolbar/wiki-fetch/<job_id>", methods=["GET"])
+@toolbar_bp.route("/api/toolbar/platform-updates/<job_id>", methods=["GET"])
 def api_toolbar_job_status(job_id: str):
     with _toolbar_jobs_lock:
         job = _toolbar_jobs.get(job_id)
@@ -266,55 +274,11 @@ def _build_wiki_report(
     all_user_pages: dict[str, list[dict]],
 ) -> str:
     """Build a markdown report from wiki-fetch results."""
-    parts: list[str] = []
-    date_info = ""
-    if date_from or date_to:
-        date_info = f" ({date_from or '...'} to {date_to or '...'})"
-    parts.append(f"# Wiki Fetch Report{date_info}\n")
-    parts.append(f"**{len(users)} team member(s), {total_pages} pages, {total_chunks} chunks indexed**\n")
+    from wiki_summary import format_wiki_report
 
-    for line in summary_lines:
-        parts.append(f"- {line}")
-    parts.append("")
-
-    if all_user_pages:
-        parts.append("---\n\n## Page Details\n")
-        for user, details in all_user_pages.items():
-            parts.append(f"### {user}\n")
-            for pg in details:
-                title = pg.get("title", "Untitled")
-                url = pg.get("url", "")
-                space = pg.get("space", "")
-                modified = pg.get("modified_at", "")
-                headings = pg.get("headings", [])
-                version_number = pg.get("version_number", 1)
-                change_summary = pg.get("change_summary", "")
-                summary = pg.get("summary", "")
-                is_new = version_number <= 1
-
-                if url:
-                    entry = f"- **[{title}]({url})**"
-                else:
-                    entry = f"- **{title}**"
-                if space:
-                    entry += f" — *{space}*"
-                if modified:
-                    entry += f" (modified: {modified})"
-                if is_new:
-                    entry += " \U0001f195"
-                parts.append(entry)
-
-                if change_summary:
-                    brief = change_summary[:300] + ("..." if len(change_summary) > 300 else "")
-                    parts.append(f"  > **Changes:** {brief}")
-                elif summary:
-                    brief = summary[:200] + ("..." if len(summary) > 200 else "")
-                    parts.append(f"  > {brief}")
-                if headings:
-                    parts.append(f"  > Sections: {', '.join(headings[:5])}")
-                parts.append("")
-
-    return "\n".join(parts)
+    return format_wiki_report(
+        users, date_from, date_to, total_pages, total_chunks, summary_lines, all_user_pages,
+    )
 
 
 @toolbar_bp.route("/api/toolbar/wiki-fetch", methods=["POST"])
@@ -400,6 +364,17 @@ def api_toolbar_wiki_fetch():
                 except Exception as e:
                     summary_lines.append(f"[{user}] error: {e}")
 
+            if all_user_pages:
+                with _toolbar_jobs_lock:
+                    _toolbar_jobs[jid]["progress"] = "Generating page summaries..."
+                from wiki_summary import attach_ai_summaries
+
+                attach_ai_summaries(
+                    all_user_pages,
+                    host=getattr(ag, "OLLAMA_HOST", None) or getattr(ag, "OLLAMA_HOST", None),
+                    model=getattr(ag, "OLLAMA_MODEL_FAST", None) or getattr(ag, "OLLAMA_MODEL_FAST", None),
+                )
+
             report = _build_wiki_report(
                 user_list, d_from, d_to,
                 total_pages, total_chunks,
@@ -423,6 +398,74 @@ def api_toolbar_wiki_fetch():
         target=_run_multi_user, args=(job_id, users, date_from, date_to), daemon=True
     ).start()
     return jsonify({"job_id": job_id, "status": "started", "users": users})
+
+
+@toolbar_bp.route("/api/toolbar/platform-updates", methods=["POST"])
+def api_toolbar_platform_updates():
+    ag = _agent()
+    data = request.get_json(silent=True) or {}
+    platform = (data.get("platform") or "radiology").strip() or "radiology"
+    if platform not in PLATFORM_CATALOG:
+        known = ", ".join(PLATFORM_CATALOG)
+        return jsonify(
+            {"error": f"Unknown platform '{platform}'. Known: {known or '(none)'}."}
+        ), 400
+    date_from = (data.get("date_from") or "").strip()
+    date_to = (data.get("date_to") or "").strip()
+    date_from, date_to = resolve_date_range(date_from, date_to)
+    job_id = str(uuid.uuid4())
+    started = ag._now_iso()
+    with _toolbar_jobs_lock:
+        _toolbar_jobs[job_id] = {
+            "status": "running",
+            "started": started,
+            "result": "",
+            "kind": "platform_updates",
+            "platform": platform,
+            "progress": "Starting…",
+        }
+
+    def _run_platform_updates(jid, plat, d_from, d_to):
+        def _progress(msg: str) -> None:
+            with _toolbar_jobs_lock:
+                job = _toolbar_jobs.get(jid)
+                if job:
+                    job["progress"] = msg
+
+        try:
+            report = build_platform_report(
+                plat,
+                d_from,
+                d_to,
+                progress=_progress,
+                host=getattr(ag, "OLLAMA_HOST", None),
+                model=getattr(ag, "OLLAMA_MODEL_FAST", None),
+            )
+            with _toolbar_jobs_lock:
+                job = _toolbar_jobs.get(jid)
+                if job:
+                    job["status"] = "done"
+                    job["result"] = clip_report(report)
+                    job["progress"] = "Done"
+        except UnknownPlatformError as exc:
+            with _toolbar_jobs_lock:
+                job = _toolbar_jobs.get(jid)
+                if job:
+                    job["status"] = "error"
+                    job["result"] = str(exc)
+                    job["progress"] = "Error"
+        except Exception as exc:
+            with _toolbar_jobs_lock:
+                job = _toolbar_jobs.get(jid)
+                if job:
+                    job["status"] = "error"
+                    job["result"] = f"Platform updates failed: {exc}"
+                    job["progress"] = "Error"
+
+    threading.Thread(
+        target=_run_platform_updates, args=(job_id, platform, date_from, date_to), daemon=True
+    ).start()
+    return jsonify({"job_id": job_id, "status": "started", "platform": platform})
 
 
 @toolbar_bp.route("/api/toolbar/commit-summary", methods=["POST"])

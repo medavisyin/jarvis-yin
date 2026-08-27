@@ -67,7 +67,12 @@ REPORTS_ROOT: str = os.environ.get("JARVIS_REPORTS_ROOT", "C:/reports/ai")
 
 AUDIO_FILES = [
     ("ai-briefing.mp3", "AI Briefing"),
-    ("finance-news.mp3", "Finance News"),
+    ("finance-markets.mp3", "Finance: Markets"),
+    ("finance-china-policy.mp3", "Finance: China Policy"),
+    ("finance-us-political.mp3", "Finance: US Political"),
+    ("finance-crypto.mp3", "Finance: Crypto"),
+    ("finance-gold.mp3", "Finance: Gold"),
+    ("finance-oil.mp3", "Finance: Oil"),
     ("wiki-report.mp3", "Wiki Fetch Report"),
 ]
 

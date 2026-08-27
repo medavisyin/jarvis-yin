@@ -251,13 +251,13 @@ async def main():
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=180)
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=900)
         except asyncio.TimeoutError:
             try:
                 proc.kill()
             except Exception:
                 pass
-            print(f"  Warning: Finance news fetch timed out after 180s")
+            print(f"  Warning: Finance news fetch timed out after 900s")
             stdout, stderr = b"", b""
         finance_news_seconds = round(time.monotonic() - t, 2)
         out = stdout.decode("utf-8", errors="replace").strip()
@@ -271,6 +271,27 @@ async def main():
                 print(f"  {err[:200]}")
         else:
             print(f"  Finance news fetched in {finance_news_seconds}s")
+
+    if os.path.isfile(index_script):
+        print("\n=== Phase 5.5: RAG Indexing (post-finance) ===")
+        t = time.monotonic()
+        index_script = os.path.join(SCRIPTS_ROOT, "rag", "index_briefing.py")
+        proc = await asyncio.create_subprocess_exec(
+            sys.executable, index_script, output_dir,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        post_index_seconds = round(time.monotonic() - t, 2)
+        out = stdout.decode("utf-8", errors="replace").strip()
+        if out:
+            print(f"  {out}")
+        if proc.returncode != 0:
+            err = stderr.decode("utf-8", errors="replace").strip()
+            print(f"  Warning: post-finance RAG indexing failed (exit {proc.returncode})")
+            if err:
+                print(f"  {err[:200]}")
+        else:
+            print(f"  Indexed in {post_index_seconds}s")
 
     grand_total = round(time.monotonic() - grand_t0, 2)
 

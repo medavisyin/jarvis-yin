@@ -61,6 +61,8 @@ def normalize_learner_level(value: str | None) -> str:
 
 def normalize_output_lang(value: str | None) -> str:
     raw = (value or "").strip().lower()
+    if not raw:
+        return "zh"
     return _LANG_ALIASES.get(raw, "en")
 
 
@@ -72,9 +74,7 @@ def analysis_slot_key(
     kind = (analysis_kind or KIND_VOCAB).strip().lower() or KIND_VOCAB
     level = normalize_learner_level(learner_level)
     lang = normalize_output_lang(output_lang)
-    if kind == KIND_VOCAB:
-        return f"{kind}__{level}__{lang}"
-    return f"{kind}__{level}"
+    return f"{kind}__{level}__{lang}"
 
 # --- Tab specs (id used as analysis_kind) ---
 
@@ -105,6 +105,20 @@ Shared rules:
 - If evidence in the passage is thin, say so briefly and give the best grounded reading you can.
 - If this is a continuation, do NOT repeat points already covered in the prior analysis; add NEW material only.
 """
+
+_BASE_RULES_ZH = """
+Shared rules:
+- Write the full analysis in Simplified Chinese.
+- Keep quoted phrases from the passage in the original English.
+- Analyze ONLY the provided passage (plus brief prior analysis if given for continuation).
+- Be concrete: quote short phrases from the passage when making a point.
+- If evidence in the passage is thin, say so briefly and give the best grounded reading you can.
+- If this is a continuation, do NOT repeat points already covered in the prior analysis; add NEW material only.
+"""
+
+_SELECTION_EXPLAIN_HEADING = "### 1. 含义与语境"
+_SELECTION_EXPLAIN_SENTENCE_HEADING = "### 1. 本句意思"
+_SELECTION_EXPLAIN_CONTEXT_HEADING = "### 2. 语境中的其他意思"
 
 def _vocab_system_prompt(learner_level: str, output_lang: str) -> str:
     level = normalize_learner_level(learner_level)
@@ -284,7 +298,10 @@ def system_prompt_for_kind(
         f"You are coaching {_LEVEL_LEARNER[level]}. "
         "Calibrate explanation depth and assumed knowledge to that level.\n"
     )
-    return coach + _KIND_SYSTEM[kind]
+    prompt = coach + _KIND_SYSTEM[kind]
+    if lang == "zh":
+        prompt = prompt.replace(_BASE_RULES, _BASE_RULES_ZH)
+    return prompt
 
 
 def slice_passage(text: str, offset: int = 0, window: int = PASSAGE_WINDOW) -> tuple[str, int, bool]:
@@ -429,29 +446,61 @@ def selection_explain_system_prompt(
     if src == "analysis":
         where = "an analysis of a longer passage"
         loc = "this analysis"
-    else:
-        where = "a longer passage"
-        loc = "this passage"
-    return f"""You are an expert English literary coach helping {learner} who is a Chinese learner.
+        return f"""You are an expert English literary coach helping {learner} who is a Chinese learner.
 
 The learner selected English text from {where}. Explain the selection using the \
 surrounding context provided.
 
-Output ONLY this section heading (exactly, in English), then the content under it in Simplified Chinese:
-### 1. Meaning and Sense
+Output ONLY this section heading (exactly), then the content under it in Simplified Chinese:
+{_SELECTION_EXPLAIN_HEADING}
 
 Under that heading, explain the meaning / sense of the selection in {loc}. Do not add other \
 numbered sections (no grammar/usage section, no separate context section).
 
 Rules:
 - Write the explanation body in Simplified Chinese.
-- Keep the heading exactly: ### 1. Meaning and Sense
+- Keep the heading exactly: {_SELECTION_EXPLAIN_HEADING}
 - When quoting the selection or context, keep those quotes in the original English.
 - Do not use English for the explanation body except for quoted source phrases.
 - Be concrete: quote short bits of the selection and context when helpful.
 - Keep the answer focused and suitable for a floating popover (structured short paragraphs or bullets).
 - {skip}
 - If the selection is ambiguous, say so briefly and give the best reading grounded in context.
+"""
+
+    where = "a longer passage"
+    return f"""You are an expert English literary coach helping {learner} who is a Chinese learner.
+
+The learner selected English text from {where}. Explain the selection using the \
+containing sentence and nearby paragraphs.
+
+Always output this heading first (exactly), then the content under it in Simplified Chinese:
+{_SELECTION_EXPLAIN_SENTENCE_HEADING}
+
+Under that heading, gloss/translate the SELECTED TEXT (the exact word, phrase, or span \
+the learner highlighted) as used in the sentence that contains it. Lead with that \
+Chinese meaning of the selection. Do not substitute a paraphrase of the whole sentence \
+for a gloss of the selection. Quote the selection in English, then give its Chinese sense \
+in this sentence.
+
+ONLY IF nearby context adds extra meaning (implication, hint, tone/attitude, or a \
+relevant other dictionary sense), ALSO output this heading and a short section:
+{_SELECTION_EXPLAIN_CONTEXT_HEADING}
+
+If there is no extra meaning, omit that entire second section (no empty heading). \
+Do not output the second heading unless you have content for it.
+
+Do not add other numbered sections (no grammar/usage section).
+
+Rules:
+- Write the explanation body in Simplified Chinese.
+- Keep heading 1 exactly: {_SELECTION_EXPLAIN_SENTENCE_HEADING}
+- When quoting the selection or context, keep those quotes in the original English.
+- Do not use English for the explanation body except for quoted source phrases.
+- Be concrete: quote short bits of the selection and the containing sentence when helpful.
+- Keep the answer focused and suitable for a floating popover (structured short paragraphs or bullets).
+- {skip}
+- If the selection is ambiguous, say so briefly and give the best reading grounded in the containing sentence.
 """
 
 
@@ -467,11 +516,21 @@ def selection_explain_user_message(
         raise ValueError("selected_text is required")
     ctx = (context or "").strip() or selected
     title_line = f"Book/section: {title.strip()}\n" if (title or "").strip() else ""
-    loc = "this analysis" if _normalize_explain_source(source) == "analysis" else "this passage"
-    closing = (
-        f"Explain the selection under ### 1. Meaning and Sense only "
-        f"(heading in English; meaning/sense body in Simplified Chinese for {loc}; no other sections)."
-    )
+    if _normalize_explain_source(source) == "analysis":
+        closing = (
+            f"Explain the selection under {_SELECTION_EXPLAIN_HEADING} only "
+            f"(heading and meaning/sense body in Simplified Chinese for this analysis; "
+            f"no other sections)."
+        )
+    else:
+        closing = (
+            f"First output {_SELECTION_EXPLAIN_SENTENCE_HEADING}: a Simplified Chinese "
+            f"gloss of the SELECTED TEXT as it is used in its containing sentence "
+            f"(do not replace this with a summary of the whole sentence). Then, ONLY IF "
+            f"nearby context adds implication, hint, tone, or a relevant other dictionary "
+            f"sense, output {_SELECTION_EXPLAIN_CONTEXT_HEADING}. If there is no extra "
+            f"meaning, omit the second section entirely (no empty heading)."
+        )
     return (
         f"{title_line}"
         f"Surrounding context (selected paragraph plus nearby paragraphs when available):\n"

@@ -288,6 +288,25 @@ def _extract_learning_guide(date_folder: str) -> List[dict]:
     }]
 
 
+def _extract_finance_news_items(date_folder: str) -> List[dict]:
+    """Index finance-news-data.json with doc_type=finance_news payload."""
+    fn_file = os.path.join(date_folder, "finance-news", "finance-news-data.json")
+    if not os.path.isfile(fn_file):
+        return []
+    try:
+        with open(fn_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return []
+    pipeline_dir = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "pipeline"))
+    if pipeline_dir not in sys.path:
+        sys.path.insert(0, pipeline_dir)
+    from finance_sources import extract_rag_items
+    if not data.get("report_date"):
+        data["report_date"] = os.path.basename(date_folder)
+    return extract_rag_items(data)
+
+
 def index_date_folder(date_folder: str, client, model):
     """Index all content from a single date folder."""
     from qdrant_client.models import PointStruct
@@ -301,6 +320,7 @@ def index_date_folder(date_folder: str, client, model):
     all_items.extend(_extract_learning_guide(date_folder))
     if not all_items:
         all_items.extend(_extract_json_items(date_folder))
+    all_items.extend(_extract_finance_news_items(date_folder))
 
     if not all_items:
         print(f"  No content found in {date_folder}")

@@ -5,41 +5,40 @@ tags:
   - finance-news
 category: briefing-pipeline
 status: current
-last-updated: 2026-07-29
+last-updated: 2026-08-27
 ---
 
 # Finance News Pipeline
 
-> Replaces the former World News + China News audio split with a single **market-impact finance briefing**.
+Six topic categories with a source catalog, per-category audio, RAG ingest, and Data Analysis summaries.
 
 ## Overview
 
-`run-finance-news.py` fetches markets-oriented sources in parallel, merges + filters by market-impact policy, optionally translates via Ollama, and writes `finance-news/finance-news-data.json`. Daily Fetch generates one MP3: `finance-news.mp3`.
+`finance_sources.json` is the catalog (category + publisher + fetcher + default on/off). `run-finance-news.py` runs only enabled sources (`--sources` overrides). Merge writes `finance-news/finance-news-data.json` grouped by:
+
+`markets` | `china-policy` | `us-political` | `crypto` | `gold` | `oil`
+
+Daily Fetch generates **six** MP3s (`finance-markets.mp3`, `finance-china-policy.mp3`, `finance-us-political.mp3`, `finance-crypto.mp3`, `finance-gold.mp3`, `finance-oil.mp3`). No combined `finance-news.mp3`.
 
 Legacy `run-world-news.py` remains on disk unused. Readers prefer finance paths and fall back to `world-news/` for historical dates (`finance_news_paths.finance_news_data_path`).
 
-## Sources
+## Catalog
 
-| Script | Output JSON | Role |
-|--------|-------------|------|
-| `fetch-reuters.py` | `reuters.json` | Markets/business/world |
-| `fetch-cnbc-markets.py` | `cnbc-markets.json` | US markets RSS (soft-fail) |
-| `fetch-yahoo-finance.py` | `yahoo-finance.json` | Yahoo Finance RSS (soft-fail) |
-| `fetch-china-news.py` | `china-news.json` | CLS / Sina finance / People Daily; Weibo/Toutiao gated |
+See `scripts/pipeline/finance_sources.json`. Default-on: Reuters/CNBC/Yahoo (markets); PBOC, CSRC, 财联社, 第一财经 (China policy); AP, BLS, Fed, CNBC economy, Politico (US); CoinDesk; Kitco; EIA + OilPrice.
+
+Weibo/Toutiao are **not** in the finance catalog. US/crypto/gold/oil drop Chinese-domain URLs.
+
+Official sources (`keep_always`: BLS, Fed, EIA, PBOC, CSRC, …) skip the default-deny market-impact filter.
 
 ## Filter
 
-`scripts/pipeline/finance_news_filter.py`:
-
-- Drop entertainment/sports; keep Fed/央行/tariff/熔断/earnings/…
-- Default-deny if neither keep nor drop
-- Attach `region` (`us`/`apac`/`china`/`global`) + `impact_score`
-- Soft warn if kept count > 40 (no hard cap)
+`scripts/pipeline/finance_news_filter.py` still ranks non-official items (drop entertainment; keep Fed/央行/tariff/…; default-deny).
 
 ## Orchestrator CLI
 
 ```bash
 python scripts/pipeline/run-finance-news.py --output-dir <dir>
+python scripts/pipeline/run-finance-news.py --output-dir <dir> --sources kitco,eia
 python scripts/pipeline/run-finance-news.py --output-dir <dir> --no-fetch --no-translate
 ```
 
@@ -49,25 +48,17 @@ Outputs:
 - `finance-news-timing.json`
 - optional `warnings: ["no_international_finance_items"]`
 
-## Daily Fetch steps
+## Daily Fetch UI
 
-| Step | Purpose |
-|------|---------|
-| `refetch_finance` | Run fetchers + merge (`--no-translate`) |
-| `finance_news_merge` | Recovery merge via `--no-fetch` |
-| `finance_news_translate` | In-process Chinese translation |
-| `finance_audio` | Segmented narration → `finance-news.mp3` |
+Two-layer picker (category + publisher) persisted as `finance_sources_enabled` in Global Settings. Recreate / Refetch per category (`fn_audio:<id>`). Data Analysis → **Finance News Summary**: date range + categories → Chinese summary. Chat intent `finance_news` / tool `finance_news_summary` reads the same on-disk reports.
 
-Settings key: `audio_lang_finance` (default `zh`). UI: AI Briefing + Finance News only.
+APIs: `GET/POST /api/toolbar/finance-sources`, `POST /api/toolbar/finance-news-summary`.
 
-## Downstream
+## RAG
 
-- `black_swan_detector.py` — finance path first
-- Casual English — English titles from finance JSON
-- Telegram `/fetch_step finance_audio`, sends `finance-news.mp3`
+`index_briefing.py` indexes finance items with `item_type=finance_news` and `doc_type=finance_news`, plus `category` / `date` / `source`. Default AI auto-RAG excludes these unless the query looks like finance.
 
 ## Related docs
 
 - Former world pipeline: [world-news-impl.md](./world-news-impl.md) (historical)
 - Daily Fetch: [../personal/daily-fetch-impl.md](../personal/daily-fetch-impl.md)
-- Plan: `docs/plans/2026-07-29-daily-fetch-finance-audio.md`

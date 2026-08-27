@@ -1,0 +1,325 @@
+{
+  "categories": [
+    {"id": "markets", "label": "综合市场", "label_en": "General Markets", "audio_file": "finance-markets.mp3"},
+    {"id": "china-policy", "label": "中国政策金融", "label_en": "China Policy", "audio_file": "finance-china-policy.mp3"},
+    {"id": "us-political", "label": "美国政治金融", "label_en": "US Political Finance", "audio_file": "finance-us-political.mp3"},
+    {"id": "crypto", "label": "数字货币", "label_en": "Crypto", "audio_file": "finance-crypto.mp3"},
+    {"id": "gold", "label": "黄金", "label_en": "Gold", "audio_file": "finance-gold.mp3"},
+    {"id": "oil", "label": "石油", "label_en": "Oil", "audio_file": "finance-oil.mp3"}
+  ],
+  "sources": [
+    {
+      "id": "reuters-markets",
+      "display": "Reuters Markets",
+      "category": "markets",
+      "fetcher": "fetchers/news/fetch-reuters.py",
+      "output": "reuters.json",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 1
+    },
+    {
+      "id": "cnbc-markets",
+      "display": "CNBC Markets",
+      "category": "markets",
+      "fetcher": "fetchers/news/fetch-cnbc-markets.py",
+      "output": "cnbc-markets.json",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 2
+    },
+    {
+      "id": "yahoo-finance",
+      "display": "Yahoo Finance",
+      "category": "markets",
+      "fetcher": "fetchers/news/fetch-yahoo-finance.py",
+      "output": "yahoo-finance.json",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 3
+    },
+    {
+      "id": "pboc",
+      "display": "PBOC 中国人民银行",
+      "category": "china-policy",
+      "fetcher": "fetchers/news/fetch-pboc.py",
+      "method": "scrape",
+      "default_enabled": true,
+      "keep_always": true,
+      "priority": 0
+    },
+    {
+      "id": "csrc",
+      "display": "CSRC 证监会",
+      "category": "china-policy",
+      "fetcher": "fetchers/news/fetch-csrc.py",
+      "method": "scrape",
+      "default_enabled": true,
+      "keep_always": true,
+      "priority": 0
+    },
+    {
+      "id": "cls",
+      "display": "财联社",
+      "category": "china-policy",
+      "fetcher": "fetchers/news/fetch-cls.py",
+      "method": "api",
+      "default_enabled": true,
+      "keep_always": true,
+      "priority": 0
+    },
+    {
+      "id": "yicai",
+      "display": "第一财经",
+      "category": "china-policy",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": true,
+      "keep_always": true,
+      "priority": 1,
+      "feeds": [
+        ["policy", "https://www.yicai.com/api/ajax/getrss?id=news"]
+      ]
+    },
+    {
+      "id": "gov-cn-policy",
+      "display": "中国政府网政策",
+      "category": "china-policy",
+      "fetcher": "fetchers/news/fetch-gov-cn-policy.py",
+      "method": "scrape",
+      "default_enabled": false,
+      "keep_always": true,
+      "priority": 1
+    },
+    {
+      "id": "stcn",
+      "display": "证券时报",
+      "category": "china-policy",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": false,
+      "priority": 2,
+      "feeds": [
+        ["policy", "https://www.stcn.com/rss/finance.xml"]
+      ]
+    },
+    {
+      "id": "ap-news",
+      "display": "AP News",
+      "category": "us-political",
+      "fetcher": "fetchers/news/fetch-ap-news.py",
+      "output": "ap-news.json",
+      "method": "scrape",
+      "default_enabled": true,
+      "timeout": 240,
+      "priority": 1
+    },
+    {
+      "id": "bls",
+      "display": "BLS Employment",
+      "category": "us-political",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": true,
+      "keep_always": true,
+      "priority": 0,
+      "feeds": [
+        ["macro", "https://www.bls.gov/feed/bls_latest.rss"]
+      ]
+    },
+    {
+      "id": "fed",
+      "display": "Federal Reserve",
+      "category": "us-political",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": true,
+      "keep_always": true,
+      "priority": 0,
+      "feeds": [
+        ["macro", "https://www.federalreserve.gov/feeds/press_all.xml"]
+      ]
+    },
+    {
+      "id": "cnbc-economy",
+      "display": "CNBC Economy",
+      "category": "us-political",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 2,
+      "feeds": [
+        ["macro", "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=20910258"]
+      ]
+    },
+    {
+      "id": "politico-economy",
+      "display": "Politico Economy",
+      "category": "us-political",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 2,
+      "feeds": [
+        ["policy", "https://rss.politico.com/economy.xml"]
+      ]
+    },
+    {
+      "id": "treasury",
+      "display": "US Treasury",
+      "category": "us-political",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": false,
+      "keep_always": true,
+      "priority": 1,
+      "feeds": [
+        ["policy", "https://home.treasury.gov/rss/press-releases"]
+      ]
+    },
+    {
+      "id": "marketwatch",
+      "display": "MarketWatch",
+      "category": "us-political",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": false,
+      "priority": 3,
+      "feeds": [
+        ["markets", "https://feeds.content.dowjones.io/public/rss/mw_topstories"]
+      ]
+    },
+    {
+      "id": "reuters-politics",
+      "display": "Reuters Politics",
+      "category": "us-political",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": false,
+      "priority": 2,
+      "feeds": [
+        ["policy", "https://www.reuters.com/arc/outboundfeeds/rss/category/politics/?outputType=xml"]
+      ]
+    },
+    {
+      "id": "coindesk",
+      "display": "CoinDesk",
+      "category": "crypto",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 1,
+      "feeds": [
+        ["crypto", "https://www.coindesk.com/arc/outboundfeeds/rss/"]
+      ]
+    },
+    {
+      "id": "the-block",
+      "display": "The Block",
+      "category": "crypto",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": false,
+      "priority": 2,
+      "feeds": [
+        ["crypto", "https://www.theblock.co/rss.xml"]
+      ]
+    },
+    {
+      "id": "reuters-crypto",
+      "display": "Reuters Crypto",
+      "category": "crypto",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": false,
+      "priority": 2,
+      "feeds": [
+        ["crypto", "https://www.reuters.com/technology/rss"]
+      ]
+    },
+    {
+      "id": "kitco",
+      "display": "Kitco News",
+      "category": "gold",
+      "fetcher": "fetchers/news/fetch-kitco.py",
+      "method": "scrape",
+      "default_enabled": true,
+      "keep_always": true,
+      "priority": 1
+    },
+    {
+      "id": "mining-com",
+      "display": "MINING.COM",
+      "category": "gold",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": true,
+      "keep_always": true,
+      "priority": 1,
+      "feeds": [
+        ["gold", "https://www.mining.com/feed/"]
+      ]
+    },
+    {
+      "id": "wgc",
+      "display": "World Gold Council",
+      "category": "gold",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": false,
+      "priority": 2,
+      "feeds": [
+        ["gold", "https://www.gold.org/news/rss"]
+      ]
+    },
+    {
+      "id": "reuters-metals",
+      "display": "Reuters Metals",
+      "category": "gold",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": false,
+      "priority": 2,
+      "feeds": [
+        ["gold", "https://www.reuters.com/markets/commodities/rss"]
+      ]
+    },
+    {
+      "id": "eia",
+      "display": "EIA Energy",
+      "category": "oil",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": true,
+      "keep_always": true,
+      "priority": 0,
+      "feeds": [
+        ["oil", "https://www.eia.gov/rss/todayinenergy.xml"]
+      ]
+    },
+    {
+      "id": "oilprice",
+      "display": "OilPrice.com",
+      "category": "oil",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 1,
+      "feeds": [
+        ["oil", "https://oilprice.com/rss/main"]
+      ]
+    },
+    {
+      "id": "reuters-energy",
+      "display": "Reuters Energy",
+      "category": "oil",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": false,
+      "priority": 2,
+      "feeds": [
+        ["oil", "https://www.reuters.com/business/energy/rss"]
+      ]
+    }
+  ]
+}

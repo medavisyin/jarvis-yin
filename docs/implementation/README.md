@@ -25,7 +25,8 @@ docs/implementation/
 │   ├── jira-report-impl.md          # JIRA daily report
 │   ├── project-graph-impl.md        # Maven dependency graph
 │   ├── codebase-indexing-impl.md    # Codebase indexing into RAG
-│   └── commit-summary-impl.md      # Multi-repo commit summary
+│   ├── commit-summary-impl.md      # Multi-repo commit summary
+│   └── platform-updates-impl.md    # Master-merged platform task summaries
 │
 ├── usage-tool/                      # USAGE TOOL — Core platform tools
 │   ├── rag-agent-impl.md            # RAG agent (core chat engine)
@@ -92,7 +93,7 @@ docs/implementation/
 
 ## Function-Oriented Documentation (by Category)
 
-### MEDAVIS — Work / Enterprise (5 functions)
+### MEDAVIS — Work / Enterprise (6 functions)
 
 | # | Document | Description |
 |---|----------|-------------|
@@ -101,6 +102,7 @@ docs/implementation/
 | 3 | [project-graph-impl.md](./medavis/project-graph-impl.md) | Project dependency graph — Maven pom.xml scanning, internal/external edge classification, impact/relationship queries. |
 | 4 | [codebase-indexing-impl.md](./medavis/codebase-indexing-impl.md) | Codebase indexing — Java/Markdown/config chunking, MD5 content-hash dedup, project summary generation. |
 | 5 | [commit-summary-impl.md](./medavis/commit-summary-impl.md) | Multi-repo commit summary — REPO_CONFIG + auto-discovery, author aliasing, Bitbucket links, team activity. |
+| 6 | [platform-updates-impl.md](./medavis/platform-updates-impl.md) | Platform Updates — master-only JIRA-task summaries across a platform’s repos (Radiology FE+BE first). |
 
 ### USAGE TOOL — Core Platform Tools (5 functions)
 

@@ -125,7 +125,7 @@ Detailed developer documentation. See [Implementation Index](implementation/READ
 |----------|-----------|
 | [Pipeline Orchestration](implementation/briefing-pipeline/pipeline-orchestration-impl.md) | `run-all-sources.py`, `merge-sources.py`, `preflight-check.py` |
 | [Fetcher Pattern](implementation/briefing-pipeline/fetcher-pattern-impl.md) | All `fetch-*.py` scripts |
-| [Finance News Pipeline](implementation/briefing-pipeline/finance-news-impl.md) | `run-finance-news.py`, market-impact filter, `finance-news.mp3` |
+| [Finance News Pipeline](implementation/briefing-pipeline/finance-news-impl.md) | catalog, 6 categories, per-category MP3, RAG + Data Analysis summary |
 | [World News Pipeline (legacy)](implementation/briefing-pipeline/world-news-impl.md) | Superseded by finance-news |
 | [Output Generation](implementation/briefing-pipeline/output-generation-impl.md) | PDF, audio podcast, video |
 | [Topic Deduplication](implementation/briefing-pipeline/topic-dedup-impl.md) | `topic_index.py`, `filter_topics.py` |

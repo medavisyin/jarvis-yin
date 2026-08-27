@@ -768,6 +768,7 @@ def rebuild_magazine_from_original(
     from intensive_reading.analysis_cache import clear_book_analyses
 
     cleared = clear_book_analyses(books_dir, book_id)
+
     readable = next_readable_index(chunks, start=0)
     fields: dict[str, Any] = {
         "chunk_count": len(chunks),

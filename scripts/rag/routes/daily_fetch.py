@@ -16,10 +16,24 @@ from flask import Blueprint, jsonify, request
 _ROUTES_DIR = os.path.dirname(os.path.abspath(__file__))
 _RAG_DIR = os.path.dirname(_ROUTES_DIR)
 _SCRIPTS_DIR = os.path.dirname(_RAG_DIR)
-for _p in (_SCRIPTS_DIR, _RAG_DIR):
+_PIPELINE_DIR = os.path.join(_SCRIPTS_DIR, "pipeline")
+for _p in (_SCRIPTS_DIR, _RAG_DIR, _PIPELINE_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+from finance_sources import (
+    AUDIO_FILES,
+    CATEGORIES,
+    categories_with_items,
+    finance_report_items,
+    load_catalog,
+    resolve_enabled,
+)
+from briefing_translate import (
+    briefing_ready_for_zh_audio,
+    pick_item_text,
+    translate_briefing_data,
+)
 from config import JIRA_REPORT_SCRIPT, KNOWLEDGE_ROOT, REPORTS_ROOT
 from tools import tool_commit_summary
 from learning.constants import LEARNING_SESSION_IDS as _LEARNING_SESSION_IDS
@@ -36,35 +50,119 @@ _log = logging.getLogger(__name__)
 JIRA_SCRIPT = JIRA_REPORT_SCRIPT
 
 
-def _resolve_agent():
-    """Lazy handle to loaded agent or __main__ (session helpers, KB, Ollama globals)."""
-    for name in ("agent", "rag.agent", "__main__"):
-        m = sys.modules.get(name)
-        if m is not None and hasattr(m, "_load_session_file"):
-            return m
-    return sys.modules["__main__"]
-
-
-def _get_global_settings() -> dict:
-    """Get global settings reliably — tries in-memory first, falls back to disk."""
-    gs = getattr(_resolve_agent(), "_GLOBAL_SETTINGS", None)
-    if gs and isinstance(gs, dict) and any(k.startswith("audio_lang") for k in gs):
-        return gs
-    _log.warning("_GLOBAL_SETTINGS not found in-memory (got %r), reading from disk", type(gs))
-    settings_file = os.path.join(_RAG_DIR, ".global_settings.json")
-    if os.path.isfile(settings_file):
-        try:
-            with open(settings_file, "r", encoding="utf-8") as f:
-                return json.loads(f.read())
-        except Exception as e:
-            _log.error("Failed to read settings file %s: %s", settings_file, e)
-    return {}
-
+_AGENT_MODULE_CANDIDATES = ("__main__", "agent", "rag.agent")
 
 _AUDIO_STEP_LANG_KEYS = {
     "ai_audio": "audio_lang_ai",
     "finance_audio": "audio_lang_finance",
 }
+
+_AUDIO_MP3_NAMES = {
+    "ai_audio": "ai-briefing.mp3",
+    "finance_audio": "finance-markets.mp3",
+    "fn_audio:markets": "finance-markets.mp3",
+    "fn_audio:china-policy": "finance-china-policy.mp3",
+    "fn_audio:us-political": "finance-us-political.mp3",
+    "fn_audio:crypto": "finance-crypto.mp3",
+    "fn_audio:gold": "finance-gold.mp3",
+    "fn_audio:oil": "finance-oil.mp3",
+}
+
+
+def _resolve_agent_from(modules):
+    """Prefer the running Flask app (__main__) over a stale ``import agent`` copy."""
+    for name in _AGENT_MODULE_CANDIDATES:
+        m = modules.get(name)
+        if m is not None and hasattr(m, "_load_session_file"):
+            return m
+    return modules.get("__main__")
+
+
+def _pick_global_settings(live_modules, disk_settings: dict | None = None) -> dict:
+    """Live Global Settings win; disk is fallback when the app module is missing."""
+    m = _resolve_agent_from(live_modules)
+    gs = getattr(m, "_GLOBAL_SETTINGS", None) if m is not None else None
+    if gs and isinstance(gs, dict) and any(str(k).startswith("audio_lang") for k in gs):
+        return gs
+    return dict(disk_settings or {})
+
+
+def _resolve_agent():
+    """Lazy handle to loaded agent or __main__ (session helpers, KB, Ollama globals)."""
+    m = _resolve_agent_from(sys.modules)
+    if m is not None:
+        return m
+    return sys.modules["__main__"]
+
+
+def _get_global_settings() -> dict:
+    """Get global settings reliably — live __main__ first, then disk."""
+    settings_file = os.path.join(_RAG_DIR, ".global_settings.json")
+    disk: dict = {}
+    if os.path.isfile(settings_file):
+        try:
+            with open(settings_file, "r", encoding="utf-8") as f:
+                disk = json.loads(f.read())
+        except Exception as e:
+            _log.error("Failed to read settings file %s: %s", settings_file, e)
+    gs = _pick_global_settings(sys.modules, disk)
+    if not gs:
+        _log.warning("_GLOBAL_SETTINGS not found in-memory or on disk")
+    return gs
+
+
+def _write_audio_lang_sidecar(output_dir: str, step: str, lang: str) -> None:
+    mp3 = _AUDIO_MP3_NAMES.get(step)
+    if not mp3:
+        return
+    lang = (lang or "").strip().lower()
+    if lang not in ("zh", "en"):
+        return
+    path = os.path.join(output_dir, os.path.splitext(mp3)[0] + ".lang")
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(lang)
+    except OSError as e:
+        _log.warning("Failed to write audio lang sidecar %s: %s", path, e)
+        return
+
+
+def _audio_already_done(output_dir: str, step: str, expected_lang: str) -> bool:
+    """True only when MP3 exists and sidecar language matches current Global."""
+    mp3 = _AUDIO_MP3_NAMES.get(step)
+    if not mp3:
+        return False
+    if not os.path.isfile(os.path.join(output_dir, mp3)):
+        return False
+    path = os.path.join(output_dir, os.path.splitext(mp3)[0] + ".lang")
+    if not os.path.isfile(path):
+        return False
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            recorded = f.read().strip().lower()
+    except OSError:
+        return False
+    return recorded == (expected_lang or "").strip().lower()
+
+
+def _should_skip_audio_step(only_steps, output_dir: str, step: str, expected_lang: str) -> bool:
+    """Full runs skip when sidecar matches; Recreate/Continue (`only_steps`) never skip."""
+    if only_steps:
+        return False
+    return _audio_already_done(output_dir, step, expected_lang)
+
+
+def _mp3_was_replaced(path: str, before_mtime: float | None) -> bool:
+    """True when TTS actually wrote a non-empty MP3 (not a no-op return)."""
+    try:
+        if not os.path.isfile(path) or os.path.getsize(path) <= 0:
+            return False
+        if before_mtime is None:
+            return True
+        return os.path.getmtime(path) > before_mtime
+    except OSError:
+        return False
+
 
 _AUDIO_EXCLUDE_SOURCES = {"Arxiv AI", "Arxiv Machine Learning"}
 
@@ -97,11 +195,15 @@ def _get_recent_ai_titles(reports_root: str, today_str: str, lookback_days: int 
 
 def _resolve_audio_lang(step: str, gs: dict, lang_overrides: dict | None) -> str:
     """Resolve narration language for a daily-fetch audio step."""
-    if lang_overrides and step in lang_overrides:
-        lang = lang_overrides[step]
-        if lang in ("zh", "en"):
-            return lang
-    setting_key = _AUDIO_STEP_LANG_KEYS.get(step, "audio_lang_ai")
+    if lang_overrides:
+        if step in lang_overrides and lang_overrides[step] in ("zh", "en"):
+            return lang_overrides[step]
+        if step.startswith("fn_audio:") and lang_overrides.get("finance_audio") in ("zh", "en"):
+            return lang_overrides["finance_audio"]
+    if step.startswith("fn_audio:"):
+        setting_key = "audio_lang_finance"
+    else:
+        setting_key = _AUDIO_STEP_LANG_KEYS.get(step, "audio_lang_ai")
     return gs.get(setting_key, "zh")
 
 
@@ -341,12 +443,39 @@ def _count_finance_news_items(date_dir: str) -> dict[str, int]:
     return counts
 
 
+def _index_briefing_warn(output_dir: str, steps: list, scripts_dir: str) -> None:
+    """Re-index the date folder (includes finance_news). Failures are warnings only."""
+    import subprocess as sp
+    index_script = os.path.join(scripts_dir, "rag", "index_briefing.py")
+    if not os.path.isfile(index_script):
+        steps.append({"step": "finance_news_index", "exit_code": -1,
+                      "output": "index_briefing.py not found"})
+        return
+    try:
+        r = sp.run(
+            [sys.executable, index_script, output_dir],
+            capture_output=True, text=False, timeout=180, cwd=scripts_dir,
+        )
+        stdout = r.stdout.decode("utf-8", errors="replace") if r.stdout else ""
+        err = r.stderr.decode("utf-8", errors="replace") if r.stderr else ""
+        out = (stdout or err or "indexed")[-400:]
+        if r.returncode != 0:
+            steps.append({"step": "finance_news_index", "exit_code": r.returncode,
+                          "output": f"Warning: indexing failed: {out}"})
+        else:
+            steps.append({"step": "finance_news_index", "exit_code": 0, "output": out})
+    except Exception as e:
+        steps.append({"step": "finance_news_index", "exit_code": 1,
+                      "output": f"Warning: indexing failed: {e}"[:300]})
+
+
 def _run_daily_fetch(
     job_id: str,
     *,
     only_steps: list | None = None,
     target_date: str | None = None,
     lang_overrides: dict | None = None,
+    finance_sources: list | None = None,
 ):
     """Background worker: run full briefing pipeline, then commit report + Jira daily.
 
@@ -376,8 +505,6 @@ def _run_daily_fetch(
         checks = {
             "fetch_sources": lambda: _count_briefing_items(output_dir) > 0,
             "topic_dedup": lambda: os.path.isfile(os.path.join(output_dir, "briefing-data-filtered.json")),
-            "ai_audio": lambda: os.path.isfile(os.path.join(output_dir, "ai-briefing.mp3")),
-            "finance_audio": lambda: os.path.isfile(os.path.join(output_dir, "finance-news.mp3")),
             "commit_report": lambda: any(
                 f.startswith("commit-report-") and f.endswith(".md")
                 for f in os.listdir(output_dir)
@@ -410,7 +537,7 @@ def _run_daily_fetch(
                     cmd.extend(["--proxy", proxy_url])
                 r = sp.run(
                     cmd,
-                    capture_output=True, text=False, timeout=600, cwd=scripts_dir
+                    capture_output=True, text=False, timeout=1500, cwd=scripts_dir
                 )
                 stdout = r.stdout.decode("utf-8", errors="replace") if r.stdout else ""
                 steps.append({"step": "fetch_sources", "exit_code": r.returncode, "output": stdout[-500:]})
@@ -545,80 +672,17 @@ def _run_daily_fetch(
                     except Exception as e:
                         wiki_results.append(f"[{user}] error: {str(e)[:80]}")
                 wiki_text = "\n".join(wiki_results)
-                # --- Generate AI change summaries for wiki pages ---
-                def _wiki_ai_summary(page_detail: dict) -> str:
-                    """Use Ollama to summarize what changed on a wiki page."""
-                    title = page_detail.get("title", "")
-                    raw_summary = page_detail.get("summary", "").strip()
-                    headings = page_detail.get("headings", [])
-                    change_summary = page_detail.get("change_summary", "").strip()
-                    version_message = page_detail.get("version_message", "").strip()
-                    version_number = page_detail.get("version_number", 1)
-                    if not raw_summary and not change_summary and not version_message:
-                        return ""
-
-                    is_update = version_number > 1 and (change_summary or version_message)
-                    context_parts = [f"Page title: {title}"]
-                    if headings:
-                        context_parts.append(f"Sections: {', '.join(headings[:8])}")
-
-                    if is_update:
-                        if version_message:
-                            context_parts.append(f"Author's edit note: {version_message}")
-                        if change_summary:
-                            context_parts.append(f"Changes in this update:\n{change_summary}")
-                        system_prompt = (
-                            "You are a concise technical writer. Given a Confluence wiki page's "
-                            "change diff, write a 1-2 sentence summary of what was actually "
-                            "changed or updated. Focus on what was added, modified, or removed. "
-                            "Be specific and factual. Output only the summary, no labels or prefixes."
-                        )
-                    else:
-                        context_parts.append(f"Content excerpt:\n{raw_summary}")
-                        system_prompt = (
-                            "You are a concise technical writer. Given a new Confluence wiki page's content, "
-                            "write a 1-2 sentence summary of what this page covers. "
-                            "Be specific and factual. Output only the summary, no labels or prefixes."
-                        )
-
-                    context = "\n".join(context_parts)
-                    try:
-                        import requests as _req
-
-                        agent = _resolve_agent()
-                        ohost = getattr(agent, "OLLAMA_HOST", os.environ.get("OLLAMA_HOST", "http://localhost:11434"))
-                        omodel_fast = getattr(
-                            agent, "OLLAMA_MODEL_FAST", os.environ.get("OLLAMA_MODEL_FAST", "qwen3:1.7b"),
-                        )
-
-                        resp = _req.post(
-                            f"{ohost}/api/chat",
-                            json={
-                                "model": omodel_fast,
-                                "messages": [
-                                    {"role": "system", "content": system_prompt},
-                                    {"role": "user", "content": context},
-                                ],
-                                "stream": False,
-                                "think": False,
-                                "options": {"temperature": 0.3, "num_predict": 200},
-                            },
-                            timeout=30,
-                        )
-                        resp.raise_for_status()
-                        result = resp.json().get("message", {}).get("content", "").strip()
-                        result = re.sub(r"</?think>", "", result).strip()
-                        return result
-                    except Exception:
-                        return ""
+                from wiki_summary import attach_ai_summaries, format_wiki_report
 
                 if all_user_pages_detail:
                     job["step"] = "Generating AI summaries for wiki pages..."
-                    for user, details in all_user_pages_detail.items():
-                        for pg in details:
-                            ai_sum = _wiki_ai_summary(pg)
-                            if ai_sum:
-                                pg["ai_summary"] = ai_sum
+                    agent = _resolve_agent()
+                    attach_ai_summaries(
+                        all_user_pages_detail,
+                        host=getattr(agent, "OLLAMA_HOST", None) or getattr(agent, "OLLAMA_HOST", None),
+                        model=getattr(agent, "OLLAMA_MODEL_FAST", None)
+                        or getattr(agent, "OLLAMA_MODEL_FAST", None),
+                    )
 
                 wiki_details_json = os.path.join(output_dir, f"wiki-details-{today}.json")
                 if all_user_pages_detail:
@@ -627,47 +691,17 @@ def _run_daily_fetch(
 
                 wiki_report_path = os.path.join(output_dir, f"wiki-fetch-{today}.md")
                 with open(wiki_report_path, "w", encoding="utf-8") as wf:
-                    wf.write(f"# Wiki Fetch Report — {today}\n\n")
-                    wf.write(f"Fetched pages updated since {yesterday} for {len(_WIKI_USERS)} team members.\n\n")
-                    wf.write(f"**Total: {total_wiki_pages} pages, {total_wiki_chunks} chunks indexed**\n\n")
-                    for line in wiki_results:
-                        wf.write(f"- {line}\n")
-                    if all_user_pages_detail:
-                        wf.write("\n---\n\n## Page Details\n\n")
-                        for user, details in all_user_pages_detail.items():
-                            wf.write(f"### {user}\n\n")
-                            for pg in details:
-                                title = pg.get("title", "Untitled")
-                                url = pg.get("url", "")
-                                space = pg.get("space", "")
-                                modified = pg.get("modified_at", "")
-                                headings = pg.get("headings", [])
-                                ai_summary = pg.get("ai_summary", "")
-                                version_number = pg.get("version_number", 1)
-                                is_new = version_number <= 1
-
-                                if url:
-                                    wf.write(f"- **[{title}]({url})**")
-                                else:
-                                    wf.write(f"- **{title}**")
-                                if space:
-                                    wf.write(f" — *{space}*")
-                                if modified:
-                                    wf.write(f" (modified: {modified})")
-                                if is_new:
-                                    wf.write(" \U0001f195")
-                                wf.write("\n")
-                                if ai_summary:
-                                    label = "Summary" if is_new else "Changes"
-                                    wf.write(f"  > **{label}:** {ai_summary}\n")
-                                elif pg.get("summary", "").strip():
-                                    brief = pg["summary"].strip()[:200] + ("..." if len(pg["summary"].strip()) > 200 else "")
-                                    wf.write(f"  > {brief}\n")
-                                if headings:
-                                    wf.write(f"  > Sections: {', '.join(headings[:5])}\n")
-                                if url:
-                                    wf.write(f"  > [Open in Confluence]({url})\n")
-                                wf.write("\n")
+                    wf.write(
+                        format_wiki_report(
+                            _WIKI_USERS,
+                            yesterday,
+                            today,
+                            total_wiki_pages,
+                            total_wiki_chunks,
+                            wiki_results,
+                            all_user_pages_detail,
+                        )
+                    )
                 steps.append({"step": "wiki_fetch", "exit_code": 0,
                               "output": f"{total_wiki_pages} wiki pages ({total_wiki_chunks} chunks) from {len(_WIKI_USERS)} users"})
             except Exception as e:
@@ -760,76 +794,113 @@ def _run_daily_fetch(
         gs = _get_global_settings()
         lang_overrides = job.get("lang_overrides") or {}
 
-        if _should_run("ai_audio") and not _already_done("ai_audio"):
-            job["step"] = "Generating AI briefing audio..."
-            try:
-                data_file = _resolve_briefing_data_file(output_dir)
-                if data_file:
-                    import json as _json
+        if _should_run("ai_audio") or _should_run("ai_news_translate"):
+            ai_lang = _resolve_audio_lang("ai_audio", gs, lang_overrides)
+            data_file = _resolve_briefing_data_file(output_dir)
+            bdata = None
+            if data_file:
+                try:
                     with open(data_file, "r", encoding="utf-8") as df:
-                        bdata = _json.load(df)
-                    recent_titles = _get_recent_ai_titles(REPORTS_ROOT, today)
-                    ai_segments: list[dict] = []
-                    seen_titles: set[str] = set()
-                    for src_block in (bdata.get("per_source_data") or []):
-                        src_name = src_block.get("source_name") or src_block.get("name") or ""
-                        if src_name in _AUDIO_EXCLUDE_SOURCES:
-                            continue
-                        items_text_parts = []
-                        for it in src_block.get("items", [])[:5]:
-                            title = it.get("title", "")
-                            if not title:
+                        bdata = json.load(df)
+                except Exception:
+                    bdata = None
+            did_translate = False
+            if ai_lang == "zh" and bdata is not None and not briefing_ready_for_zh_audio(bdata):
+                job["step"] = "Translating AI briefing to Chinese..."
+                try:
+                    bdata = translate_briefing_data(bdata)
+                    with open(data_file, "w", encoding="utf-8") as df:
+                        json.dump(bdata, df, ensure_ascii=False, indent=2)
+                    did_translate = True
+                    steps.append({"step": "ai_news_translate", "exit_code": 0,
+                                  "output": "AI briefing titles/summaries translated"})
+                except Exception as e:
+                    steps.append({"step": "ai_news_translate", "exit_code": 1, "output": str(e)[:300]})
+
+            if not _should_run("ai_audio"):
+                pass
+            elif (
+                _should_skip_audio_step(only_steps, output_dir, "ai_audio", ai_lang)
+                and not did_translate
+                and (ai_lang != "zh" or briefing_ready_for_zh_audio(bdata))
+            ):
+                steps.append({"step": "ai_audio", "exit_code": 0,
+                              "output": f"Skipped — already completed for {today} ({ai_lang})"})
+            else:
+                job["step"] = f"Generating AI briefing audio ({ai_lang})..."
+                try:
+                    if data_file and bdata is not None:
+                        prefer_zh = ai_lang == "zh"
+                        recent_titles = _get_recent_ai_titles(REPORTS_ROOT, today)
+                        ai_segments: list[dict] = []
+                        seen_titles: set[str] = set()
+                        for src_block in (bdata.get("per_source_data") or []):
+                            src_name = src_block.get("source_name") or src_block.get("name") or ""
+                            if src_name in _AUDIO_EXCLUDE_SOURCES:
                                 continue
-                            title_key = title.strip().lower()
-                            if title_key in recent_titles or title_key in seen_titles:
-                                continue
-                            seen_titles.add(title_key)
-                            summary_text = it.get("summary") or it.get("description") or ""
-                            points = it.get("points") or []
-                            parts = [title]
-                            if summary_text:
-                                parts.append(summary_text)
-                            elif points:
-                                parts.append(" | ".join(str(p) for p in points[:5]))
-                            items_text_parts.append("\n".join(parts))
-                        if items_text_parts:
-                            ai_segments.append({
-                                "name": src_name or "AI News",
-                                "content": "\n\n".join(items_text_parts),
-                            })
-                    if ai_segments:
-                        ai_lang = _resolve_audio_lang("ai_audio", gs, lang_overrides)
-                        job["step"] = f"Generating AI narration ({len(ai_segments)} segments, {ai_lang})..."
-                        narrations_ai = _generate_segmented_narrations(ai_segments, "ai", lang=ai_lang)
-                        if narrations_ai:
-                            total_chars = sum(len(n) for n in narrations_ai)
-                            ai_mp3 = os.path.join(output_dir, "ai-briefing.mp3")
-                            _tts_segments_to_mp3(narrations_ai, ai_mp3, voice=tts_voice_from_settings(ai_lang, gs))
-                            steps.append({"step": "ai_audio", "exit_code": 0,
-                                          "output": f"Generated ai-briefing.mp3 ({len(ai_segments)} segments, {total_chars} chars, {len(recent_titles)} titles deduped)"})
+                            items_text_parts = []
+                            for it in src_block.get("items", [])[:5]:
+                                title, summary_text = pick_item_text(it, prefer_zh=prefer_zh)
+                                if not title:
+                                    continue
+                                title_key = (it.get("title") or title).strip().lower()
+                                if title_key in recent_titles or title_key in seen_titles:
+                                    continue
+                                seen_titles.add(title_key)
+                                points = it.get("points") or []
+                                parts = [title]
+                                if summary_text:
+                                    parts.append(summary_text)
+                                elif points:
+                                    parts.append(" | ".join(str(p) for p in points[:5]))
+                                items_text_parts.append("\n".join(parts))
+                            if items_text_parts:
+                                ai_segments.append({
+                                    "name": src_name or "AI News",
+                                    "content": "\n\n".join(items_text_parts),
+                                })
+                        if ai_segments:
+                            job["step"] = f"Generating AI narration ({len(ai_segments)} segments, {ai_lang})..."
+                            narrations_ai = _generate_segmented_narrations(ai_segments, "ai", lang=ai_lang)
+                            if narrations_ai:
+                                total_chars = sum(len(n) for n in narrations_ai)
+                                ai_mp3 = os.path.join(output_dir, "ai-briefing.mp3")
+                                before_mtime = os.path.getmtime(ai_mp3) if os.path.isfile(ai_mp3) else None
+                                _tts_segments_to_mp3(narrations_ai, ai_mp3, voice=tts_voice_from_settings(ai_lang, gs))
+                                if not _mp3_was_replaced(ai_mp3, before_mtime):
+                                    steps.append({"step": "ai_audio", "exit_code": 1,
+                                                  "output": "TTS produced no audio file"})
+                                else:
+                                    _write_audio_lang_sidecar(output_dir, "ai_audio", ai_lang)
+                                    steps.append({"step": "ai_audio", "exit_code": 0,
+                                                  "output": f"Generated ai-briefing.mp3 ({len(ai_segments)} segments, {total_chars} chars, {len(recent_titles)} titles deduped, {ai_lang})"})
+                            else:
+                                steps.append({"step": "ai_audio", "exit_code": 1, "output": "All narration segments failed"})
                         else:
-                            steps.append({"step": "ai_audio", "exit_code": 1, "output": "All narration segments failed"})
+                            steps.append({"step": "ai_audio", "exit_code": -1, "output": "Insufficient briefing content"})
                     else:
-                        steps.append({"step": "ai_audio", "exit_code": -1, "output": "Insufficient briefing content"})
-                else:
-                    steps.append({"step": "ai_audio", "exit_code": -1, "output": "No briefing data file found"})
-            except Exception as e:
-                steps.append({"step": "ai_audio", "exit_code": 1, "output": str(e)[:300]})
+                        steps.append({"step": "ai_audio", "exit_code": -1, "output": "No briefing data file found"})
+                except Exception as e:
+                    steps.append({"step": "ai_audio", "exit_code": 1, "output": str(e)[:300]})
 
         # --- Refetch Finance News sources (for Recreate with fresh data) ---
-        if _should_run("refetch_finance"):
+        if only_steps and "refetch_finance" in only_steps:
             job["step"] = "Re-fetching finance news sources..."
             try:
                 fn_dir = os.path.join(output_dir, "finance-news")
                 os.makedirs(fn_dir, exist_ok=True)
                 fn_script = os.path.join(scripts_dir, "pipeline", "run-finance-news.py")
+                r_fn_cmd = ["python", fn_script, "--output-dir", fn_dir, "--no-translate",
+                     "--report-date", today]
+                if finance_sources:
+                    r_fn_cmd.extend(["--sources", ",".join(str(s) for s in finance_sources)])
                 r_fn = sp.run(
-                    ["python", fn_script, "--output-dir", fn_dir, "--no-translate",
-                     "--report-date", today],
+                    r_fn_cmd,
                     capture_output=True, text=False, timeout=900, cwd=scripts_dir
                 )
                 stdout_fn = r_fn.stdout.decode("utf-8", errors="replace") if r_fn.stdout else ""
                 steps.append({"step": "refetch_finance", "exit_code": r_fn.returncode, "output": stdout_fn[-500:]})
+                _index_briefing_warn(output_dir, steps, scripts_dir)
             except Exception as e:
                 steps.append({"step": "refetch_finance", "exit_code": 1, "output": str(e)[:300]})
 
@@ -851,6 +922,8 @@ def _run_daily_fetch(
                                       cwd=os.path.dirname(merge_script))
                         steps.append({"step": "finance_news_merge", "exit_code": proc.returncode,
                                       "output": (proc.stdout or "")[-200:]})
+                        if proc.returncode == 0:
+                            _index_briefing_warn(output_dir, steps, scripts_dir)
                     except Exception as e:
                         steps.append({"step": "finance_news_merge", "exit_code": 1, "output": str(e)[:300]})
                 else:
@@ -929,8 +1002,18 @@ def _run_daily_fetch(
                     segs.append({"name": label, "content": "\n\n".join(parts)})
             return segs
 
-        if _should_run("finance_audio") and not _already_done("finance_audio"):
-            job["step"] = "Generating finance news audio..."
+        def _fn_audio_cats_requested():
+            if not only_steps or "finance_audio" in only_steps:
+                return list(AUDIO_FILES.keys())
+            cats = []
+            for s in only_steps or []:
+                if isinstance(s, str) and s.startswith("fn_audio:"):
+                    cats.append(s.split(":", 1)[1])
+            return cats
+
+        fn_cats = _fn_audio_cats_requested()
+        if fn_cats:
+            fn_lang = _resolve_audio_lang("finance_audio", gs, lang_overrides)
             try:
                 fn_file = os.path.join(output_dir, "finance-news", "finance-news-data.json")
                 if not os.path.exists(fn_file):
@@ -939,27 +1022,55 @@ def _run_daily_fetch(
                     import json as _json
                     with open(fn_file, "r", encoding="utf-8") as wf:
                         fdata = _json.load(wf)
-                    categories = fdata.get("categories") or []
-                    prefer_zh = _resolve_audio_lang("finance_audio", gs, lang_overrides) == "zh"
-                    fn_segments = _build_finance_audio_segments(categories, prefer_zh=prefer_zh)
-                    if fn_segments:
-                        fn_lang = _resolve_audio_lang("finance_audio", gs, lang_overrides)
-                        job["step"] = f"Generating finance narration ({len(fn_segments)} segments, {fn_lang})..."
-                        narrations_fn = _generate_segmented_narrations(fn_segments, "finance", lang=fn_lang)
-                        if narrations_fn:
-                            total_chars = sum(len(n) for n in narrations_fn)
-                            fn_mp3 = os.path.join(output_dir, "finance-news.mp3")
-                            _tts_segments_to_mp3(narrations_fn, fn_mp3, voice=tts_voice_from_settings(fn_lang, gs))
-                            warn = fdata.get("warnings") or []
-                            warn_note = f"; warnings={warn}" if warn else ""
-                            steps.append({"step": "finance_audio", "exit_code": 0,
-                                          "output": f"Generated finance-news.mp3 ({len(narrations_fn)} segments, {total_chars} chars){warn_note}"})
-                        else:
-                            steps.append({"step": "finance_audio", "exit_code": 1, "output": "Finance narration failed"})
-                    else:
-                        steps.append({"step": "finance_audio", "exit_code": -1, "output": "No finance news content"})
+                    cat_blocks = {
+                        (c.get("category") or ""): c
+                        for c in (fdata.get("categories") or [])
+                    }
+                    prefer_zh = fn_lang == "zh"
+                    generated = 0
+                    for cat_id in fn_cats:
+                        step_name = f"fn_audio:{cat_id}"
+                        mp3_name = AUDIO_FILES.get(cat_id)
+                        if not mp3_name:
+                            continue
+                        if _should_skip_audio_step(only_steps, output_dir, step_name, fn_lang):
+                            steps.append({"step": step_name, "exit_code": 0,
+                                          "output": f"Skipped — already completed for {today} ({fn_lang})"})
+                            continue
+                        block = cat_blocks.get(cat_id)
+                        items = (block or {}).get("items") or []
+                        if not items:
+                            steps.append({"step": step_name, "exit_code": 0,
+                                          "output": f"No items for {cat_id}; skipped audio"})
+                            continue
+                        job["step"] = f"Generating {cat_id} finance audio ({fn_lang})..."
+                        segs = _build_finance_audio_segments([block], prefer_zh=prefer_zh)
+                        if not segs:
+                            steps.append({"step": step_name, "exit_code": -1,
+                                          "output": f"No narration content for {cat_id}"})
+                            continue
+                        narrations_fn = _generate_segmented_narrations(segs, "finance", lang=fn_lang)
+                        if not narrations_fn:
+                            steps.append({"step": step_name, "exit_code": 1,
+                                          "output": f"Finance narration failed ({cat_id})"})
+                            continue
+                        fn_mp3 = os.path.join(output_dir, mp3_name)
+                        before_mtime = os.path.getmtime(fn_mp3) if os.path.isfile(fn_mp3) else None
+                        _tts_segments_to_mp3(narrations_fn, fn_mp3, voice=tts_voice_from_settings(fn_lang, gs))
+                        if not _mp3_was_replaced(fn_mp3, before_mtime):
+                            steps.append({"step": step_name, "exit_code": 1,
+                                          "output": f"TTS produced no audio file ({mp3_name})"})
+                            continue
+                        _write_audio_lang_sidecar(output_dir, step_name, fn_lang)
+                        generated += 1
+                        steps.append({"step": step_name, "exit_code": 0,
+                                      "output": f"Generated {mp3_name} ({len(narrations_fn)} segments, {fn_lang})"})
+                    if generated == 0 and not any(s["step"].startswith("fn_audio:") for s in steps):
+                        steps.append({"step": "finance_audio", "exit_code": -1,
+                                      "output": "No finance news content"})
                 else:
-                    steps.append({"step": "finance_audio", "exit_code": -1, "output": "No finance news data file found"})
+                    steps.append({"step": "finance_audio", "exit_code": -1,
+                                  "output": "No finance news data file found"})
             except Exception as e:
                 steps.append({"step": "finance_audio", "exit_code": 1, "output": str(e)[:300]})
 
@@ -997,6 +1108,7 @@ def api_daily_fetch_continue():
     only_steps = data.get("steps") or []
     target_date = data.get("date") or datetime.now().strftime("%Y-%m-%d")
     lang_overrides = data.get("lang_overrides") or {}
+    finance_sources = data.get("finance_sources") or []
     job_id = str(_uuid.uuid4())[:8]
     _daily_fetch_jobs[job_id] = {
         "status": "starting",
@@ -1012,6 +1124,7 @@ def api_daily_fetch_continue():
             "only_steps": only_steps,
             "target_date": target_date,
             "lang_overrides": lang_overrides,
+            "finance_sources": finance_sources or None,
         },
         daemon=True,
     )
@@ -1056,6 +1169,7 @@ def api_daily_fetch_history():
     ai_count = 0
     ai_by_source: dict[str, int] = {}
     finance_by_source: dict[str, int] = {}
+    finance_by_category: dict[str, int] = {}
     jira_tickets = 0
     confluence_pages = 0
 
@@ -1081,7 +1195,11 @@ def api_daily_fetch_history():
             with open(fn_file, "r", encoding="utf-8") as f:
                 wd = json.load(f)
             for c in wd.get("categories") or []:
-                for it in (c.get("items") or []):
+                cid = c.get("category") or ""
+                n = len(c.get("items") or [])
+                if cid:
+                    finance_by_category[cid] = finance_by_category.get(cid, 0) + n
+                for it in c.get("items") or []:
                     src_label = it.get("source") or "Finance"
                     finance_by_source[src_label] = finance_by_source.get(src_label, 0) + 1
         except Exception:
@@ -1120,7 +1238,11 @@ def api_daily_fetch_history():
                 break
 
     has_audio = os.path.isfile(os.path.join(date_dir, "ai-briefing.mp3"))
-    has_finance_audio = os.path.isfile(os.path.join(date_dir, "finance-news.mp3"))
+    finance_audio_files = {
+        cid: os.path.isfile(os.path.join(date_dir, fname))
+        for cid, fname in AUDIO_FILES.items()
+    }
+    has_finance_audio = any(finance_audio_files.values())
     has_pdf = os.path.isfile(os.path.join(date_dir, "ai-briefing.pdf"))
 
     has_sources = os.path.isfile(os.path.join(date_dir, "briefing-data.json"))
@@ -1153,6 +1275,7 @@ def api_daily_fetch_history():
     has_briefing_items = ai_count > 0 or _count_briefing_items(date_dir) > 0
     has_fn_items = fn_counts.get("total", 0) > 0
 
+    gs = _get_global_settings()
     missing_steps = []
     if not has_sources or not has_briefing_items:
         missing_steps.append("fetch_sources")
@@ -1179,17 +1302,46 @@ def api_daily_fetch_history():
                 missing_steps.append("finance_news_translate")
         except Exception:
             pass
-    if has_briefing_items and not has_audio:
-        missing_steps.append("ai_audio")
-    if (has_fn_data or has_fn_source_jsons) and not has_finance_audio:
-        missing_steps.append("finance_audio")
+    if has_briefing_items:
+        _ai_lang = _resolve_audio_lang("ai_audio", gs, None)
+        _ai_done = _audio_already_done(date_dir, "ai_audio", _ai_lang)
+        if _ai_lang == "zh":
+            _bfile = _resolve_briefing_data_file(date_dir)
+            _bdata = None
+            if _bfile:
+                try:
+                    with open(_bfile, "r", encoding="utf-8") as _bf:
+                        _bdata = json.load(_bf)
+                except Exception:
+                    _bdata = None
+            if not briefing_ready_for_zh_audio(_bdata):
+                _ai_done = False
+                missing_steps.append("ai_news_translate")
+        if not _ai_done:
+            missing_steps.append("ai_audio")
+    if has_fn_data or has_fn_source_jsons:
+        fn_lang = _resolve_audio_lang("finance_audio", gs, None)
+        present_cats = set(AUDIO_FILES)
+        if fn_file:
+            try:
+                with open(fn_file, "r", encoding="utf-8") as _mf:
+                    present_cats = set(categories_with_items(json.load(_mf)))
+            except Exception:
+                present_cats = set(AUDIO_FILES)
+        missing_fn = [
+            f"fn_audio:{cid}"
+            for cid in AUDIO_FILES
+            if cid in present_cats and not _audio_already_done(date_dir, f"fn_audio:{cid}", fn_lang)
+        ]
+        if missing_fn:
+            missing_steps.append("finance_audio")
+            missing_steps.extend(missing_fn)
     date_dirs = sorted(
         [d for d in os.listdir(REPORTS_ROOT)
          if os.path.isdir(os.path.join(REPORTS_ROOT, d)) and d[:4].isdigit()],
         reverse=True,
     )[:30]
 
-    gs = _get_global_settings()
     audio_langs = {
         "audio_lang_ai": gs.get("audio_lang_ai", "zh"),
         "audio_lang_finance": gs.get("audio_lang_finance") or gs.get("audio_lang_world") or "zh",
@@ -1210,15 +1362,146 @@ def api_daily_fetch_history():
                 "global": fn_counts.get("global", 0),
             },
             "finance_by_source": finance_by_source,
+            "finance_by_category": finance_by_category,
             "jira_tickets": jira_tickets,
             "confluence_pages": confluence_pages,
             "wiki_pages": wiki_pages,
         },
         "has_audio": has_audio,
         "has_finance_audio": has_finance_audio,
+        "finance_audio_files": finance_audio_files,
+        "finance_categories": CATEGORIES,
         "has_pdf": has_pdf,
         "missing_steps": missing_steps,
         "available_dates": date_dirs,
+    })
+
+
+@daily_fetch_bp.route("/api/toolbar/daily-fetch/finance-items/<date_str>", methods=["GET"])
+def api_finance_day_items(date_str):
+    """Per-category finance headlines + links for Daily Fetch Reports."""
+    date_dir = os.path.join(REPORTS_ROOT, date_str)
+    fn_file = _finance_news_json_path(date_dir)
+    if not fn_file or not os.path.isfile(fn_file):
+        return jsonify({"date": date_str, "categories": []})
+    try:
+        with open(fn_file, "r", encoding="utf-8") as f:
+            merged = json.load(f)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"date": date_str, "categories": finance_report_items(merged)})
+
+
+@daily_fetch_bp.route("/api/toolbar/finance-sources", methods=["GET", "POST"])
+def api_finance_sources():
+    """List catalog + enabled ids; POST saves finance_sources_enabled."""
+    catalog = load_catalog()
+    a = _resolve_agent()
+    gs = getattr(a, "_GLOBAL_SETTINGS", None)
+    if not isinstance(gs, dict):
+        gs = _get_global_settings()
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        enabled_map = data.get("enabled") or {}
+        if not isinstance(enabled_map, dict):
+            return jsonify({"error": "enabled must be an object"}), 400
+        gs["finance_sources_enabled"] = {
+            str(k): bool(v) for k, v in enabled_map.items()
+        }
+        if hasattr(a, "_save_settings"):
+            a._save_settings(gs)
+        elif hasattr(a, "_GLOBAL_SETTINGS"):
+            a._GLOBAL_SETTINGS = gs
+        return jsonify({"ok": True, "enabled": resolve_enabled(catalog, settings=gs)})
+    return jsonify({
+        "categories": CATEGORIES,
+        "sources": catalog,
+        "enabled": resolve_enabled(catalog, settings=gs),
+    })
+
+
+@daily_fetch_bp.route("/api/toolbar/finance-news-summary", methods=["POST"])
+def api_finance_news_summary():
+    """Chinese summary of finance news for a date range + categories."""
+    from finance_sources import load_finance_items_from_reports
+
+    data = request.get_json(silent=True) or {}
+    today = datetime.now().strftime("%Y-%m-%d")
+    start = (data.get("start") or "")[:10] or today
+    end = (data.get("end") or "")[:10] or today
+    if end < start:
+        start, end = end, start
+    raw_cats = data.get("categories") or []
+    if not isinstance(raw_cats, list):
+        raw_cats = []
+    cats = [c for c in raw_cats if isinstance(c, str) and c.strip()]
+    items = load_finance_items_from_reports(
+        REPORTS_ROOT, start, end, cats or None
+    )
+    if not items:
+        return jsonify({
+            "ok": True,
+            "summary": "该时间范围内没有匹配的金融新闻。请先运行 Daily Fetch。",
+            "items": [],
+            "start": start,
+            "end": end,
+            "categories": cats,
+        })
+
+    lines = []
+    for it in items[:80]:
+        title = it.get("title_zh") or it.get("title") or ""
+        src = it.get("source") or ""
+        cat = it.get("category") or ""
+        url = it.get("url") or ""
+        lines.append(f"- [{cat}] {src}: {title}" + (f" ({url})" if url else ""))
+    prompt = (
+        f"用简体中文总结 {start} 至 {end} 的金融新闻"
+        f"（类别: {', '.join(cats) if cats else '全部'}）。"
+        "按类别分点，每条1-2句，只根据下列条目，不要编造。\n\n" + "\n".join(lines)
+    )
+    summary = ""
+    try:
+        a = _resolve_agent()
+        host = getattr(a, "OLLAMA_HOST", None) or os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+        model = getattr(a, "OLLAMA_MODEL_FAST", None) or os.environ.get("OLLAMA_MODEL_FAST", "qwen3:1.7b")
+        import requests as _req
+        resp = _req.post(
+            f"{host}/api/chat",
+            json={
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": "你是金融新闻编辑。只根据给定条目写中文摘要。"},
+                    {"role": "user", "content": prompt},
+                ],
+                "stream": False,
+                "think": False,
+                "options": {"temperature": 0.2, "num_predict": 2500},
+            },
+            timeout=90,
+        )
+        resp.raise_for_status()
+        summary = (resp.json().get("message") or {}).get("content") or ""
+    except Exception as e:
+        summary = "摘要生成失败: " + str(e)[:200]
+    item_out = [
+        {
+            "title": it.get("title_zh") or it.get("title"),
+            "url": it.get("url") or "",
+            "source": it.get("source") or "",
+            "category": it.get("category") or "",
+            "date": it.get("date") or it.get("report_date") or "",
+        }
+        for it in items[:60]
+    ]
+    return jsonify({
+        "ok": True,
+        "summary": summary.strip(),
+        "items": item_out,
+        "start": start,
+        "end": end,
+        "categories": cats,
+        "count": len(items),
     })
 
 

@@ -1152,6 +1152,7 @@ _GLOBAL_SETTINGS_DEFAULTS = {
     "audio_voice_zh": "female",
     "audio_voice_en": "female",
     "deepseek_api_key": "",
+    "finance_sources_enabled": {},
 }
 
 

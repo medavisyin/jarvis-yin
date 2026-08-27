@@ -153,13 +153,20 @@ def batch_encode(texts: list[str]) -> list[list[float]]:
 
 def vector_search(query: str, top_k: int = 5, min_score: float = 0.3,
                   conditions: list | None = None,
-                  embedding: list[float] | None = None) -> list[dict]:
+                  embedding: list[float] | None = None,
+                  include_finance_news: bool = False) -> list[dict]:
     """Hybrid search: vector (Qdrant) + BM25 keyword, merged via Reciprocal Rank Fusion."""
     from qdrant_client.models import Filter
+    from rag_filters import exclude_finance_news, finance_news_must_not_conditions
     client = get_qdrant()
     if embedding is None:
         embedding = get_embed_model().encode(query).tolist()
-    query_filter = Filter(must=conditions) if conditions else None
+    filter_kwargs: dict = {}
+    if conditions:
+        filter_kwargs["must"] = conditions
+    if not include_finance_news:
+        filter_kwargs["must_not"] = finance_news_must_not_conditions()
+    query_filter = Filter(**filter_kwargs) if filter_kwargs else None
     fetch_limit = max(top_k * 3, 20)
     response = client.query_points(
         collection_name=COLLECTION,
@@ -217,7 +224,9 @@ def vector_search(query: str, top_k: int = 5, min_score: float = 0.3,
     except (ImportError, Exception):
         pass
 
-    return vector_results[:top_k]
+    return exclude_finance_news(
+        vector_results[:top_k], include_finance_news=include_finance_news
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -265,8 +274,17 @@ def auto_rag_search(user_query: str, q_lower: str) -> tuple[str, list[dict]]:
     embeddings = batch_encode(texts_to_encode)
     emb_map = dict(zip(texts_to_encode, embeddings))
 
+    _fn_kw = (
+        "黄金", "石油", "比特币", "btc", "非农", "失业率", "美联储", "fed ",
+        "finance news", "gold", "crypto", "oil price", "kitco", "coindesk",
+        "金融新闻", "数字货币",
+    )
+    q_mix = q_lower + " " + user_query
+    include_fn = any(k in q_mix.lower() for k in _fn_kw)
     auto_results = vector_search(
-        user_query, top_k=5, min_score=0.25, embedding=emb_map[user_query])
+        user_query, top_k=5, min_score=0.25, embedding=emb_map[user_query],
+        include_finance_news=include_fn,
+    )
 
     extra_results = []
     for full_name in matched_names:

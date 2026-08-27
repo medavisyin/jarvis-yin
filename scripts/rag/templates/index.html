@@ -183,7 +183,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 @media (max-width:720px){.ir-split{grid-template-columns:1fr !important}}
 #intensiveReadingModal .modal-panel{max-width:min(1280px,96vw)!important;width:96vw;height:90vh}
 #intensiveReadingModal .ir-split{grid-template-columns:1.6fr 1fr;gap:14px}
-#irLearnerLevel,#irVocabLang{background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:2px 6px;font-size:0.95em}
+#irLearnerLevel{background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:2px 6px;font-size:0.95em}
 @font-face{font-family:Literata;font-style:normal;font-weight:400;font-display:swap;
   src:url("/static/fonts/literata-latin-400-normal.woff2") format("woff2");
   unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
@@ -199,8 +199,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   letter-spacing:0.01em;overflow-wrap:break-word}
 #irPassage .ir-reading-col{max-width:38em;margin:0 auto}
 #irPassage .ir-para{text-align:left;hyphens:none;overflow-wrap:break-word}
-#irPassage.ir-kind-novel .ir-para{margin:0 0 1em;text-indent:1.25em}
-#irPassage.ir-kind-magazine .ir-para{margin:0 0 0.9em;text-indent:0}
+#irPassage.ir-kind-novel .ir-para,
+#irPassage.ir-kind-magazine .ir-para{margin:0 0 1em;text-indent:1.25em}
 #irPassage .ir-para.ir-title{text-indent:0;font-weight:600;font-size:1.12em;color:#e4e0d4;
   margin-bottom:0.85em;line-height:1.4;text-align:left}
 #irPassage .ir-para.ir-kicker{text-indent:0;font-size:0.82em;letter-spacing:0.04em;
@@ -219,6 +219,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
   color:#e8eaf2;font-size:0.84em;line-height:1.55;white-space:pre-wrap;box-shadow:0 10px 28px rgba(0,0,0,.55)}
 #irExplainPop .ir-explain-head{display:flex;align-items:center;justify-content:space-between;gap:8px;
   margin:0 0 8px;padding:0 0 8px;border-bottom:1px solid #2a2d3a;font-size:0.78em;color:#8b8fa4}
+#irExplainPop .ir-explain-head-actions{display:flex;align-items:center;gap:6px;flex-shrink:0}
+#irExplainPop .ir-explain-speak{background:transparent;border:none;color:#8b8fa4;cursor:pointer;
+  font-size:1em;line-height:1;padding:0 2px}
+#irExplainPop .ir-explain-speak:hover{color:#e8eaf2}
+#irExplainPop .ir-explain-speak:disabled{opacity:.4;cursor:not-allowed}
 #irExplainPop .ir-explain-close{background:transparent;border:none;color:#8b8fa4;cursor:pointer;font-size:1.2em;line-height:1;padding:0 2px}
 #irExplainPop .ir-explain-close:hover{color:#e8eaf2}
 #irExplainPop .ir-explain-body{color:#c4c8f0}
@@ -379,6 +384,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" id="btnWikiFetch" onclick="openWikiFetchModal()" title="Fetch wiki pages for team members">&#8983; Wiki Fetch</button>
         <button type="button" class="toolbar-btn" id="btnJiraDaily" onclick="toolbarJiraDaily(this)" title="Jira daily report">&#9776; Jira Daily</button>
         <button type="button" class="toolbar-btn" onclick="openCommitSummaryModal()" title="Ask the agent for commit summary">&#9998; Commit Summary</button>
+        <button type="button" class="toolbar-btn" id="btnPlatformUpdates" onclick="openPlatformUpdatesModal()" title="Master-merged platform task summaries">&#128196; Platform Updates</button>
         <button type="button" class="toolbar-btn" onclick="openTeamActivityModal()" title="Team activity query">&#9673; Team Activity</button>
         <button type="button" class="toolbar-btn" onclick="openProjectsModal()" title="Ask deep questions about MEDAVIS projects">&#128230; Projects</button>
       </div>
@@ -399,6 +405,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
       <div class="toolbar-cat-body">
         <button type="button" class="toolbar-btn" onclick="openTrendAnalysis()" title="Analyze trends from RAG data with AI predictions">&#128200; Trend Analysis</button>
         <button type="button" class="toolbar-btn" onclick="openAiNewsKB()" title="AI News knowledge base: categorize, track, and learn">&#129302; AI News KB</button>
+        <button type="button" class="toolbar-btn" onclick="openFinanceNewsSummary()" title="Summarize finance news by date range and category">&#128176; Finance News Summary</button>
       </div>
     </div>
     <div class="toolbar-cat" id="toolbarCatPersonal">
@@ -558,6 +565,33 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" onclick="modalSelectAll('commitMemberList')" style="font-size:0.78em">Select All</button>
         <button type="button" class="toolbar-btn" onclick="modalSelectNone('commitMemberList')" style="font-size:0.78em">None</button>
         <button type="button" class="send-btn" onclick="startCommitSummary()" style="padding:8px 20px;font-size:0.88em">Generate Summary</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="platformUpdatesModal" class="modal-overlay" role="dialog" aria-modal="true">
+  <div class="modal-panel" style="max-width:440px">
+    <div class="modal-head">
+      <h2>Platform Updates &#8212; Options</h2>
+      <button type="button" class="modal-close" onclick="closePlatformUpdatesModal()" title="Close">&times;</button>
+    </div>
+    <div class="modal-content" style="padding:16px 20px">
+      <p style="font-size:0.82em;color:#8b8fa4;margin-bottom:12px">Task-based summary of work merged to master. Radiology groups backend + frontend by JIRA key.</p>
+      <div style="margin-bottom:12px">
+        <label style="font-size:0.82em;color:#8b8fa4;display:block;margin-bottom:6px">Platform</label>
+        <select id="platformUpdatesSelect" style="width:100%;background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:6px 8px;font-size:0.88em">
+          <option value="radiology" selected>Radiology Platform</option>
+        </select>
+      </div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:0.82em;color:#8b8fa4">From:</label>
+        <input type="date" id="platformUpdatesDateFrom" style="background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:4px 8px;font-size:0.82em">
+        <label style="font-size:0.82em;color:#8b8fa4">To:</label>
+        <input type="date" id="platformUpdatesDateTo" style="background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:4px 8px;font-size:0.82em">
+      </div>
+      <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+        <button type="button" class="send-btn" id="platformUpdatesStartBtn" onclick="startPlatformUpdates()" style="padding:8px 20px;font-size:0.88em">Generate Summary</button>
       </div>
     </div>
   </div>
@@ -756,12 +790,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
                   <option value="middle_school">初中</option>
                 </select>
               </label>
-              <label style="display:flex;align-items:center;gap:4px;font-size:0.95em">好词好句
-                <select id="irVocabLang" onchange="irOnLearnerPrefsChange()">
-                  <option value="en">英文</option>
-                  <option value="zh">中文</option>
-                </select>
-              </label>
             </div>
             <div id="irTabBar" style="display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;border-bottom:1px solid #2a2d3a;background:#181a24"></div>
             <div id="irAnalysis" style="flex:1;overflow-y:auto;padding:16px 18px;font-size:0.88em;line-height:1.65;color:#c4c8f0"></div>
@@ -812,7 +840,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 </div>
 
 <div id="dailyFetchModal" class="modal-overlay" role="dialog" aria-modal="true">
-  <div class="modal-panel" style="max-width:620px">
+  <div class="modal-panel" style="max-width:780px">
     <div class="modal-head">
       <h2>&#128240; Daily Fetch</h2>
       <button type="button" class="modal-close" onclick="closeDailyFetchModal()" title="Close">&times;</button>
@@ -824,6 +852,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         <button type="button" class="toolbar-btn" id="dfPrevDay" onclick="dfNavDay(-1)" style="font-size:0.75em;padding:3px 8px">&larr; Prev</button>
         <button type="button" class="toolbar-btn" id="dfNextDay" onclick="dfNavDay(1)" style="font-size:0.75em;padding:3px 8px">Next &rarr;</button>
         <span id="dfDateLabel" style="font-size:0.88em;font-weight:600;color:#c4c8f0"></span>
+      </div>
+      <div id="dfFinanceSources" style="margin-bottom:14px;background:#1a1d2e;border:1px solid #2a2d3e;border-radius:8px;padding:10px 12px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-size:0.78em;font-weight:600;color:#f59e0b">Finance sources (category + publisher)</div>
+          <button type="button" class="toolbar-btn" onclick="saveDfFinanceSources()" style="font-size:0.72em;padding:2px 8px">Save</button>
+        </div>
+        <div id="dfFinanceSourceTree" style="font-size:0.76em;color:#c4c8f0;max-height:220px;overflow:auto">Loading...</div>
       </div>
       <div id="dfHistoryContent" style="min-height:120px">
         <p style="font-size:0.82em;color:#6b7280">Loading...</p>
@@ -839,6 +874,36 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
           <span id="dfRunProgressText" style="font-size:0.82em;color:#c4c8f0">Starting...</span>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div id="financeNewsSummaryModal" class="modal-overlay" role="dialog" aria-modal="true">
+  <div class="modal-panel" style="max-width:95vw;max-height:92vh;width:860px;background:#0f1117;border:1px solid #2a2d3e">
+    <div class="modal-head" style="border-bottom:1px solid #2a2d3e">
+      <h2>&#128176; Finance News Summary</h2>
+      <button type="button" class="modal-close" onclick="closeFinanceNewsSummary()" title="Close">&times;</button>
+    </div>
+    <div class="modal-content" style="padding:14px 18px;background:#0f1117">
+      <p style="font-size:0.82em;color:#8b8fa4;margin-bottom:12px">Pick a date range and one or more categories. Summary is Chinese; titles/links stay as fetched.</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start">
+        <div style="background:#1a1d2e;border:1px solid #2a2d3e;border-radius:8px;padding:12px">
+          <div style="font-size:0.78em;color:#f59e0b;margin-bottom:8px;font-weight:600">Categories</div>
+          <div id="fnsCategoryList" style="display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+        <div style="background:#1a1d2e;border:1px solid #2a2d3e;border-radius:8px;padding:12px">
+          <div style="font-size:0.78em;color:#f59e0b;margin-bottom:8px;font-weight:600">Date range</div>
+          <label style="display:block;font-size:0.78em;color:#8b8fa4;margin-bottom:4px">From</label>
+          <input type="date" id="fnsStart" style="width:100%;background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:6px 8px;margin-bottom:8px;box-sizing:border-box">
+          <label style="display:block;font-size:0.78em;color:#8b8fa4;margin-bottom:4px">To</label>
+          <input type="date" id="fnsEnd" style="width:100%;background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:6px 8px;box-sizing:border-box">
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:14px">
+        <button type="button" class="send-btn" onclick="runFinanceNewsSummary()" style="padding:8px 18px;font-size:0.85em">Generate summary</button>
+        <button type="button" class="toolbar-btn" onclick="closeFinanceNewsSummary()" style="font-size:0.78em">Close</button>
+      </div>
+      <div id="fnsResult" style="margin-top:14px;white-space:pre-wrap;font-size:0.84em;color:#c4c8f0;line-height:1.55"></div>
     </div>
   </div>
 </div>
@@ -1684,18 +1749,27 @@ function irGetLearnerLevel() {
   return 'university';
 }
 function irGetOutputLang() {
-  var el = document.getElementById('irVocabLang');
-  return (el && el.value === 'zh') ? 'zh' : 'en';
+  return 'zh';
 }
 function irTabCacheKey(kind) {
   if (!kind || kind === 'speaking') return kind;
-  var lv = irGetLearnerLevel();
-  if (kind === 'vocab') return kind + '__' + lv + '__' + irGetOutputLang();
-  return kind + '__' + lv;
+  return kind + '__' + irGetLearnerLevel() + '__' + irGetOutputLang();
 }
 function irLegacyKindFallback(kind) {
-  if (kind === 'vocab') return irGetLearnerLevel() === 'university' && irGetOutputLang() === 'en';
-  return irGetLearnerLevel() === 'university';
+  if (!kind || kind === 'speaking') return false;
+  return true;
+}
+function irLookupCachedTab(tabs, kind) {
+  if (!tabs || !kind) return null;
+  var key = irTabCacheKey(kind);
+  if (tabs[key]) return tabs[key];
+  if (!irLegacyKindFallback(kind)) return null;
+  var lv = irGetLearnerLevel();
+  var legacyKeys = [kind + '__' + lv + '__en', kind + '__' + lv, kind];
+  for (var i = 0; i < legacyKeys.length; i++) {
+    if (tabs[legacyKeys[i]]) return tabs[legacyKeys[i]];
+  }
+  return null;
 }
 async function irOnLearnerPrefsChange() {
   if (irBusy()) {
@@ -1714,17 +1788,13 @@ async function irOnLearnerPrefsChange() {
 function irLoadLearnerPrefs() {
   try {
     var lv = localStorage.getItem('jarvis.ir.learnerLevel');
-    var lang = localStorage.getItem('jarvis.ir.outputLang');
     var lvEl = document.getElementById('irLearnerLevel');
-    var langEl = document.getElementById('irVocabLang');
     if (lvEl && (lv === 'university' || lv === 'high_school' || lv === 'middle_school')) lvEl.value = lv;
-    if (langEl && (lang === 'en' || lang === 'zh')) langEl.value = lang;
   } catch (e) {}
 }
 function irSaveLearnerPrefs() {
   try {
     localStorage.setItem('jarvis.ir.learnerLevel', irGetLearnerLevel());
-    localStorage.setItem('jarvis.ir.outputLang', irGetOutputLang());
   } catch (e) {}
 }
 
@@ -1752,11 +1822,9 @@ function irSetNavDisabled(disabled) {
   var next = document.getElementById('irNextBtn');
   var back = document.getElementById('irBackBtn');
   var lv = document.getElementById('irLearnerLevel');
-  var lang = document.getElementById('irVocabLang');
   if (next) next.disabled = disabled || !_irState.nextIndex;
   if (back) back.disabled = disabled || (_irState.prevIndex == null);
   if (lv) lv.disabled = !!disabled;
-  if (lang) lang.disabled = !!disabled;
 }
 
 function irResetAnalyses() {
@@ -2523,7 +2591,7 @@ function irEnsureExplainUi() {
     btn = document.createElement('button');
     btn.type = 'button';
     btn.id = 'irExplainBtn';
-    btn.textContent = 'Explain';
+    btn.textContent = '解释';
     btn.addEventListener('mousedown', function(e) { e.preventDefault(); });
     btn.addEventListener('click', function(e) {
       e.preventDefault();
@@ -2536,13 +2604,23 @@ function irEnsureExplainUi() {
   if (!pop) {
     pop = document.createElement('div');
     pop.id = 'irExplainPop';
-    pop.innerHTML = '<div class="ir-explain-head"><span>Selection explain</span>' +
-      '<button type="button" class="ir-explain-close" aria-label="Close">&times;</button></div>' +
+    pop.innerHTML = '<div class="ir-explain-head"><span>选中文本解释</span>' +
+      '<span class="ir-explain-head-actions">' +
+      '<button type="button" class="ir-explain-speak" title="朗读选中原文" aria-label="朗读选中原文">&#128266;</button>' +
+      '<button type="button" class="ir-explain-close" aria-label="Close">&times;</button></span></div>' +
       '<div class="ir-explain-body"></div>';
     pop.querySelector('.ir-explain-close').addEventListener('click', function(e) {
       e.preventDefault();
       irHideExplainPop();
     });
+    pop.querySelector('.ir-explain-speak').addEventListener('click', function(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      irToggleExplainSpeech();
+    });
+    if (!window.speechSynthesis) {
+      pop.querySelector('.ir-explain-speak').disabled = true;
+    }
     document.body.appendChild(pop);
   }
   return { btn: btn, pop: pop };
@@ -2553,9 +2631,43 @@ function irHideExplainBtn() {
   if (btn) btn.style.display = 'none';
 }
 
+function irStopExplainSpeech() {
+  try {
+    if (window.speechSynthesis) window.speechSynthesis.cancel();
+  } catch (e) {}
+}
+
+function irToggleExplainSpeech() {
+  var pop = document.getElementById('irExplainPop');
+  var btn = pop ? pop.querySelector('.ir-explain-speak') : null;
+  var text = (_irExplainSel.text || '').replace(/\s+/g, ' ').trim();
+  if (!text) {
+    showToast('没有可朗读的选中原文');
+    return;
+  }
+  if (!window.speechSynthesis) {
+    if (btn) btn.disabled = true;
+    showToast('当前浏览器不支持朗读');
+    return;
+  }
+  try {
+    if (window.speechSynthesis.speaking) {
+      irStopExplainSpeech();
+      return;
+    }
+    var u = new SpeechSynthesisUtterance(text);
+    u.lang = 'en-US';
+    u.rate = 0.92;
+    window.speechSynthesis.speak(u);
+  } catch (e) {
+    showToast(e.message || '朗读失败');
+  }
+}
+
 function irHideExplainPop() {
   var pop = document.getElementById('irExplainPop');
   if (pop) pop.style.display = 'none';
+  irStopExplainSpeech();
   if (_irExplainAbort) {
     try { _irExplainAbort.abort(); } catch (e) {}
     _irExplainAbort = null;
@@ -2683,7 +2795,7 @@ function irOnPassageSelectionChange() {
     source: (root && root.id === 'irAnalysis') ? 'analysis' : 'passage'
   };
   ui.btn.disabled = false;
-  ui.btn.textContent = 'Explain';
+  ui.btn.textContent = '解释';
   irPlaceFixedNearRect(ui.btn, rect, true);
 }
 
@@ -2698,7 +2810,7 @@ async function irRunSelectionExplain() {
   var rect = _irExplainSel.rect;
   ui.btn.disabled = true;
   ui.btn.textContent = '…';
-  body.textContent = 'Explaining…';
+  body.textContent = '解释中…';
   irPlaceFixedNearRect(ui.pop, rect || ui.btn.getBoundingClientRect(), true);
   if (_irExplainAbort) {
     try { _irExplainAbort.abort(); } catch (e) {}
@@ -2762,7 +2874,7 @@ async function irRunSelectionExplain() {
     showToast(e.message || String(e));
   } finally {
     ui.btn.disabled = false;
-    ui.btn.textContent = 'Explain';
+    ui.btn.textContent = '解释';
     _irExplainAbort = null;
   }
 }
@@ -2890,8 +3002,7 @@ async function irLoadCachedAnalysis(chunkIndex) {
     var tabs = d.tabs || {};
     Object.keys(_irState.analyses).forEach(function(kind) {
       if (kind === 'speaking') return;
-      var s = tabs[irTabCacheKey(kind)];
-      if (!s && irLegacyKindFallback(kind) && tabs[kind]) s = tabs[kind];
+      var s = irLookupCachedTab(tabs, kind);
       if (!s) return;
       _irState.analyses[kind] = {
         text: s.text || '',
@@ -2945,7 +3056,7 @@ async function irPersistSlot(bookId, chunkIndex, kind, slot) {
           lastOffset: slot.lastOffset || 0,
           error: slot.error || '',
           learner_level: irGetLearnerLevel(),
-          output_lang: kind === 'vocab' ? irGetOutputLang() : 'en'
+          output_lang: irGetOutputLang()
         },
         merge: true
       })
@@ -3243,6 +3354,7 @@ function openDailyFetchModal() {
   document.getElementById('btnRunDailyFetch').disabled = false;
   document.getElementById('btnContinueDailyFetch').style.display = 'none';
   loadDailyFetchHistory('');
+  loadDfFinanceSources();
 }
 function closeDailyFetchModal() {
   document.getElementById('dailyFetchModal').classList.remove('open');
@@ -3339,23 +3451,41 @@ async function loadDailyFetchHistory(date) {
         h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/ai-briefing.mp3' + _cacheBust + '"></audio>';
       }
       if (data.has_finance_audio) {
-        h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">';
-        h += '<span style="font-size:0.78em;font-weight:600;color:#f59e0b">Finance News Audio</span>';
-        h += _dfTranslateBtnHtml('finance_audio', 'Finance News', 'audio_lang_finance', 'background:#2a2a1a;border:1px solid #ca8a04;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fde047;cursor:pointer');
-        h += '<button type="button" onclick="recreateAudioOnly(\'finance_audio\',\'Finance News\',this)" style="background:#2a2a1a;border:1px solid #d97706;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#f59e0b;cursor:pointer" title="Regenerate audio from existing data">&#x21bb; Recreate</button>';
-        h += '<button type="button" onclick="recreateAudio(\'finance_audio\',\'Finance News\',this)" style="background:#1a1a0f;border:1px solid #b45309;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fcd34d;cursor:pointer" title="Re-fetch finance news then recreate audio">&#x1f504; Refetch &amp; Recreate</button>';
-        h += '</div>';
-        h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/finance-news.mp3' + _cacheBust + '"></audio>';
+        var fa = data.finance_audio_files || {};
+        var fcat = data.finance_categories || [];
+        for (var fi = 0; fi < fcat.length; fi++) {
+          var cid = fcat[fi].id;
+          var lab = fcat[fi].label || cid;
+          var mp3 = fcat[fi].audio_file;
+          if (!mp3) continue;
+          h += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">';
+          h += '<span style="font-size:0.78em;font-weight:600;color:#f59e0b">' + escHtml(lab) + '</span>';
+          h += _dfTranslateBtnHtml('fn_audio:' + cid, lab, 'audio_lang_finance', 'background:#2a2a1a;border:1px solid #ca8a04;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fde047;cursor:pointer');
+          h += '<button type="button" onclick="recreateAudioOnly(\'fn_audio:' + cid + '\',\'' + lab.replace(/'/g, "\\'") + '\',this)" style="background:#2a2a1a;border:1px solid #d97706;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#f59e0b;cursor:pointer">&#x21bb; Recreate</button>';
+          h += '<button type="button" onclick="recreateFinanceCategory(\'' + cid + '\',\'' + lab.replace(/'/g, "\\'") + '\',this)" style="background:#1a1a0f;border:1px solid #b45309;border-radius:4px;padding:1px 8px;font-size:0.7em;color:#fcd34d;cursor:pointer">&#x1f504; Refetch &amp; Recreate</button>';
+          h += '</div>';
+          if (fa[cid]) {
+            h += '<audio controls style="width:100%;height:32px;margin-bottom:8px" src="/api/toolbar/audio-file/' + escHtml(data.date) + '/' + escHtml(mp3) + _cacheBust + '"></audio>';
+          }
+        }
       }
       h += '</div>';
     }
     var mdFiles = data.files.filter(function(f) { return f.name.endsWith('.md'); });
-    if (mdFiles.length > 0) {
+    var fcat = data.finance_categories || [];
+    var fcounts = (data.stats && data.stats.finance_by_category) || {};
+    if (mdFiles.length > 0 || fcat.length > 0) {
       h += '<div style="font-size:0.75em;color:#6b7280;margin-bottom:6px">Reports:</div>';
       h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">';
       for (var i = 0; i < mdFiles.length; i++) {
         var f = mdFiles[i];
         h += '<button type="button" onclick="loadDfReportContent(\'' + escHtml(data.date) + '\',\'' + escHtml(f.name) + '\',this)" style="background:#1e2a3e;border:1px solid #3a5a8a;border-radius:5px;padding:4px 10px;font-size:0.82em;color:#c4c8f0;cursor:pointer" title="' + f.size_kb + ' KB">' + escHtml(f.name) + '</button>';
+      }
+      for (var fi = 0; fi < fcat.length; fi++) {
+        var cid = fcat[fi].id;
+        var lab = fcat[fi].label || cid;
+        var n = fcounts[cid] || 0;
+        h += '<button type="button" onclick="loadDfFinanceCategoryReport(\'' + escHtml(data.date) + '\',\'' + escHtml(cid) + '\',\'' + String(lab).replace(/'/g, "\\'") + '\',this)" style="background:#2a2410;border:1px solid #b45309;border-radius:5px;padding:4px 10px;font-size:0.82em;color:#fcd34d;cursor:pointer">' + escHtml(lab) + ' (' + n + ')</button>';
       }
       h += '</div>';
       h += '<div id="dfReportPreview" style="display:none;max-height:40vh;overflow-y:auto;background:#0f1117;border:1px solid #2a2d3a;border-radius:8px;padding:14px 16px;font-size:0.82em;color:#c4c8f0;line-height:1.6"></div>';
@@ -3374,6 +3504,7 @@ async function runDailyFetchFromModal() {
   progressText.textContent = 'Starting pipeline...';
   addSystemMessage('Daily Fetch started — running AI sources, world news, commit report, Jira, and audio generation. This may take 5-10 minutes...');
   try {
+    await saveDfFinanceSources();
     var resp = await fetch('/api/toolbar/daily-fetch', {method:'POST'});
     var data = await resp.json();
     var jobId = data.job_id;
@@ -3399,11 +3530,17 @@ async function runDailyFetchFromModal() {
           var dailySummary = st.daily_summary || '';
           addCollapsibleSystemMessage('Daily Fetch Results', dailySummary, 20);
           var today = new Date().toISOString().slice(0, 10);
+          var _cacheBust = '?t=' + Date.now();
           var audioHtml = '<div style="margin:10px 0;padding:12px;background:#1a1d2e;border-radius:8px;border:1px solid #2a2d3e">' +
             '<div style="font-weight:600;color:#60a5fa;margin-bottom:8px">AI Briefing Audio</div>' +
-            '<audio controls style="width:100%;margin-bottom:6px" src="/api/toolbar/audio-file/' + today + '/ai-briefing.mp3"></audio>' +
-            '<div style="font-weight:600;color:#f59e0b;margin:12px 0 8px">Finance News Audio</div>' +
-            '<audio controls style="width:100%;margin-bottom:6px" src="/api/toolbar/audio-file/' + today + '/finance-news.mp3"></audio>' +
+            '<audio controls style="width:100%;margin-bottom:6px" src="/api/toolbar/audio-file/' + today + '/ai-briefing.mp3' + _cacheBust + '"></audio>' +
+            '<div style="font-weight:600;color:#f59e0b;margin:12px 0 8px">Finance category audio</div>' +
+            '<audio controls style="width:100%;margin-bottom:4px" src="/api/toolbar/audio-file/' + today + '/finance-markets.mp3' + _cacheBust + '"></audio>' +
+            '<audio controls style="width:100%;margin-bottom:4px" src="/api/toolbar/audio-file/' + today + '/finance-china-policy.mp3' + _cacheBust + '"></audio>' +
+            '<audio controls style="width:100%;margin-bottom:4px" src="/api/toolbar/audio-file/' + today + '/finance-us-political.mp3' + _cacheBust + '"></audio>' +
+            '<audio controls style="width:100%;margin-bottom:4px" src="/api/toolbar/audio-file/' + today + '/finance-crypto.mp3' + _cacheBust + '"></audio>' +
+            '<audio controls style="width:100%;margin-bottom:4px" src="/api/toolbar/audio-file/' + today + '/finance-gold.mp3' + _cacheBust + '"></audio>' +
+            '<audio controls style="width:100%;margin-bottom:4px" src="/api/toolbar/audio-file/' + today + '/finance-oil.mp3' + _cacheBust + '"></audio>' +
             '</div>';
           var audioMsg = document.createElement('div');
           audioMsg.className = 'system-msg';
@@ -3481,7 +3618,7 @@ async function continueDailyFetchFromModal() {
     runBtn.disabled = false;
   }
 }
-async function _runAudioJob(steps, label, btn, btnResetText, langOverrides) {
+async function _runAudioJob(steps, label, btn, btnResetText, langOverrides, financeSources) {
   if (!_dfCurrentDate) { showToast('No date selected'); return; }
   btn.disabled = true;
   btn.textContent = '\u23f3 Working...';
@@ -3494,6 +3631,9 @@ async function _runAudioJob(steps, label, btn, btnResetText, langOverrides) {
     var payload = {steps: steps, date: _dfCurrentDate};
     if (langOverrides && Object.keys(langOverrides).length) {
       payload.lang_overrides = langOverrides;
+    }
+    if (financeSources && financeSources.length) {
+      payload.finance_sources = financeSources;
     }
     var resp = await fetch('/api/toolbar/daily-fetch/continue', {
       method: 'POST',
@@ -3547,10 +3687,114 @@ async function recreateAudio(stepName, label, btn) {
   var preSteps = [stepName];
   if (stepName === 'ai_audio') {
     preSteps = ['refetch_ai', stepName];
-  } else if (stepName === 'finance_audio') {
+  } else if (stepName === 'finance_audio' || (typeof stepName === 'string' && stepName.indexOf('fn_audio:') === 0)) {
     preSteps = ['refetch_finance', 'finance_news_merge', 'finance_news_translate', stepName];
   }
   _runAudioJob(preSteps, 'Refetching & recreating ' + label + ' audio', btn, '\ud83d\udd04 Refetch & Recreate');
+}
+function recreateFinanceCategory(catId, label, btn) {
+  var srcs = [];
+  if (_dfFinanceCatalog && _dfFinanceCatalog.sources) {
+    var enabledSet = {};
+    (_dfFinanceCatalog.enabled || []).forEach(function(id) { enabledSet[id] = true; });
+    _dfFinanceCatalog.sources.forEach(function(s) {
+      if (s.category === catId && enabledSet[s.id]) srcs.push(s.id);
+    });
+  }
+  var steps = ['refetch_finance', 'finance_news_merge', 'finance_news_translate', 'fn_audio:' + catId];
+  _runAudioJob(steps, 'Refetching ' + label, btn, '\ud83d\udd04 Refetch & Recreate', null, srcs);
+}
+var _dfFinanceCatalog = null;
+function loadDfFinanceSources() {
+  var el = document.getElementById('dfFinanceSourceTree');
+  if (!el) return;
+  fetch('/api/toolbar/finance-sources').then(function(r) { return r.json(); }).then(function(data) {
+    _dfFinanceCatalog = data;
+    var cats = data.categories || [];
+    var sources = data.sources || [];
+    var enabled = {};
+    (data.enabled || []).forEach(function(id) { enabled[id] = true; });
+    var h = '';
+    cats.forEach(function(c) {
+      var kids = sources.filter(function(s) { return s.category === c.id; });
+      var allOn = kids.length && kids.every(function(s) { return enabled[s.id]; });
+      h += '<div style="margin-bottom:8px">';
+      h += '<label style="display:flex;gap:6px;align-items:center;font-weight:600;color:#e5e7eb"><input type="checkbox" class="df-fn-cat" data-cat="' + c.id + '" ' + (allOn ? 'checked' : '') + ' onchange="dfFnToggleCat(\'' + c.id + '\', this.checked)"> ' + escHtml(c.label) + '</label>';
+      kids.forEach(function(s) {
+        h += '<label style="display:flex;gap:6px;align-items:center;margin-left:18px;color:#9ca3af"><input type="checkbox" class="df-fn-src" data-cat="' + c.id + '" data-id="' + s.id + '" ' + (enabled[s.id] ? 'checked' : '') + '> ' + escHtml(s.display) + (s.default_enabled ? '' : ' <span style="color:#6b7280">(optional)</span>') + '</label>';
+      });
+      h += '</div>';
+    });
+    el.innerHTML = h;
+  }).catch(function(e) {
+    el.textContent = 'Failed to load sources: ' + e.message;
+  });
+}
+function dfFnToggleCat(catId, on) {
+  document.querySelectorAll('.df-fn-src[data-cat="' + catId + '"]').forEach(function(cb) { cb.checked = on; });
+}
+async function saveDfFinanceSources() {
+  var enabled = {};
+  document.querySelectorAll('.df-fn-src').forEach(function(cb) {
+    enabled[cb.getAttribute('data-id')] = !!cb.checked;
+  });
+  await fetch('/api/toolbar/finance-sources', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({enabled: enabled})
+  });
+  await loadDfFinanceSources();
+  if (typeof showToast === 'function') showToast('Finance sources saved');
+}
+function openFinanceNewsSummary() {
+  document.getElementById('financeNewsSummaryModal').classList.add('open');
+  var today = new Date().toISOString().slice(0, 10);
+  var week = new Date(); week.setDate(week.getDate() - 6);
+  document.getElementById('fnsEnd').value = today;
+  document.getElementById('fnsStart').value = week.toISOString().slice(0, 10);
+  var list = document.getElementById('fnsCategoryList');
+  var cats = [
+    ['markets', '综合市场'], ['china-policy', '中国政策金融'], ['us-political', '美国政治金融'],
+    ['crypto', '数字货币'], ['gold', '黄金'], ['oil', '石油']
+  ];
+  list.innerHTML = cats.map(function(c) {
+    return '<label class="wiki-user-check"><input type="checkbox" class="fns-cat" value="' + c[0] + '" checked> ' + c[1] + '</label>';
+  }).join('');
+  document.getElementById('fnsResult').textContent = '';
+}
+function closeFinanceNewsSummary() {
+  document.getElementById('financeNewsSummaryModal').classList.remove('open');
+}
+async function runFinanceNewsSummary() {
+  var cats = [];
+  document.querySelectorAll('.fns-cat:checked').forEach(function(cb) { cats.push(cb.value); });
+  var el = document.getElementById('fnsResult');
+  el.textContent = 'Generating...';
+  try {
+    var resp = await fetch('/api/toolbar/finance-news-summary', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        start: document.getElementById('fnsStart').value,
+        end: document.getElementById('fnsEnd').value,
+        categories: cats
+      })
+    });
+    var data = await resp.json();
+    var html = '<div style="white-space:pre-wrap">' + escHtml(data.summary || '') + '</div>';
+    if (data.items && data.items.length) {
+      html += '<div style="margin-top:12px;font-size:0.78em;color:#9ca3af">Sources (' + (data.count || data.items.length) + ')</div><ul style="padding-left:18px">';
+      data.items.forEach(function(it) {
+        var t = escHtml(it.title || '');
+        var u = it.url ? '<a href="' + escHtml(it.url) + '" target="_blank" rel="noopener" style="color:#60a5fa">' + t + '</a>' : t;
+        html += '<li style="margin:4px 0">[' + escHtml(it.category || '') + '] ' + escHtml(it.source || '') + ' — ' + u + '</li>';
+      });
+      html += '</ul>';
+    }
+    el.innerHTML = html;
+  } catch (e) {
+    el.textContent = 'Error: ' + e.message;
+  }
 }
 function _dfTranslateBtnHtml(stepName, label, langKey, style) {
   var cur = (_dfAudioLangs && _dfAudioLangs[langKey]) || 'zh';
@@ -3577,6 +3821,45 @@ async function translateDailyFetchAudio(stepName, label, langKey, btn) {
     });
   } catch (e) {}
   _runAudioJob([stepName], 'Translating ' + label + ' to ' + targetLabel, btn, resetText, overrides);
+}
+async function loadDfFinanceCategoryReport(dateStr, catId, label, btn) {
+  var preview = document.getElementById('dfReportPreview');
+  if (!preview) return;
+  var wrap = btn.parentElement;
+  if (wrap) {
+    wrap.querySelectorAll('button').forEach(function(b) {
+      b.style.borderColor = '#3a5a8a';
+      b.style.background = '#1e2a3e';
+    });
+  }
+  btn.style.borderColor = '#f59e0b';
+  btn.style.background = '#3a2a0a';
+  preview.style.display = 'block';
+  preview.innerHTML = '<span style="color:#6b7280">Loading...</span>';
+  try {
+    var resp = await fetch('/api/toolbar/daily-fetch/finance-items/' + encodeURIComponent(dateStr));
+    var data = await resp.json();
+    var block = (data.categories || []).filter(function(c) { return c.category === catId; })[0];
+    var items = (block && block.items) || [];
+    if (!items.length) {
+      preview.innerHTML = '<div style="color:#9ca3af">No items in ' + escHtml(label) + ' for ' + escHtml(dateStr) + '.</div>';
+      return;
+    }
+    var html = '<div style="font-weight:600;color:#f59e0b;margin-bottom:10px">' + escHtml(label) + ' · ' + items.length + '</div><ul style="margin:0;padding-left:18px">';
+    items.forEach(function(it) {
+      var t = escHtml(it.title || '');
+      var src = it.source ? ' <span style="color:#6b7280">(' + escHtml(it.source) + ')</span>' : '';
+      if (it.url) {
+        html += '<li style="margin:6px 0"><a href="' + escHtml(it.url) + '" target="_blank" rel="noopener" style="color:#93c5fd">' + t + '</a>' + src + '</li>';
+      } else {
+        html += '<li style="margin:6px 0">' + t + src + '</li>';
+      }
+    });
+    html += '</ul>';
+    preview.innerHTML = html;
+  } catch (e) {
+    preview.textContent = 'Error: ' + e.message;
+  }
 }
 async function loadDfReportContent(dateStr, filename, btn) {
   var preview = document.getElementById('dfReportPreview');
@@ -4257,6 +4540,76 @@ async function startCommitSummary() {
     }
   } catch (e) {
     showToast('Commit fetch failed: ' + e.message);
+  }
+}
+
+function openPlatformUpdatesModal() {
+  _initDateRange('platformUpdatesDateFrom', 'platformUpdatesDateTo', 7);
+  document.getElementById('platformUpdatesModal').classList.add('open');
+}
+function closePlatformUpdatesModal() {
+  document.getElementById('platformUpdatesModal').classList.remove('open');
+}
+async function startPlatformUpdates() {
+  const platform = document.getElementById('platformUpdatesSelect').value || 'radiology';
+  const dateFrom = document.getElementById('platformUpdatesDateFrom').value || '';
+  const dateTo = document.getElementById('platformUpdatesDateTo').value || '';
+  const range = _dateRangeLabel('platformUpdatesDateFrom', 'platformUpdatesDateTo');
+  closePlatformUpdatesModal();
+  await newChat();
+  const btn = document.getElementById('btnPlatformUpdates');
+  const label = document.getElementById('platformUpdatesSelect');
+  const platformName = (label && label.options[label.selectedIndex]) ? label.options[label.selectedIndex].text : 'Platform';
+  try {
+    const r = await fetch('/api/toolbar/platform-updates', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ platform: platform, date_from: dateFrom, date_to: dateTo }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Failed to start');
+    const jobId = d.job_id;
+    if (!jobId) throw new Error('No job id returned');
+    showToast('Fetching ' + platformName + ' master updates…');
+    if (btn) { btn.disabled = true; toolbarReindexSpinner(btn, true); }
+    const pollUrl = '/api/toolbar/platform-updates/' + encodeURIComponent(jobId);
+    const poll = setInterval(async function() {
+      try {
+        const sr = await fetch(pollUrl);
+        const sd = await sr.json();
+        const status = sd.status;
+        if (status === 'done' || status === 'error') {
+          clearInterval(poll);
+          if (btn) { btn.disabled = false; toolbarReindexSpinner(btn, false); }
+          const fullResult = sd.result || '';
+          if (status === 'done') {
+            showToast(platformName + ' updates ready');
+            if (fullResult) {
+              var div = document.createElement('div');
+              div.className = 'msg msg-system';
+              div.innerHTML = '<div class="sys-label">' + platformName + ' Updates (' + range + ')</div>' +
+                '<div style="max-height:500px;overflow-y:auto;padding:8px 0">' + renderMarkdown(fullResult) + '</div>';
+              chatEl.appendChild(div);
+              chatEl.scrollTop = chatEl.scrollHeight;
+              conversationHistory.push({role: 'assistant', content: '[' + platformName + ' Updates ' + range + ']\n' + fullResult});
+            }
+          } else {
+            showToast(platformName + ' updates failed');
+            if (fullResult) {
+              addSystemMessage(platformName + ' Updates Error', fullResult);
+            }
+          }
+        } else if (sd.progress) {
+          showToast(platformName + ': ' + sd.progress);
+        }
+      } catch (err) {
+        clearInterval(poll);
+        if (btn) { btn.disabled = false; toolbarReindexSpinner(btn, false); }
+      }
+    }, 3000);
+  } catch (e) {
+    showToast('Platform updates error: ' + e.message);
+    if (btn) { btn.disabled = false; toolbarReindexSpinner(btn, false); }
   }
 }
 
