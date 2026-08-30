@@ -5,7 +5,7 @@ tags:
   - finance-news
 category: briefing-pipeline
 status: current
-last-updated: 2026-08-27
+last-updated: 2026-08-30
 ---
 
 # Finance News Pipeline
@@ -24,11 +24,13 @@ Legacy `run-world-news.py` remains on disk unused. Readers prefer finance paths 
 
 ## Catalog
 
-See `scripts/pipeline/finance_sources.json`. Default-on: Reuters/CNBC/Yahoo (markets); PBOC, CSRC, 财联社, 第一财经 (China policy); AP, BLS, Fed, CNBC economy, Politico (US); CoinDesk; Kitco; EIA + OilPrice.
+See `scripts/pipeline/finance_sources.json`. Default-on: Reuters/CNBC/Yahoo (markets); PBOC, CSRC, 财联社, 第一财经 (China policy); AP, BLS, BEA, Census, ISM PMI, ADP, Fed, CNBC economy, Politico, MarketWatch (US); CoinDesk; Kitco + MINING.COM; EIA + OilPrice.
 
 Weibo/Toutiao are **not** in the finance catalog. US/crypto/gold/oil drop Chinese-domain URLs.
 
-Official sources (`keep_always`: BLS, Fed, EIA, PBOC, CSRC, …) skip the default-deny market-impact filter.
+Official sources (`keep_always`: BLS, BEA, Census, ISM, ADP, Fed, EIA, PBOC, CSRC, …) skip the default-deny market-impact filter. Census.gov is Cloudflare-blocked from some datacenter IPs (Playwright fallback). ISM World may bot-challenge or drop connections; Daily Fetch on a VPN/proxy path is the intended runtime.
+
+Merge then folds **near-duplicate stories within each category** (title+summary Jaccard ≥ 0.5), keeping the lower catalog `priority`. Exact title match still drops first. **Yesterday's merged titles** (same key: lowercase, first 80 chars) are dropped so audio and RAG do not repeat the previous day's items. Two days ago is not consulted. Categories do not dedupe against each other. Audio, Reports, and RAG all read the merged JSON.
 
 ## Filter
 

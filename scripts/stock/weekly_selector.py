@@ -243,6 +243,10 @@ def _cache_usable(norm, start_date=None, end_date=None, min_rows=MIN_LISTING_DAY
     if norm is None or norm.empty:
         return False
     ref_end = pd.Timestamp(end_date) if end_date else pd.Timestamp(datetime.now().date())
+    today = pd.Timestamp(datetime.now().date())
+    # 回测会把 fetch_end 设成 end+20 天; 不能用未来日期把今日缓存判过期
+    if ref_end > today:
+        ref_end = today
     # 末尾落后目标日超过 10 天则视为过期
     if norm["date"].iloc[-1] < ref_end - pd.Timedelta(days=10):
         return False

@@ -19,6 +19,10 @@ if not defined PYTHON (
 )
 echo [%date% %time%] Python: %PYTHON% >> "%LOG%"
 
+echo Registering 08:00 Daily Fetch scheduled task...
+echo [%date% %time%] Registering Daily Fetch scheduled task >> "%LOG%"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%..\scripts\rag\register-daily-fetch-task.ps1" >> "%LOG%" 2>&1
+
 echo Starting Jarvis Search UI (port 18888)...
 echo [%date% %time%] Starting search_ui.py >> "%LOG%"
 start "Jarvis Search" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\rag\search_ui.py"

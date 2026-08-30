@@ -305,3 +305,4 @@ Layer2 分数与分项、估值与价量、资金阶段、情绪、（若有）�
   - [strategy-long-term-deepseek.md](./strategy-long-term-deepseek.md)
   - [strategy-midday-t1-deepseek.md](./strategy-midday-t1-deepseek.md)
   - [strategy-quality-value-deepseek.md](./strategy-quality-value-deepseek.md)
+  - [strategy-ath-rebreak-deepseek.md](./strategy-ath-rebreak-deepseek.md)（统一扫描第三栏，不改左右漏斗）

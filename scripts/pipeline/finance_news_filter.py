@@ -54,7 +54,11 @@ _APAC_HINTS = re.compile(
 )
 
 _CHINA_SOURCES = re.compile(r"中国|财联社|新浪|人民|头条|微博|证券时报|东方财富", re.I)
-_US_SOURCES = re.compile(r"CNBC|Yahoo|Bloomberg|WSJ|MarketWatch", re.I)
+_US_SOURCES = re.compile(
+    r"CNBC|Yahoo|Bloomberg|WSJ|MarketWatch|BEA|BLS|Census|ISM|ADP|"
+    r"Federal\s*Reserve|\bFed\b",
+    re.I,
+)
 
 
 def _text_of(item: dict[str, Any], *, include_source: bool = False) -> str:

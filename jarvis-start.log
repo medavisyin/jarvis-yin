@@ -1,7 +1,9 @@
-[Thu 08/27/2026 11:52:43.81] Starting Jarvis... 
-[Thu 08/27/2026 11:52:43.82] BRIEFING_PROXY=socks5://localhost:10808 
-[Thu 08/27/2026 11:52:43.99] Python: C:\Users\rong.yin.MEDAVIS\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe 
-[Thu 08/27/2026 11:52:43.99] Starting search_ui.py 
-[Thu 08/27/2026 11:52:46.12] Starting agent.py --host 0.0.0.0 
-[Thu 08/27/2026 11:52:48.13] Starting bot_telegram.py 
-[Thu 08/27/2026 11:52:48.21] Done 
+[Sun 08/30/2026 17:47:54.47] Starting Jarvis... 
+[Sun 08/30/2026 17:47:54.47] BRIEFING_PROXY=socks5://localhost:10808 
+[Sun 08/30/2026 17:47:54.62] Python: C:\Users\rong.yin.MEDAVIS\AppData\Local\Microsoft\WindowsApps\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\python.exe 
+[Sun 08/30/2026 17:47:54.62] Registering Daily Fetch scheduled task 
+Registered scheduled task JarvisDailyFetchPoke at 08:00 daily
+[Sun 08/30/2026 17:47:55.07] Starting search_ui.py 
+[Sun 08/30/2026 17:47:57.20] Starting agent.py --host 0.0.0.0 
+[Sun 08/30/2026 17:47:59.22] Starting bot_telegram.py 
+[Sun 08/30/2026 17:47:59.32] Done 

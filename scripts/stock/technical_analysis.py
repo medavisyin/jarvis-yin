@@ -411,6 +411,8 @@ def analyze(symbol: str) -> dict:
     df = compute_indicators(df)
     result = evaluate_signals(df)
     result["support_resistance"] = calc_support_resistance(df)
+    from ath_rebreak import detect_five_year_rebreak
+    result["five_year_rebreak"] = detect_five_year_rebreak(df, symbol)
     result["symbol"] = symbol
 
     out_path = os.path.join(STOCK_DATA_DIR, symbol, "technical.json")

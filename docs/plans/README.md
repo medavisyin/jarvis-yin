@@ -14,6 +14,8 @@ Status overview for all planning documents in this folder.
 | [plan-ml-integration](plan-ml-integration.md) | Partial | ML feedback loop — tasks 1-2 done, 3-5 pending | `implementation/rag/search-ui-impl.md` |
 | [hf-datasets-integration](2026-05-01-hf-datasets-integration.md) | Done | HF datasets lib for RAG evaluation + data mgmt | `implementation/rag/eval-datasets-impl.md` |
 | [quality-value-screener](2026-08-16-quality-value-screener.md) | Active | 优质低估独立扫描器（同业低估 + 财务排雷 + PB-ROE + DeepSeek） | `docs/stock-modules/quality_value_scanner.md` |
+| [ath-rebreak-scanner](2026-08-30-ath-rebreak-scanner.md) | Active | 近5年高回踩二次突破：第三套统一推荐 + A股分析共用检测器 | — |
+| [long-term-news-factors](2026-08-30-long-term-news-factors.md) | Active | 长期推荐接入 6 类财经新闻 + 宏观/油/美元/利率/加密温度计 | `docs/stock-modules/long_term_scanner.md` |
 
 ## Archived (Completed)
 

@@ -128,6 +128,51 @@
       ]
     },
     {
+      "id": "bea",
+      "display": "BEA News",
+      "category": "us-political",
+      "fetcher": "fetchers/news/fetch-rss-source.py",
+      "method": "rss",
+      "default_enabled": true,
+      "keep_always": true,
+      "priority": 0,
+      "feeds": [
+        ["macro", "https://apps.bea.gov/rss/rss.xml"]
+      ]
+    },
+    {
+      "id": "census",
+      "display": "Census Bureau",
+      "category": "us-political",
+      "fetcher": "fetchers/news/fetch-census.py",
+      "method": "scrape",
+      "default_enabled": true,
+      "keep_always": true,
+      "timeout": 180,
+      "priority": 0
+    },
+    {
+      "id": "ism",
+      "display": "ISM PMI Reports",
+      "category": "us-political",
+      "fetcher": "fetchers/news/fetch-ism.py",
+      "method": "scrape",
+      "default_enabled": true,
+      "keep_always": true,
+      "timeout": 240,
+      "priority": 0
+    },
+    {
+      "id": "adp",
+      "display": "ADP Employment",
+      "category": "us-political",
+      "fetcher": "fetchers/news/fetch-adp.py",
+      "method": "scrape",
+      "default_enabled": true,
+      "keep_always": true,
+      "priority": 0
+    },
+    {
       "id": "fed",
       "display": "Federal Reserve",
       "category": "us-political",
@@ -183,7 +228,7 @@
       "category": "us-political",
       "fetcher": "fetchers/news/fetch-rss-source.py",
       "method": "rss",
-      "default_enabled": false,
+      "default_enabled": true,
       "priority": 3,
       "feeds": [
         ["markets", "https://feeds.content.dowjones.io/public/rss/mw_topstories"]

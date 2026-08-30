@@ -1,19 +1,20 @@
 # 统一扫描编排器 (unified_scanner) — 详细功能文档
 
 **文件路径**: `scripts/stock/unified_scanner.py`
-**最后更新**: 2026-07-02
+**最后更新**: 2026-08-30
 
 ---
 
 ## 1. 模块概述
 
-- **核心职责**: 把**左侧短期扫描**（`scanner`）与**右侧交易扫描**（`right_side_scanner`）编排成**一次操作**——共享一次全市场行情抓取、共享 per-stock enrichment 缓存（资金流向 + OHLCV 每只只抓一次），分别用两套逻辑筛选与判断，输出**两份独立报告**。
-- **设计动机**: 两套扫描原本各自独立抓行情、独立 enrich，存在大量重复网络开销。统一后：行情抓 1 次、每只股票的资金/K 线抓 1 次，两套策略复用，省时省钱，同时保持两份报告独立性。
-- **系统角色**: Stock 子系统的**统一推荐入口**；不自己出报告，而是调用 `scanner` 与 `right_side_scanner` 各自出报告（各自目录、各自 RAG 索引）。前端 `unifiedModal` 双栏展示。
+- **核心职责**: 把左侧短期扫描（`scanner`）、右侧交易扫描（`right_side_scanner`）与 **近5年高二次突破**（`ath_rebreak_scanner`）编排成一次操作——共享一次全市场行情抓取、共享 per-stock enrichment 缓存，三套逻辑独立筛选，输出三份报告。
+- **系统角色**: 统一推荐入口。前端 `unifiedModal` **三栏**展示。状态多一个 `ath` 快照。
 
 ```
-[一次共享行情抓取] ──┬──→ 左侧 scanner.start_scan   → 左侧短期报告
-                      └──→ 右侧 right_side.start     → 右侧交易报告
+[一次共享行情抓取]
+    ├──→ 左侧 scanner.start_scan          → 左侧短期报告
+    ├──→ 右侧 right_side.start            → 右侧交易报告
+    └──→ 近5年高 ath_rebreak.start        → 近5年高二次突破报告
    (scan_cache 共享 fund_flow + OHLCV，命中即复用)
 ```
 
@@ -71,12 +72,13 @@
 | 字段 | 说明 |
 |------|------|
 | `status` | `idle`/`running`/`done`/`error`/`stopped` |
-| `phase` | `none`/`market`/`left`/`right`/`done`/`error` |
+| `phase` | `none`/`market`/`left`/`right`/`ath`/`done`/`error` |
 | `step` | 当前子扫描器返回的步骤描述 |
 | `progress` | 0~100 统一进度 |
 | `use_deepseek` | 是否启用 DeepSeek |
 | `left` | 左侧子扫描器状态快照 |
 | `right` | 右侧子扫描器状态快照 |
+| `ath` | 近5年高二次突破子扫描器状态快照 |
 | `started_at` | ISO 时间戳 |
 | `error` | 错误信息 |
 

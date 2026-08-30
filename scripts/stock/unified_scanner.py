@@ -5,8 +5,9 @@ scanners as ONE operation that shares:
   - a single Layer-1 full-market snapshot (one akshare fetch)
   - a shared per-stock enrichment cache (fund-flow + OHLCV fetched once per symbol)
 
-Produces TWO independent reports (left short-term + right-side) saved to their
-respective existing directories and RAG-indexed separately.
+Produces three independent reports (left short-term, right-side, five-year
+rebreak) saved to their respective directories. Left/right are RAG-indexed;
+ath-rebreak v1 skips RAG.
 
 Public API mirrors the other scanners:
   start_unified_scan / get_unified_scan_status / stop_unified_scan /
@@ -52,6 +53,7 @@ def _init_sys_state():
             "use_deepseek": False,
             "left": None,
             "right": None,
+            "ath": None,
             "error": None,
             "started_at": None,
         }
@@ -101,6 +103,11 @@ def stop_unified_scan() -> dict:
         right_side_scanner.stop_right_side_scan()
     except Exception:
         pass
+    try:
+        import ath_rebreak_scanner
+        ath_rebreak_scanner.stop_ath_rebreak_scan()
+    except Exception:
+        pass
     return {"ok": True, "message": "已发送停止信号"}
 
 
@@ -119,6 +126,7 @@ def start_unified_scan(use_deepseek: bool = False) -> dict:
             "use_deepseek": use_deepseek,
             "left": None,
             "right": None,
+            "ath": None,
             "error": None,
             "started_at": datetime.now().isoformat(),
         })
@@ -213,7 +221,7 @@ def _ensure_stock_config():
         "fetch_market_data", "china_market_data", "llm_reasoning",
         "market_sentiment", "black_swan_detector", "model_timing",
         "backtest_engine", "midday_scanner", "long_term_scanner", "watchlist",
-        "scanner", "right_side_scanner", "scan_cache",
+        "scanner", "right_side_scanner", "ath_rebreak_scanner", "ath_rebreak", "scan_cache",
     ]
     for m in _stale:
         sys.modules.pop(m, None)
@@ -271,7 +279,7 @@ def _run_unified_inner(use_deepseek: bool = False):
             return
 
         # --- left scan (short-term) ---------------------------------------
-        _set_status(phase="left", step="启动左侧短期扫描...", progress=12)
+        _set_status(phase="left", step="启动左侧短期扫描...", progress=8)
         _sc = _safe_import("scanner")
         # clear any prior stop signal / state
         try:
@@ -285,8 +293,8 @@ def _run_unified_inner(use_deepseek: bool = False):
             started = _sc.start_scan(use_deepseek, market_df=df)
         if started.get("ok"):
             left_st = _wait_for(_sc.get_scan_status,
-                                done_keys={"done", "completed", "error", "stopped"},
-                                phase_label="left", base_progress=12, span=45)
+                                {"done", "completed", "error", "stopped"},
+                                "left", 8, 32)
         else:
             left_st = {"status": "error", "error": started.get("error", "无法启动左侧扫描")}
             _set_status(left=left_st)
@@ -296,7 +304,7 @@ def _run_unified_inner(use_deepseek: bool = False):
             return
 
         # --- right scan (right-side) --------------------------------------
-        _set_status(phase="right", step="启动右侧交易扫描...", progress=58)
+        _set_status(phase="right", step="启动右侧交易扫描...", progress=40)
         # right_side's thread does NOT self-fix config (unlike scanner), so it
         # must start under the stock config. _safe_import re-fixes config and
         # retries on ImportError — the start route's _with_stock_imports
@@ -313,15 +321,36 @@ def _run_unified_inner(use_deepseek: bool = False):
             started_r = _rss.start_right_side_scan(use_deepseek, market_df=df)
         if started_r.get("ok"):
             right_st = _wait_for(_rss.get_right_side_scan_status,
-                                 done_keys={"done", "completed", "error", "stopped"},
-                                 phase_label="right", base_progress=58, span=40)
+                                 {"done", "completed", "error", "stopped"},
+                                 "right", 40, 28)
         else:
             right_st = {"status": "error", "error": started_r.get("error", "无法启动右侧扫描")}
             _set_status(right=right_st)
 
+        if _stop_event.is_set():
+            _set_status(status="stopped", step="已停止")
+            return
+
+        _ath = None
+        # --- ath rebreak (near-5y high) --------------------------------
+        _set_status(phase="ath", step="启动近5年高二次突破扫描...", progress=68)
+        _ath = _safe_import("ath_rebreak_scanner")
+        started_a = _ath.start_ath_rebreak_scan(use_deepseek, market_df=df)
+        if not started_a.get("ok"):
+            time.sleep(2)
+            started_a = _ath.start_ath_rebreak_scan(use_deepseek, market_df=df)
+        if started_a.get("ok"):
+            ath_st = _wait_for(_ath.get_ath_rebreak_scan_status,
+                               {"done", "completed", "error", "stopped", "failed"},
+                               "ath", 68, 30)
+        else:
+            ath_st = {"status": "error", "error": started_a.get("error", started_a.get("message", "无法启动近5年高扫描"))}
+            _set_status(ath=ath_st)
+
         # --- finalize ------------------------------------------------------
         final_left = _sc.get_scan_status() if _sc else None
         final_right = _rss.get_right_side_scan_status() if _rss else None
+        final_ath = _ath.get_ath_rebreak_scan_status() if _ath else None
         _set_status(
             status="done",
             phase="done",
@@ -329,6 +358,7 @@ def _run_unified_inner(use_deepseek: bool = False):
             progress=100,
             left=final_left,
             right=final_right,
+            ath=final_ath,
         )
         log.info("统一扫描完成")
 
@@ -337,12 +367,17 @@ def _run_unified_inner(use_deepseek: bool = False):
         _set_status(status="error", phase="error", step="异常", error=str(e))
 
 
+def merge_unified_payload(date_str: str, left, right, ath) -> dict:
+    return {"date": date_str, "left": left, "right": right, "ath": ath}
+
+
 def get_latest_unified_result() -> dict:
-    """Load the latest left + right results (by today's date)."""
+    """Load the latest left + right + ath results (by today's date)."""
     _ensure_path()
     date_str = datetime.now().strftime("%Y-%m-%d")
     left = None
     right = None
+    ath = None
     try:
         import scanner as _sc
         left = _sc.get_result_by_date(date_str)
@@ -353,11 +388,12 @@ def get_latest_unified_result() -> dict:
         right = _rss.get_right_side_result_by_date(date_str)
     except Exception as e:
         log.debug("读取右侧结果失败: %s", e)
-    return {
-        "date": date_str,
-        "left": left,
-        "right": right,
-    }
+    try:
+        import ath_rebreak_scanner as _ath
+        ath = _ath.get_ath_rebreak_result_by_date(date_str)
+    except Exception as e:
+        log.debug("读取近5年高结果失败: %s", e)
+    return merge_unified_payload(date_str, left, right, ath)
 
 
 if __name__ == "__main__":

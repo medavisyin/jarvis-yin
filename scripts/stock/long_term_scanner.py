@@ -11,8 +11,9 @@ Architecture:
   Step 6  LLM精选     (final ≤5 picks with reasoning)
 
 Signal Sources:
-  - International news: BBC, Reuters, AP, DW, Guardian, Chinese media
-    (C:/reports/ai/YYYY-MM-DD/world-news/world-news-data.json)
+  - Finance news (6 categories): markets, china-policy, us-political, crypto, gold, oil
+    (C:/reports/ai/YYYY-MM-DD/finance-news/finance-news-data.json)
+  - Legacy world-news JSON, if still on disk, is folded into 综合市场 only
   - AI/tech news: arXiv, HuggingFace, OpenAI, etc.
     (C:/reports/ai/YYYY-MM-DD/briefing-data.json)
   - Black swan detector results
@@ -28,6 +29,7 @@ import sys
 import threading
 import uuid as _uuid
 from datetime import datetime, timedelta
+from urllib.parse import quote
 
 import akshare as ak
 import pandas as pd
@@ -49,6 +51,34 @@ _REPORTS_AI_ROOT = REPORTS_ROOT
 
 SIGNAL_WINDOW_DAYS = 14
 MAX_PICKS = 5
+
+FINANCE_CATEGORIES = (
+    "markets", "china-policy", "us-political", "crypto", "gold", "oil",
+)
+FINANCE_CAT_LABELS = {
+    "markets": "综合市场",
+    "china-policy": "中国政策金融",
+    "us-political": "美国政治金融",
+    "crypto": "数字货币",
+    "gold": "黄金",
+    "oil": "石油",
+}
+OFFICIAL_SOURCE_IDS = frozenset({
+    "pboc", "csrc", "bls", "bea", "census", "ism", "adp", "fed",
+})
+HEADLINES_PER_FINANCE_CAT = 20
+YAHOO_SERIES = {
+    "oil": {"symbol": "CL=F", "label": "WTI原油", "fallbacks": ()},
+    "dollar": {"symbol": "DX-Y.NYB", "label": "美元指数", "fallbacks": ("DXY",)},
+    "rates": {"symbol": "^TNX", "label": "美债10Y", "fallbacks": ()},
+    "crypto": {"symbol": "BTC-USD", "label": "比特币", "fallbacks": ()},
+}
+USA_MACRO_SERIES = (
+    ("nfp", "非农就业", ("macro_usa_non_farm", "macro_usa_non_farm_payroll")),
+    ("unemployment", "失业率", ("macro_usa_unemployment_rate",)),
+    ("ism_pmi", "ISM制造业PMI", ("macro_usa_ism_pmi", "macro_usa_pmi")),
+    ("adp", "ADP就业", ("macro_usa_adp_employment", "macro_usa_adp")),
+)
 
 _lt_lock = threading.Lock()
 _lt_thread: threading.Thread | None = None
@@ -101,6 +131,8 @@ def _collect_signals() -> dict:
     signals = {
         "world_news": [],
         "ai_tech_news": [],
+        "finance_news": [],
+        "finance_by_category": {cid: [] for cid in FINANCE_CATEGORIES},
         "black_swan": None,
         "hot_sectors": [],
         "market_sentiment": None,
@@ -134,9 +166,35 @@ def _collect_signals() -> dict:
             except Exception as e:
                 log.debug("AI新闻 %s 读取失败: %s", date_str, e)
 
-    log.info("  世界新闻: %d 条, AI/科技新闻: %d 条",
-             len(signals["world_news"]), len(signals["ai_tech_news"]))
+        fn_path = os.path.join(
+            _REPORTS_AI_ROOT, date_str, "finance-news", "finance-news-data.json"
+        )
+        if os.path.isfile(fn_path):
+            try:
+                with open(fn_path, encoding="utf-8") as f:
+                    fn_data = json.load(f)
+                items = _extract_finance_news_items(fn_data, date_str)
+                signals["finance_news"].extend(items)
+                for item in items:
+                    cat = item.get("category") or ""
+                    if cat in signals["finance_by_category"]:
+                        signals["finance_by_category"][cat].append(item)
+            except Exception as e:
+                log.debug("财经新闻 %s 读取失败: %s", date_str, e)
 
+    log.info(
+        "  世界新闻: %d 条, AI/科技新闻: %d 条, 财经新闻: %d 条",
+        len(signals["world_news"]),
+        len(signals["ai_tech_news"]),
+        len(signals["finance_news"]),
+    )
+
+    _collect_live_market_signals(signals)
+    return signals
+
+
+def _collect_live_market_signals(signals: dict) -> None:
+    """Black swan, hot sectors, VIX — extracted so tests can no-op this."""
     try:
         from black_swan_detector import load_cached_alerts, scan_world_news
         alerts = load_cached_alerts() or scan_world_news()
@@ -160,8 +218,6 @@ def _collect_signals() -> dict:
         log.info("  全球情绪指标已获取")
     except Exception as e:
         log.warning("  全球情绪指标失败: %s", e)
-
-    return signals
 
 
 def _extract_news_items(data: dict, date_str: str, source_type: str) -> list[dict]:
@@ -201,6 +257,34 @@ def _extract_news_items(data: dict, date_str: str, source_type: str) -> list[dic
                     "headline": headline[:200],
                     "summary": (summary or "")[:500],
                 })
+    return items
+
+
+def _extract_finance_news_items(data: dict, date_str: str) -> list[dict]:
+    """Extract finance-news-data.json items; prefer Chinese titles."""
+    items = []
+    if not isinstance(data, dict):
+        return items
+    for cat in data.get("categories") or []:
+        cat_name = cat.get("category") or ""
+        for item in cat.get("items") or []:
+            headline = (
+                item.get("title_zh")
+                or item.get("title")
+                or item.get("headline")
+                or ""
+            )
+            summary = item.get("summary_zh") or item.get("summary") or ""
+            if not headline:
+                continue
+            items.append({
+                "date": date_str,
+                "source_type": "finance",
+                "category": cat_name,
+                "source_id": item.get("source_id") or "",
+                "headline": headline[:200],
+                "summary": (summary or "")[:500],
+            })
     return items
 
 
@@ -284,9 +368,8 @@ def _fetch_silver_data() -> pd.DataFrame | None:
     return None
 
 
-def _analyze_metal(_name: str, fetch_fn, label: str) -> dict:
-    """Generic metal analysis: trend, RSI, percentile position, MA deviation."""
-    result = {
+def _empty_series_result(label: str) -> dict:
+    return {
         "name": label,
         "latest_price": None,
         "trend": "unknown",
@@ -300,25 +383,35 @@ def _analyze_metal(_name: str, fetch_fn, label: str) -> dict:
         "data_available": False,
     }
 
-    df = fetch_fn()
-    if df is None or len(df) < 30:
+
+def _analyze_series(label: str, df: pd.DataFrame | None) -> dict:
+    """Trend / RSI / 52w stats for any date+price series. None or short → empty."""
+    result = _empty_series_result(label)
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        return result
+    if "price" not in df.columns or "date" not in df.columns:
+        return result
+    work = df.dropna(subset=["date", "price"]).sort_values("date")
+    if len(work) < 30:
         log.warning("  %s 数据不足 (需 >=30 天)", label)
         return result
 
     result["data_available"] = True
-    latest = df["price"].iloc[-1]
+    latest = work["price"].iloc[-1]
     result["latest_price"] = round(float(latest), 2)
 
-    if len(df) >= 14:
-        p14 = df["price"].iloc[-14]
-        result["change_14d_pct"] = round((latest - p14) / p14 * 100, 2)
+    if len(work) >= 14:
+        p14 = work["price"].iloc[-14]
+        if p14:
+            result["change_14d_pct"] = round((latest - p14) / p14 * 100, 2)
 
-    if len(df) >= 60:
-        p60 = df["price"].iloc[-60]
-        result["change_60d_pct"] = round((latest - p60) / p60 * 100, 2)
+    if len(work) >= 60:
+        p60 = work["price"].iloc[-60]
+        if p60:
+            result["change_60d_pct"] = round((latest - p60) / p60 * 100, 2)
 
-    if len(df) >= 14:
-        delta = df["price"].diff().iloc[-14:]
+    if len(work) >= 14:
+        delta = work["price"].diff().iloc[-14:]
         gain = delta.clip(lower=0).mean()
         loss = (-delta.clip(upper=0)).mean()
         if loss > 0:
@@ -327,19 +420,20 @@ def _analyze_metal(_name: str, fetch_fn, label: str) -> dict:
         else:
             result["rsi_14"] = 100.0
 
-    if len(df) >= 20:
-        ma20 = df["price"].iloc[-20:].mean()
-        result["ma20_deviation_pct"] = round((latest - ma20) / ma20 * 100, 2)
+    if len(work) >= 20:
+        ma20 = work["price"].iloc[-20:].mean()
+        if ma20:
+            result["ma20_deviation_pct"] = round((latest - ma20) / ma20 * 100, 2)
 
-    year_data = df.tail(min(252, len(df)))
+    year_data = work.tail(min(252, len(work)))
     high_52w = year_data["price"].max()
     low_52w = year_data["price"].min()
     if high_52w > low_52w:
         pos = (latest - low_52w) / (high_52w - low_52w) * 100
         result["position_vs_52w"] = round(pos, 1)
 
-    if len(df) >= 60:
-        rolling_60d = df["price"].rolling(60).apply(
+    if len(work) >= 60:
+        rolling_60d = work["price"].rolling(60).apply(
             lambda x: (x.iloc[-1] - x.iloc[0]) / x.iloc[0] * 100 if len(x) == 60 else 0
         ).dropna()
         if len(rolling_60d) > 10:
@@ -373,6 +467,158 @@ def _analyze_metal(_name: str, fetch_fn, label: str) -> dict:
         result["trend"] = "震荡"
 
     return result
+
+
+def _analyze_metal(_name: str, fetch_fn, label: str) -> dict:
+    """Generic metal analysis: trend, RSI, percentile position, MA deviation."""
+    try:
+        df = fetch_fn()
+    except Exception as e:
+        log.warning("  %s 获取失败: %s", label, e)
+        df = None
+    return _analyze_series(label, df)
+
+
+def _yahoo_proxies() -> dict:
+    proxy = os.environ.get("STOCK_PROXY")
+    if proxy:
+        return {"http": proxy, "https": proxy}
+    return {}
+
+
+def _yahoo_chart_to_df(payload: dict) -> pd.DataFrame:
+    result = (payload or {}).get("chart", {}).get("result") or []
+    if not result:
+        return pd.DataFrame(columns=["date", "price"])
+    block = result[0]
+    ts = block.get("timestamp") or []
+    closes = ((block.get("indicators") or {}).get("quote") or [{}])[0].get("close") or []
+    rows = []
+    for t, c in zip(ts, closes):
+        if c is None:
+            continue
+        rows.append({"date": pd.to_datetime(t, unit="s", utc=True), "price": float(c)})
+    if not rows:
+        return pd.DataFrame(columns=["date", "price"])
+    return pd.DataFrame(rows).sort_values("date")
+
+
+def _fetch_yahoo_daily(symbol: str) -> pd.DataFrame | None:
+    """1y daily closes from Yahoo chart. Tries query1 then query2. Returns None on failure."""
+    encoded = quote(symbol, safe="")
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    proxies = _yahoo_proxies()
+    for host in ("query1", "query2"):
+        url = f"https://{host}.finance.yahoo.com/v8/finance/chart/{encoded}?interval=1d&range=1y"
+        try:
+            resp = requests.get(url, headers=headers, timeout=15, proxies=proxies)
+            resp.raise_for_status()
+            df = _yahoo_chart_to_df(resp.json())
+            if df is not None and len(df) >= 30:
+                return df
+        except Exception as e:
+            log.debug("Yahoo %s %s failed: %s", host, symbol, e)
+    log.warning("Yahoo 序列获取失败: %s", symbol)
+    return None
+
+
+def _analyze_market_factors() -> dict:
+    out = {}
+    for key, spec in YAHOO_SERIES.items():
+        df = _fetch_yahoo_daily(spec["symbol"])
+        if df is None:
+            for fb in spec.get("fallbacks") or ():
+                df = _fetch_yahoo_daily(fb)
+                if df is not None:
+                    break
+        out[key] = _analyze_series(spec["label"], df)
+    return out
+
+
+def _build_macro_dashboard(history_by_id: dict, headlines: list) -> dict:
+    """Latest vs prior prints + official-source headlines only."""
+    series = []
+    for sid, label, _names in USA_MACRO_SERIES:
+        hist = list(history_by_id.get(sid) or [])
+        hist = [h for h in hist if h.get("value") is not None]
+        hist = hist[-12:]
+        latest = hist[-1]["value"] if hist else None
+        prior = hist[-2]["value"] if len(hist) >= 2 else None
+        series.append({
+            "id": sid,
+            "label": label,
+            "latest": latest,
+            "prior": prior,
+            "date": hist[-1].get("date") if hist else None,
+            "history": hist,
+            "data_available": latest is not None,
+        })
+    official = [
+        h for h in (headlines or [])
+        if (h.get("source_id") or "") in OFFICIAL_SOURCE_IDS
+    ]
+    official = official[:20]
+    return {"series": series, "official_headlines": official}
+
+
+def _normalize_macro_frame(df: pd.DataFrame) -> list[dict]:
+    if df is None or df.empty:
+        return []
+    work = df.copy()
+    work.columns = [str(c).strip() for c in work.columns]
+    date_col = next(
+        (c for c in work.columns if "日期" in c or "时间" in c or c.lower() == "date"),
+        work.columns[0],
+    )
+    val_col = next(
+        (c for c in work.columns if c in ("今值", "value", "值") or "今值" in c),
+        None,
+    )
+    if val_col is None:
+        numeric = [c for c in work.columns if c != date_col and pd.api.types.is_numeric_dtype(work[c])]
+        val_col = numeric[0] if numeric else None
+    if val_col is None:
+        return []
+    work["date"] = pd.to_datetime(work[date_col], errors="coerce")
+    work["value"] = pd.to_numeric(work[val_col], errors="coerce")
+    work = work.dropna(subset=["date", "value"]).sort_values("date")
+    return [
+        {"date": d.strftime("%Y-%m-%d"), "value": float(v)}
+        for d, v in zip(work["date"].tail(12), work["value"].tail(12))
+    ]
+
+
+def _fetch_usa_macro_history() -> dict:
+    """Best-effort akshare USA macro prints. Missing symbols are skipped."""
+    out = {}
+    for sid, _label, names in USA_MACRO_SERIES:
+        for fn_name in names:
+            fn = getattr(ak, fn_name, None)
+            if not callable(fn):
+                continue
+            try:
+                df = fn()
+                rows = _normalize_macro_frame(df)
+                if rows:
+                    out[sid] = rows
+                    break
+            except Exception as e:
+                log.debug("akshare %s failed: %s", fn_name, e)
+    return out
+
+
+def _analyze_all_factors(signals: dict) -> dict:
+    market = _analyze_market_factors()
+    history = _fetch_usa_macro_history()
+    headlines = list(signals.get("finance_news") or [])
+    macro = _build_macro_dashboard(history, headlines)
+    return {
+        "macro": macro,
+        "oil": market.get("oil") or _empty_series_result("WTI原油"),
+        "dollar": market.get("dollar") or _empty_series_result("美元指数"),
+        "rates": market.get("rates") or _empty_series_result("美债10Y"),
+        "crypto": market.get("crypto") or _empty_series_result("比特币"),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -552,21 +798,38 @@ def _upside_assessment(symbol: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def _build_signal_summary(signals: dict, metals: dict) -> str:
+def _build_signal_summary(signals: dict, metals: dict, factors: dict | None = None) -> str:
     """Condense 14 days of signals into a prompt-friendly summary."""
     parts = []
-
-    wn = signals.get("world_news", [])
-    if wn:
-        parts.append(f"【近{SIGNAL_WINDOW_DAYS}天国际新闻 ({len(wn)}条)】")
-        for item in wn[:60]:
-            parts.append(f"  [{item['date']}] {item['headline']}")
 
     ai = signals.get("ai_tech_news", [])
     if ai:
         parts.append(f"\n【近{SIGNAL_WINDOW_DAYS}天AI/科技新闻 ({len(ai)}条)】")
         for item in ai[:40]:
             parts.append(f"  [{item['date']}] {item['headline']}")
+
+    finance = list(signals.get("finance_news") or [])
+    by_cat: dict[str, list] = {cid: [] for cid in FINANCE_CATEGORIES}
+    for item in finance:
+        cat = item.get("category") or ""
+        if cat in by_cat:
+            by_cat[cat].append(item)
+    for item in signals.get("world_news") or []:
+        by_cat["markets"].append({
+            "date": item.get("date", ""),
+            "headline": item.get("headline", ""),
+            "source_id": item.get("source_id") or "legacy-world",
+            "category": "markets",
+            "source_type": "world",
+        })
+    for cid in FINANCE_CATEGORIES:
+        cat_items = _select_finance_headlines(by_cat[cid], HEADLINES_PER_FINANCE_CAT)
+        if not cat_items:
+            continue
+        label = FINANCE_CAT_LABELS.get(cid, cid)
+        parts.append(f"\n【财经新闻-{label} ({len(cat_items)}条)】")
+        for item in cat_items:
+            parts.append(f"  [{item.get('date','')}] {item.get('headline','')}")
 
     bs = signals.get("black_swan")
     if bs and bs.get("alerts"):
@@ -609,23 +872,45 @@ def _build_signal_summary(signals: dict, metals: dict) -> str:
         if metals.get("gold_silver_ratio"):
             parts.append(f"  金银比: {metals['gold_silver_ratio']} ({metals.get('ratio_signal','')})")
 
+    if factors:
+        parts.append("\n【宏观与市场温度计】")
+        macro = factors.get("macro") or {}
+        for s in macro.get("series") or []:
+            if not s.get("data_available"):
+                continue
+            parts.append(
+                f"  {s.get('label')}: 最新{s.get('latest')} (前值{s.get('prior')}) {s.get('date') or ''}"
+            )
+        for key in ("oil", "dollar", "rates", "crypto"):
+            m = factors.get(key) or {}
+            if not m.get("data_available"):
+                continue
+            parts.append(
+                f"  {m.get('name', key)}: {m.get('latest_price','-')} "
+                f"14天{m.get('change_14d_pct',0):+.1f}% "
+                f"60天{m.get('change_60d_pct',0):+.1f}% "
+                f"RSI={m.get('rsi_14','-')} 趋势={m.get('trend','-')}"
+            )
+
     return "\n".join(parts)
 
 
-def _llm_theme_analysis(signal_summary: str) -> list[dict]:
-    """
-    Ask LLM to identify 3-5 investment themes from the signal summary.
-    Returns list of themes with industries and stock suggestions.
-    """
-    log.info("Step 3: LLM 趋势研判...")
+def _select_finance_headlines(items: list, cap: int) -> list:
+    """Keep the newest headlines; official sources win only as a same-day tie-break."""
+    def _key(item):
+        date = item.get("date") or ""
+        official = 1 if (item.get("source_id") or "") in OFFICIAL_SOURCE_IDS else 0
+        return (date, official)
+    return sorted(items, key=_key, reverse=True)[:cap]
 
+
+def _theme_system_prompt() -> str:
     rec_stocks_desc = ""
     rec_stocks_format = ""
     if _use_deepseek:
         rec_stocks_desc = "   - recommended_stocks(代表个股推荐列表，每个个股包含: symbol(6位A股股票代码), name(股票名称), logic(在该主题下的核心逻辑与长达半年到1年的趋势预估))\n"
         rec_stocks_format = "    \"recommended_stocks\": [\n       {\"symbol\": \"600519\", \"name\": \"贵州茅台\", \"logic\": \"核心受益逻辑及长达半年到1年的远景预估\"}\n    ]\n"
-
-    system_prompt = (
+    return (
         "你是资深A股策略分析师, 擅长从宏观新闻和政策中识别中长期投资机会。\n\n"
         "任务: 基于提供的近2周新闻和市场信号, 识别未来3个月到1年（含半年到1年的长期预估）最可能受益的投资主题。\n\n"
         "要求:\n"
@@ -640,7 +925,10 @@ def _llm_theme_analysis(signal_summary: str) -> list[dict]:
         "   - confidence(高/中高/中)\n"
         f"{rec_stocks_desc}"
         "3. 同时考虑国际局势和国内政策两条线对A股的传导\n"
-        "4. 关注: 政策利好, 技术突破, 行业拐点, 供需变化, 地缘事件传导\n\n"
+        "4. 必须使用：中国政策、美国宏观/政治、石油、美元、利率、加密、黄金新闻，以及官方宏观与温度计块结论\n"
+        "5. 禁止只凭科技简报出主题；不要只根据AI/科技新闻下结论\n"
+        "6. a_share_implication 是A股映射线索，不是美股或BTC推荐\n"
+        "7. 关注: 政策利好, 技术突破, 行业拐点, 供需变化, 地缘事件传导\n\n"
         "只输出JSON数组, 不要输出其他文字。格式示例:\n"
         "[\n"
         "  {\n"
@@ -656,8 +944,15 @@ def _llm_theme_analysis(signal_summary: str) -> list[dict]:
         "]"
     )
 
-    user_prompt = f"以下是近{SIGNAL_WINDOW_DAYS}天的市场信号汇总:\n\n{signal_summary}\n\n请识别投资主题, 只输出JSON数组:"
 
+def _llm_theme_analysis(signal_summary: str) -> list[dict]:
+    """
+    Ask LLM to identify 3-5 investment themes from the signal summary.
+    Returns list of themes with industries and stock suggestions.
+    """
+    log.info("Step 3: LLM 趋势研判...")
+    system_prompt = _theme_system_prompt()
+    user_prompt = f"以下是近{SIGNAL_WINDOW_DAYS}天的市场信号汇总:\n\n{signal_summary}\n\n请识别投资主题, 只输出JSON数组:"
     return _call_llm_json(system_prompt, user_prompt, max_tokens=4000)
 
 
@@ -927,8 +1222,10 @@ def _llm_final_selection(
     )
 
     user_prompt = (
-        "候选股票列表:\n\n" + "\n\n".join(candidate_text) +
-        f"\n\n请从中精选最多{MAX_PICKS}只长期推荐, 只输出JSON数组:"
+        "宏观温度计与新闻摘要:\n"
+        + (_signal_summary or "")[:1500]
+        + "\n\n候选股票列表:\n\n" + "\n\n".join(candidate_text)
+        + f"\n\n请从中精选最多{MAX_PICKS}只长期推荐, 只输出JSON数组:"
     )
 
     picks_raw = _call_llm_json(system_prompt, user_prompt, max_tokens=4000)
@@ -1006,6 +1303,37 @@ def _llm_metals_outlook(metals: dict, signal_summary: str) -> dict:
     return metals
 
 
+def _parse_thermometer_outlook(raw) -> dict:
+    required = ("macro", "oil", "dollar", "rates", "crypto")
+    if not isinstance(raw, dict):
+        return {"error": "LLM分析失败"}
+    if not all(k in raw for k in required):
+        return {"error": "LLM分析失败"}
+    out = {k: raw.get(k) or {} for k in required}
+    if raw.get("summary"):
+        out["summary"] = raw["summary"]
+    return out
+
+
+def _llm_thermometer_outlook(factors: dict, signal_summary: str) -> dict:
+    log.info("Step 2c: LLM 宏观温度计研判...")
+    system_prompt = (
+        "你是宏观与大类资产策略分析师。基于结构化数据和近期新闻, "
+        "分别给出官方宏观、油价、美元、美债利率、加密货币的中期展望。\n\n"
+        "每个块: trend(看涨/看跌/震荡/中性), drivers, overheated, advice, "
+        "a_share_implication(对A股主题的映射线索，不要推荐美股或BTC本身)。\n"
+        "只输出JSON: {macro, oil, dollar, rates, crypto, summary}"
+    )
+    payload = {k: factors.get(k) for k in ("macro", "oil", "dollar", "rates", "crypto")}
+    user_prompt = (
+        f"温度计数据:\n{json.dumps(payload, ensure_ascii=False, default=str)[:4000]}\n\n"
+        f"近期信号:\n{signal_summary[:4000]}\n\n请分析并输出JSON:"
+    )
+    result = _call_llm_json(system_prompt, user_prompt, max_tokens=4000)
+    factors["llm_outlook"] = _parse_thermometer_outlook(result)
+    return factors
+
+
 # ---------------------------------------------------------------------------
 # Report generation
 # ---------------------------------------------------------------------------
@@ -1016,6 +1344,7 @@ def _generate_report(
     metals: dict,
     themes: list[dict],
     scan_meta: dict,
+    factors: dict | None = None,
 ) -> str:
     """Generate Markdown report for RAG indexing and human review."""
     date_str = datetime.now().strftime("%Y-%m-%d")
@@ -1024,7 +1353,7 @@ def _generate_report(
         "",
         f"**分析时间**: {scan_meta.get('started_at', 'N/A')}",
         f"**信号窗口**: 近{SIGNAL_WINDOW_DAYS}天",
-        f"**国际新闻**: {scan_meta.get('world_news_count', 0)} 条",
+        f"**财经新闻**: {scan_meta.get('finance_news_count', 0)} 条",
         f"**AI/科技新闻**: {scan_meta.get('ai_news_count', 0)} 条",
         f"**投资主题**: {len(themes)} 个",
         f"**推荐个股**: {len(picks)} 只",
@@ -1076,8 +1405,71 @@ def _generate_report(
 
     lines.extend(["---", ""])
 
-    # Part 2: Investment themes
-    lines.extend(["## 二、投资主题", ""])
+    factors = factors or {}
+    lines.extend(["## 二、宏观与市场温度计", ""])
+    macro = factors.get("macro") or {}
+    series_rows = [s for s in (macro.get("series") or []) if s.get("data_available")]
+    headlines = macro.get("official_headlines") or []
+    if series_rows or headlines:
+        lines.extend(["### 官方宏观", ""])
+        for s in series_rows:
+            lines.append(
+                f"- **{s.get('label')}**: {s.get('latest')} (前值 {s.get('prior')}) {s.get('date') or ''}"
+            )
+        for h in headlines[:8]:
+            lines.append(f"- {h.get('headline', '')}")
+        lines.append("")
+        outlook = (factors.get("llm_outlook") or {}).get("macro") or {}
+        if outlook:
+            lines.extend([
+                f"**宏观展望**: {outlook.get('trend', '')}",
+                f"- 驱动: {outlook.get('drivers', '')}",
+                f"- 建议: {outlook.get('advice', '')}",
+                f"- A股映射: {outlook.get('a_share_implication', '')}",
+                "",
+            ])
+    _FACTOR_HEADINGS = (
+        ("oil", "油价"),
+        ("dollar", "美元"),
+        ("rates", "美债利率"),
+        ("crypto", "加密货币"),
+    )
+    any_series = False
+    for key, heading in _FACTOR_HEADINGS:
+        m = factors.get(key) or {}
+        if not m.get("data_available"):
+            continue
+        any_series = True
+        lines.extend([
+            f"### {heading}",
+            "",
+            f"- **最新**: {m.get('latest_price', '-')}",
+            f"- **14天涨跌**: {m.get('change_14d_pct', 0):+.1f}%",
+            f"- **60天涨跌**: {m.get('change_60d_pct', 0):+.1f}%",
+            f"- **RSI(14)**: {m.get('rsi_14', '-')}",
+            f"- **52周位置**: {m.get('position_vs_52w', '-')}%",
+            f"- **趋势**: {m.get('trend', '-')}",
+            "",
+        ])
+        o = ((factors.get("llm_outlook") or {}).get(key) or {})
+        if o:
+            lines.extend([
+                f"**展望**: {o.get('trend', '')}",
+                f"- 驱动: {o.get('drivers', '')}",
+                f"- 建议: {o.get('advice', '')}",
+                f"- A股映射: {o.get('a_share_implication', '')}",
+                "",
+            ])
+    if not series_rows and not headlines and not any_series:
+        lines.append("暂无数据（源缺失，已跳过）")
+        lines.append("")
+    summary = (factors.get("llm_outlook") or {}).get("summary")
+    if summary:
+        lines.extend([f"**综合判断**: {summary}", ""])
+    lines.extend(["---", ""])
+
+    # Part 3: Investment themes
+    lines.extend(["## 三、投资主题", ""])
     for i, t in enumerate(themes, 1):
         lines.extend([
             f"### 主题 {i}: {t.get('name', '')}",
@@ -1102,14 +1494,14 @@ def _generate_report(
     # Part 3: Stock recommendations
     if not picks:
         lines.extend([
-            "## 三、长期推荐: 暂无",
+            "## 四、长期推荐: 暂无",
             "",
             "本次分析未找到同时满足趋势+空间+基本面要求的标的。",
             "\"不推荐\"本身就是最好的建议。",
             "",
         ])
     else:
-        lines.extend([f"## 三、长期推荐 ({len(picks)} 只)", ""])
+        lines.extend([f"## 四、长期推荐 ({len(picks)} 只)", ""])
         for i, p in enumerate(picks, 1):
             upside = p.get("upside", {})
             lines.extend([
@@ -1198,16 +1590,19 @@ def _save_results(
     metals: dict,
     themes: list[dict],
     scan_meta: dict,
+    factors: dict | None = None,
 ):
     """Persist results and generate report."""
     _ensure_dirs()
     date_str = datetime.now().strftime("%Y-%m-%d")
+    factors = factors or {}
 
     result_path = os.path.join(LONG_TERM_DIR, f"{date_str}.json")
     result_data = {
         "date": date_str,
         "meta": scan_meta,
         "precious_metals": metals,
+        "factors": factors,
         "themes": themes,
         "picks": picks,
     }
@@ -1215,19 +1610,19 @@ def _save_results(
         json.dump(result_data, f, ensure_ascii=False, indent=2, default=str)
     log.info("长期推荐结果已保存 → %s", result_path)
 
-    report = _generate_report(picks, metals, themes, scan_meta)
+    report = _generate_report(picks, metals, themes, scan_meta, factors=factors)
     report_path = os.path.join(LONG_TERM_DIR, f"{date_str}-report.md")
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report)
     log.info("长期推荐报告已保存 → %s", report_path)
 
-    _save_lt_history(picks, metals)
+    _save_lt_history(picks, metals, factors)
     _index_report_to_rag(
         report_path, date_str, "stock_scan_long", f"AI长期推荐 {date_str}"
     )
 
 
-def _save_lt_history(picks: list[dict], metals: dict):
+def _save_lt_history(picks: list[dict], metals: dict, factors: dict | None = None):
     """Save lightweight entry for performance tracking."""
     history_file = os.path.join(LONG_TERM_DIR, "history.json")
     history = []
@@ -1238,6 +1633,7 @@ def _save_lt_history(picks: list[dict], metals: dict):
         except Exception:
             pass
 
+    factors = factors or {}
     entry = {
         "date": datetime.now().strftime("%Y-%m-%d"),
         "picks": [
@@ -1250,6 +1646,10 @@ def _save_lt_history(picks: list[dict], metals: dict):
         "silver_trend": metals.get("silver", {}).get("trend"),
         "gold_price": metals.get("gold", {}).get("latest_price"),
         "silver_price": metals.get("silver", {}).get("latest_price"),
+        "oil_trend": (factors.get("oil") or {}).get("trend"),
+        "dollar_trend": (factors.get("dollar") or {}).get("trend"),
+        "rates_trend": (factors.get("rates") or {}).get("trend"),
+        "crypto_trend": (factors.get("crypto") or {}).get("trend"),
     }
     history.append(entry)
     with open(history_file, "w", encoding="utf-8") as f:
@@ -1315,6 +1715,11 @@ def _run_lt_scan_inner():
     progress["status"] = "analyzing_metals"
     progress["world_news_count"] = len(signals.get("world_news", []))
     progress["ai_news_count"] = len(signals.get("ai_tech_news", []))
+    progress["finance_news_count"] = len(signals.get("finance_news", []))
+    progress["finance_by_category"] = {
+        cid: len(signals.get("finance_by_category", {}).get(cid) or [])
+        for cid in FINANCE_CATEGORIES
+    }
     _save_progress(progress)
 
     # Step 2: Precious metals analysis
@@ -1330,6 +1735,18 @@ def _run_lt_scan_inner():
         progress["status"] = "stopped"
         _save_progress(progress)
         return
+
+    progress["status"] = "analyzing_factors"
+    _save_progress(progress)
+    factors = {}
+    try:
+        factors = _analyze_all_factors(signals)
+        signal_summary = _build_signal_summary(signals, metals, factors=factors)
+        factors = _llm_thermometer_outlook(factors, signal_summary)
+        signal_summary = _build_signal_summary(signals, metals, factors=factors)
+    except Exception as e:
+        log.warning("温度计分析失败, 继续主题研判: %s", e)
+        factors = factors or {}
 
     progress["status"] = "analyzing_themes"
     progress["metals_done"] = True
@@ -1405,9 +1822,10 @@ def _run_lt_scan_inner():
         "finished_at": progress.get("finished_at"),
         "world_news_count": progress.get("world_news_count", 0),
         "ai_news_count": progress.get("ai_news_count", 0),
+        "finance_news_count": progress.get("finance_news_count", 0),
         "signal_window_days": SIGNAL_WINDOW_DAYS,
     }
-    _save_results(picks, metals, themes, scan_meta)
+    _save_results(picks, metals, themes, scan_meta, factors=factors)
 
     log.info("=== AI 长期推荐分析完成 ===")
 

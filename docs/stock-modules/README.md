@@ -15,6 +15,7 @@
 |---|---|
 | A股分析 & AI预测 | [strategy-ashare-analysis-deepseek.md](./strategy-ashare-analysis-deepseek.md) |
 | AI 股票推荐（左侧+右侧 · 共享数据） | [strategy-unified-left-right-deepseek.md](./strategy-unified-left-right-deepseek.md) |
+| 近5年高二次突破（第三栏） | [strategy-ath-rebreak-deepseek.md](./strategy-ath-rebreak-deepseek.md) |
 | AI 股票推荐(长期) | [strategy-long-term-deepseek.md](./strategy-long-term-deepseek.md) |
 | AI 午盘极速隔夜套利 (T+1) | [strategy-midday-t1-deepseek.md](./strategy-midday-t1-deepseek.md) |
 | 优质低估选股 | [strategy-quality-value-deepseek.md](./strategy-quality-value-deepseek.md) |
@@ -82,7 +83,8 @@
 |------|------|------|
 | `scanner.py` | [scanner.md](./scanner.md) | **左侧·短期**三层AI选股扫描器：快筛→深度分析→LLM评分（资金面硬门控+Top5 DeepSeek复核） |
 | `right_side_scanner.py` | [right_side_scanner.md](./right_side_scanner.md) | **右侧交易**扫描器：主力资金反转(10日流出→3日转正)+趋势确认入场 |
-| `unified_scanner.py` | [unified_scanner.md](./unified_scanner.md) | 统一编排器：共享行情+scan_cache复用，一次出左侧+右侧双报告 |
+| `unified_scanner.py` | [unified_scanner.md](./unified_scanner.md) | 统一编排器：共享行情+scan_cache，一次出左/右/近5年高三份报告 |
+| `ath_rebreak.py` / `ath_rebreak_scanner.py` | [ath_rebreak.md](./ath_rebreak.md) | 近5年高回踩二次突破检测器与第三扫描器 |
 | `scan_cache.py` | [scan_cache.md](./scan_cache.md) | 扫描共享缓存：资金流向/OHLCV 单次抓取、左右侧复用 |
 | `midday_scanner.py` | [midday_scanner.md](./midday_scanner.md) | 午盘极速选股扫描器：12:30运行，全市场高可用快筛，3路大模型并发T+1套利决策 |
 | `long_term_scanner.py` | [long_term_scanner.md](./long_term_scanner.md) | 长线主题扫描器：新闻主题提取、贵金属分析、上涨空间评估 |

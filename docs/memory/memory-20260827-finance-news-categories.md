@@ -1,7 +1,7 @@
 # Memory: Finance News Categories Expansion
 
 **Generated**: 2026-08-27 ~08:50 UTC+8
-**Last updated**: 2026-08-27 ~10:15 UTC+8
+**Last updated**: 2026-08-29 ~13:40 UTC+8
 **Project**: c:\jarvis
 **Focus**: Expand Daily Fetch Finance News into 6 categories with per-source fetch, per-category audio, RAG, and Data Analysis summaries
 
@@ -67,9 +67,9 @@ Expand Daily Fetch Finance News from one mixed market briefing + one MP3 into se
 
 ## Current State (required)
 
-- **Working**: Source catalog, orchestrator `--sources`, 6-category merge, per-category audio wiring, Daily Fetch picker + Data Analysis summary API/UI, RAG payload, chat intent/tool, Telegram 6 files. Review fixes applied (C1–C2, I1–I7, M1/M3–M8). Unit tests: 52 passed (`test_finance_sources` + `test_daily_fetch_audio_lang`).
-- **Pending**: Follow-up code review; restart Jarvis; Recreate AI Briefing; refetch 黄金 after Kitco scrape + MINING.COM RSS; Daily Fetch Reports 大类预览.
-- **Blocked**: none (C1 import restored).
+- **Working**: Source catalog includes US official macro v1 (BLS, BEA RSS, Census scrape, ISM PMI scrape, ADP NER scrape, Fed, MarketWatch default ON). Unit tests: `test_finance_sources` + `test_us_macro_sources`. Live fetch from this agent host: BEA 12 items, ADP 6 NER items; Census Cloudflare challenge; ISM connection dropped. User VPN/proxy still required for Census/ISM.
+- **Pending**: Restart Jarvis; Recreate AI Briefing (zh); refetch 黄金; Daily Fetch Reports; follow-up code review of US macro sources.
+- **Blocked**: Census.gov Cloudflare and ISM World empty-response from this datacenter IP (soft-fail).
 - **Code review** (2026-08-27): first pass not merge-ready; accepted findings implemented this session. M2 rejected.
 
 ---
@@ -82,7 +82,26 @@ Expand Daily Fetch Finance News from one mixed market briefing + one MP3 into se
 4. [x] RAG ingest + Data Analysis summary + chat intent
 5. [x] Update Telegram / docs; tests green
 6. [x] Triage review findings (receiving-code-review) then apply accepted fixes
-7. [ ] Follow-up `requesting-code-review` (user gate)
+7. [x] US official macro v1 in 美国政治金融: BEA, Census, ISM, ADP; MarketWatch default ON (no 7th category)
+8. [ ] Follow-up `requesting-code-review` (user gate)
+
+---
+
+## US official macro sources (2026-08-29)
+
+Stay in **美国政治金融**. No dedicated economic-calendar crawler. No Chinese restatement of US prints.
+
+| Report | Source |
+|---|---|
+| NFP / JOLTS / CPI | BLS `bls_latest.rss` (already on) |
+| GDP / PCE | BEA `https://apps.bea.gov/rss/rss.xml` |
+| Retail / durables / housing | Census scrape (+ RSS if not Cloudflare) |
+| ISM manufacturing + services PMI | Scrape monthly `ism-pmi-reports/pmi|services/{month}/` |
+| ADP NER | `mediacenter.adp.com` scrape |
+| FOMC | Fed RSS (already on) |
+| Commentary | CNBC Economy, AP, MarketWatch now default ON |
+
+Live check 2026-08-29: BEA 12, ADP 6; Census CF interstitial; ISM `ERR_EMPTY_RESPONSE` from this host.
 
 ---
 

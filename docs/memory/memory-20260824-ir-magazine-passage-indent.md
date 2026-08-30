@@ -1,7 +1,7 @@
 # Memory: Intensive Reading Magazine Passage Indent
 
 **Generated**: 2026-08-24 ~11:20 UTC+8
-**Last updated**: 2026-08-25 ~09:25 UTC+8
+**Last updated**: 2026-08-28 ~17:40 UTC+8
 **Project**: c:\jarvis
 **Focus**: Magazine Passage body paragraphs should match novel reading typography (first-line indent + paragraph gap)
 
@@ -25,6 +25,7 @@ Intensive Reading 杂志 chunk 渲在 Passage 里没有段首缩进，阅读感�
 8. **Live Jarvis 仍缓存旧 HTML**：`agent.py` 在进程启动时读入 `index.html`；须重启 Jarvis + Ctrl+F5 才能看到缩进。
 9. **Passage Explain 两段式（2026-08-25）**：① `### 1. 本句意思` ② `### 2. 语境中的其他意思`（引申/暗示/语气 + 必要时一句其他义项；没有则整段省略）。只改左侧 Passage；右侧 Analysis Explain 仍是 `### 1. 含义与语境`。
 10. **Explain 气泡朗读（2026-08-25）**：标题栏喇叭按钮，浏览器 `speechSynthesis` 读选中英文原文（en-US）。不走 edge-tts。关闭气泡即停止。
+11. **Analysis 语言选择（2026-08-28）**：Generate 左侧「语言」中文/英文；默认中文；缓存按 `kind__level__lang` 分开。中文选中时不回退到英文旧缓存（那是 Tab 语言混杂的根因）。口语 Tab 仍英文，并隐藏该选择器。
 
 ---
 

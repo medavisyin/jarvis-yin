@@ -65,6 +65,44 @@ def _load_or_compute(symbol: str, sentiment_provider: str = "ollama") -> dict:
             "sentiment": sentiment, "xgb_prediction": xgb_pred}
 
 
+def format_five_year_rebreak_section(block: dict | None) -> str:
+    """DeepSeek 材料：近5年高回踩二次突破阶段（禁止模型从 20 日表发明前高）。"""
+    lines = ["\n## 近5年高二次突破"]
+    if not block or not block.get("ok"):
+        stage = (block or {}).get("stage", "")
+        if stage == "insufficient_history" or not block:
+            lines.append("数据不足，无法判断该形态。")
+            return "\n".join(lines)
+    label = block.get("benchmark_label") or "近5年高（前复权）"
+    lines.append(f"口径: {label}（不是上市首日至今的最高价）")
+    if block.get("benchmark") is not None:
+        lines.append(f"标杆: ¥{block['benchmark']}（第一次收盘站上日期: {block.get('benchmark_date', 'N/A')}）")
+    tags = block.get("pullback_tags") or []
+    if tags:
+        lines.append(f"回踩标签: {', '.join(tags)}")
+    stage = block.get("stage")
+    if stage == "first_break":
+        lines.append("阶段: 第一次突破。标杆已立，还不是买点。")
+    elif stage == "pullback":
+        lines.append("阶段: 回踩中，等待二次突破。")
+    elif stage == "rebreak":
+        if block.get("signal_live") and block.get("tradeable"):
+            lines.append(
+                f"阶段: 二次突破（{block.get('rebreak_date', '')}）。"
+                "这是策略买点候选，仍须交叉验证资金与估值。"
+            )
+        elif block.get("signal_live") and not block.get("tradeable"):
+            lines.append("阶段: 二次突破形态成立，但涨停买不到。")
+        else:
+            lines.append("阶段: 历史二次突破，不是当前买点。")
+    elif stage == "none":
+        lines.append("阶段: 未见近5年高突破结构。")
+    reason = block.get("reason")
+    if reason:
+        lines.append(f"说明: {reason}")
+    return "\n".join(lines)
+
+
 def _build_prompt(symbol: str, data: dict) -> str:
     """构建发送给 LLM 的分析数据摘要."""
     tech = data.get("technical", {})
@@ -443,6 +481,18 @@ def _build_deepseek_prompt(symbol: str, data: dict) -> str:
     if bearish:
         sections.append("看跌信号: " + ", ".join(bearish))
 
+    block = tech.get("five_year_rebreak")
+    if not block:
+        try:
+            from ath_rebreak import detect_five_year_rebreak
+            ohlcv_path = os.path.join(STOCK_DATA_DIR, symbol, "daily.csv")
+            if os.path.isfile(ohlcv_path):
+                raw = pd.read_csv(ohlcv_path)
+                block = detect_five_year_rebreak(raw, symbol)
+        except Exception:
+            block = None
+    sections.append(format_five_year_rebreak_section(block))
+
     # ── Section 3: Fundamentals (full detail) ──
     sections.append("\n## 基本面分析")
     fin = fund.get("financials", {})
@@ -709,6 +759,25 @@ def build_right_layer3_system_prompt() -> str:
     )
 
 
+def build_ath_rebreak_layer3_system_prompt() -> str:
+    return (
+        deepseek_shared_persona_rules()
+        + "\n"
+        "你当前任务是**近5年高（前复权）回踩后再突破**终审。"
+        "第一次收盘站上近5年高只是标杆，不是买点；回踩后再收盘突破才是买点候选。\n"
+        "禁止把口径写成上市以来的最高价。\n"
+        "额外准则：\n"
+        "1. 复核是否像假突破或吹顶出货。\n"
+        "2. 若当天涨停，verdict 必须 \"不买入\"（买不到）。\n"
+        "3. 仅当空仓者现在适合在确认位建仓才可 \"买入\"。\n\n"
+        "输出要求：只输出一个JSON对象，不要任何其他文字或```json围栏：\n"
+        '{"verdict":"买入","score":75,"reason":"核心理由",'
+        '"risk":"主要风险","buy_low":9.50,"buy_high":10.00,"stop_loss":9.10,"target_price":10.80,'
+        '"strategy":"操作路径"}\n'
+        "verdict 只能是 \"买入\" 或 \"不买入\"。"
+    )
+
+
 def build_quality_value_system_prompt(horizon: str = "long") -> str:
     """Value funnel Layer4 persona. long=6m–2y; medium=1–6m analysis style (not 1–2 week ruler)."""
     hz = str(horizon or "long").strip().lower()
@@ -921,6 +990,7 @@ def generate_prediction_deepseek(symbol: str, realtime_quote: dict | None = None
         "补充要求：\n"
         "1. **利用原始数据**: 我提供了近20日的原始行情数据，请自行分析量价关系、趋势强度、"
         "成交量变化趋势、是否有放量/缩量特征\n"
+        "1b. **近5年高形态以材料中的检测结果为准，禁止用近20日表自行发明历史高点。**\n"
         "（其余决策尺子见上文共享条款：交叉验证、概率化、T+1、资金意图、1周/2周情景、空仓/轻仓/重仓。）\n\n"
         "报告结构：\n"
         "1. 一句话结论（含方向、概率、时间框架）\n"

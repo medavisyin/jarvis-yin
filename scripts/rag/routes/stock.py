@@ -32,7 +32,7 @@ _STOCK_MODULES = [
     "watchlist", "scanner", "long_term_scanner", "quality_value_scanner", "hot_sectors", "market_sentiment",
     "black_swan_detector", "china_market_data", "model_timing",
     "backtest_engine", "midday_scanner", "right_side_scanner",
-    "scan_cache", "unified_scanner", "valuation", "data_quality",
+    "scan_cache", "unified_scanner", "ath_rebreak", "ath_rebreak_scanner", "valuation", "data_quality",
     "regime_detector", "model_ensemble", "position_sizer", "backtest_strategies",
     "network_policy", "data_prefetch", "weekly_selector",
 ]

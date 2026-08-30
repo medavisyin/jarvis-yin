@@ -183,7 +183,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 @media (max-width:720px){.ir-split{grid-template-columns:1fr !important}}
 #intensiveReadingModal .modal-panel{max-width:min(1280px,96vw)!important;width:96vw;height:90vh}
 #intensiveReadingModal .ir-split{grid-template-columns:1.6fr 1fr;gap:14px}
-#irLearnerLevel{background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:2px 6px;font-size:0.95em}
+#irLearnerLevel,#irOutputLang{background:#1e2030;border:1px solid #3a3d4a;color:#c4c8f0;border-radius:6px;padding:2px 6px;font-size:0.95em}
 @font-face{font-family:Literata;font-style:normal;font-weight:400;font-display:swap;
   src:url("/static/fonts/literata-latin-400-normal.woff2") format("woff2");
   unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
@@ -436,7 +436,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
       <div class="toolbar-cat-body">
         <button type="button" class="toolbar-btn" onclick="openStockModal()" title="A股个股分析与AI预测">&#128200; 股票分析</button>
         <button type="button" class="toolbar-btn" onclick="openWatchlistModal()" title="管理自选股列表">&#11088; 自选股</button>
-        <button type="button" class="toolbar-btn" onclick="openUnifiedModal()" title="AI 股票推荐：一次扫描，共享市场数据，输出左侧(短期)+右侧(交易)两份报告">&#129302; AI 推荐</button>
+        <button type="button" class="toolbar-btn" onclick="openUnifiedModal()" title="AI 股票推荐：一次扫描，共享市场数据，输出左侧+右侧+近5年高二次突破三份报告">&#129302; AI 推荐</button>
         <button type="button" class="toolbar-btn" onclick="openMiddayModal()" title="AI午盘极速选股 (12:30运行，隔夜T+1套利)">⚡ 午盘推荐</button>
         <button type="button" class="toolbar-btn" onclick="openLongTermModal()" title="AI长期趋势推荐 (新闻+政策+贵金属分析)">&#128302; 长期推荐</button>
         <button type="button" class="toolbar-btn" onclick="openQualityValueModal()" title="优质低估选股：同业低估 + 基本面排雷 + PB-ROE + DeepSeek 周期终审">&#128176; 优质低估</button>
@@ -793,7 +793,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
             </div>
             <div id="irTabBar" style="display:flex;flex-wrap:wrap;gap:4px;padding:6px 8px;border-bottom:1px solid #2a2d3a;background:#181a24"></div>
             <div id="irAnalysis" style="flex:1;overflow-y:auto;padding:16px 18px;font-size:0.88em;line-height:1.65;color:#c4c8f0"></div>
-            <div style="padding:6px 10px;border-top:1px solid #2a2d3a;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap">
+            <div style="padding:6px 10px;border-top:1px solid #2a2d3a;display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;align-items:center">
+              <label id="irOutputLangWrap" style="display:flex;align-items:center;gap:4px;font-size:0.78em;color:#8b8fa4">语言
+                <select id="irOutputLang" onchange="irOnLearnerPrefsChange()">
+                  <option value="zh" selected>中文</option>
+                  <option value="en">英文</option>
+                </select>
+              </label>
               <button type="button" class="toolbar-btn" id="irGenerateBtn" onclick="irGenerateActiveTab()" style="font-size:0.78em">Generate</button>
               <button type="button" class="toolbar-btn" id="irContinueBtn" onclick="irContinueAnalyze()" style="font-size:0.78em;display:none">Continue</button>
             </div>
@@ -1188,9 +1194,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 
 <!-- Unified Scanner Modal (left short-term + right-side, shared data) -->
 <div id="unifiedModal" class="modal-overlay" role="dialog" aria-modal="true">
-  <div class="modal-panel" style="max-width:97vw;max-height:95vh;width:1080px;background:#0f1117;border:1px solid #2a2d3e">
+  <div class="modal-panel" style="max-width:97vw;max-height:95vh;width:1280px;background:#0f1117;border:1px solid #2a2d3e">
     <div class="modal-head" style="border-bottom:1px solid #2a2d3e">
-      <h2>&#129302; AI 股票推荐（左侧+右侧 · 共享数据）</h2>
+      <h2>&#129302; AI 股票推荐（左侧+右侧+近5年高二次突破 · 共享数据）</h2>
       <button type="button" class="modal-close" onclick="closeUnifiedModal()" title="Close">&times;</button>
     </div>
     <div class="modal-content" style="padding:14px 18px;background:#0f1117">
@@ -1211,12 +1217,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
         </div>
         <div id="uniPhase" style="font-size:0.76em;color:#8b8fa4;margin-top:4px"></div>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
         <div>
           <h3 style="color:#fbbf24;margin:0 0 6px;font-size:0.95em">&#128293; 左侧 · 短期推荐</h3>
           <div id="uniLeftResult" style="max-height:58vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:12px;background:#1a1d2e;font-size:0.82em;line-height:1.55;color:#c4c8f0">
             <p style="color:#6b7280">点击"开始扫描"启动统一扫描。</p>
-            <p style="color:#6b7280;font-size:0.9em">一次抓取全市场行情，分别用左侧(估值/抄底)与右侧(资金反转/突破)两套逻辑筛选，输出两份报告。</p>
+            <p style="color:#6b7280;font-size:0.9em">一次抓取全市场行情，分别用左侧、右侧与近5年高二次突破三套逻辑筛选，输出三份结果。</p>
           </div>
         </div>
         <div>
@@ -1224,6 +1230,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
           <div id="uniRightResult" style="max-height:58vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:12px;background:#1a1d2e;font-size:0.82em;line-height:1.55;color:#c4c8f0">
             <p style="color:#6b7280">右侧交易 = 确认后跟进：主力资金由流出转持续净流入 + 趋势/突破确认后入场。</p>
             <p style="color:#6b7280;font-size:0.9em">持有2周~2-3个月，目标10%+，严格止损。</p>
+          </div>
+        </div>
+        <div>
+          <h3 style="color:#38bdf8;margin:0 0 6px;font-size:0.95em">&#128200; 近5年高 · 二次突破</h3>
+          <div id="uniAthResult" style="max-height:58vh;overflow-y:auto;border:1px solid #2a2d3e;border-radius:8px;padding:12px;background:#1a1d2e;font-size:0.82em;line-height:1.55;color:#c4c8f0">
+            <p style="color:#6b7280">标杆 = 近5年高（前复权）。第一次站上只是标杆，回踩后再突破才是买点。</p>
+            <p style="color:#6b7280;font-size:0.9em">涨停检出但买不到。0 只是正常结果。</p>
           </div>
         </div>
       </div>
@@ -1749,23 +1762,20 @@ function irGetLearnerLevel() {
   return 'university';
 }
 function irGetOutputLang() {
-  return 'zh';
+  var el = document.getElementById('irOutputLang');
+  return (el && el.value === 'en') ? 'en' : 'zh';
 }
 function irTabCacheKey(kind) {
   if (!kind || kind === 'speaking') return kind;
   return kind + '__' + irGetLearnerLevel() + '__' + irGetOutputLang();
 }
-function irLegacyKindFallback(kind) {
-  if (!kind || kind === 'speaking') return false;
-  return true;
-}
 function irLookupCachedTab(tabs, kind) {
   if (!tabs || !kind) return null;
   var key = irTabCacheKey(kind);
   if (tabs[key]) return tabs[key];
-  if (!irLegacyKindFallback(kind)) return null;
+  if (irGetOutputLang() !== 'en') return null;
   var lv = irGetLearnerLevel();
-  var legacyKeys = [kind + '__' + lv + '__en', kind + '__' + lv, kind];
+  var legacyKeys = [kind + '__' + lv, kind];
   for (var i = 0; i < legacyKeys.length; i++) {
     if (tabs[legacyKeys[i]]) return tabs[legacyKeys[i]];
   }
@@ -1788,13 +1798,17 @@ async function irOnLearnerPrefsChange() {
 function irLoadLearnerPrefs() {
   try {
     var lv = localStorage.getItem('jarvis.ir.learnerLevel');
+    var lang = localStorage.getItem('jarvis.ir.outputLang');
     var lvEl = document.getElementById('irLearnerLevel');
+    var langEl = document.getElementById('irOutputLang');
     if (lvEl && (lv === 'university' || lv === 'high_school' || lv === 'middle_school')) lvEl.value = lv;
+    if (langEl && (lang === 'en' || lang === 'zh')) langEl.value = lang;
   } catch (e) {}
 }
 function irSaveLearnerPrefs() {
   try {
     localStorage.setItem('jarvis.ir.learnerLevel', irGetLearnerLevel());
+    localStorage.setItem('jarvis.ir.outputLang', irGetOutputLang());
   } catch (e) {}
 }
 
@@ -1822,9 +1836,11 @@ function irSetNavDisabled(disabled) {
   var next = document.getElementById('irNextBtn');
   var back = document.getElementById('irBackBtn');
   var lv = document.getElementById('irLearnerLevel');
+  var lang = document.getElementById('irOutputLang');
   if (next) next.disabled = disabled || !_irState.nextIndex;
   if (back) back.disabled = disabled || (_irState.prevIndex == null);
   if (lv) lv.disabled = !!disabled;
+  if (lang) lang.disabled = !!disabled;
 }
 
 function irResetAnalyses() {
@@ -1909,8 +1925,10 @@ function irShowActiveAnalysis() {
     return;
   }
   var slot = _irState.analyses[kind] || irEmptyAnalysisSlot();
-  if (slot.status === 'idle' && !slot.text) {
-    box.textContent = 'Click Generate on this tab to analyze (English). Cached results load when you revisit a chunk.';
+    if (slot.status === 'idle' && !slot.text) {
+    var langLabel = irGetOutputLang() === 'en' ? 'English' : '中文';
+    box.textContent = 'Click Generate on this tab to analyze (' + langLabel +
+      '). Cached results load when you revisit a chunk.';
     return;
   }
   if (slot.status === 'running' && !slot.text) {
@@ -2182,6 +2200,7 @@ async function irRunSpeaking(exercise, pressureStep) {
 
 function openIntensiveReadingModal() {
   irLoadLearnerPrefs();
+  irSaveLearnerPrefs();
   document.getElementById('intensiveReadingModal').classList.add('open');
   irShowLibrary();
   irRefreshBooks();
@@ -3120,8 +3139,12 @@ function irUpdateContinueBtn() {
   if (_irState.activeKind === 'speaking') {
     if (gbtn) gbtn.style.display = 'none';
     if (cbtn) cbtn.style.display = 'none';
+    var langWrap = document.getElementById('irOutputLangWrap');
+    if (langWrap) langWrap.style.display = 'none';
     return;
   }
+  var langWrap = document.getElementById('irOutputLangWrap');
+  if (langWrap) langWrap.style.display = 'flex';
   if (gbtn) gbtn.style.display = '';
   var slot = _irState.analyses[_irState.activeKind] || irEmptyAnalysisSlot();
   if (gbtn) {
@@ -6315,6 +6338,32 @@ function _buildRightSideHtml(picks, meta) {
   });
   return h;
 }
+function _buildAthRebreakHtml(picks, meta) {
+  meta = meta || {};
+  var watchHtml = '';
+  if (meta.watch && meta.watch.length) {
+    watchHtml += '<p style="color:#fbbf24;font-size:0.85em;margin-top:8px">观察（涨停买不到）:</p>';
+    meta.watch.forEach(function(w) {
+      watchHtml += '<div style="font-size:0.82em;color:#a0a4b8">' + _escapeHtml(w.name || '') + ' (' + _escapeHtml(w.symbol || '') + ')</div>';
+    });
+  }
+  if (!picks || !picks.length) {
+    return '<p style="color:#8b8fa4">暂无近5年高二次突破可买标的。第一次站上只是标杆，回踩后再突破才是买点。</p>' + watchHtml;
+  }
+  var h = '';
+  if (!meta.ai_reviewed) h += '<p style="color:#fbbf24;font-size:0.8em">未经 AI 终审</p>';
+  picks.forEach(function(p) {
+    h += '<div style="margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid #2a2d3e">';
+    h += '<div style="font-weight:600;color:#e5e7eb">' + _escapeHtml(p.name || '') + ' <span style="color:#8b8fa4">' + _escapeHtml(p.symbol || '') + '</span></div>';
+    if (p.price) h += '<div style="font-size:0.83em;color:#a0a4b8">现价 ¥' + p.price + '</div>';
+    if (p.pullback_tags && p.pullback_tags.length) h += '<div style="font-size:0.8em;color:#38bdf8">回踩: ' + _escapeHtml(p.pullback_tags.join(', ')) + '</div>';
+    if (p.tradeable === false) h += '<div style="color:#f87171;font-size:0.83em">买不到（涨停）</div>';
+    if (p.reasoning) h += '<div style="margin-top:4px;color:#a3e635;font-size:0.85em">💡 ' + _escapeHtml(p.reasoning) + '</div>';
+    if (p.risk) h += '<div style="margin-top:2px;color:#f87171;font-size:0.8em">⚠️ ' + _escapeHtml(p.risk) + '</div>';
+    h += '</div>';
+  });
+  return h + watchHtml;
+}
 // --- Unified Scanner (left + right, shared data) ---
 let _uniPollTimer = null;
 function openUnifiedModal() {
@@ -6346,6 +6395,7 @@ async function startUnifiedScan() {
   var useDs = document.getElementById('uniUseDeepseek').checked;
   document.getElementById('uniLeftResult').innerHTML = '<p style="color:#60a5fa">⏳ 共享行情抓取 + 左侧短期扫描...' + (useDs ? ' (DeepSeek enabled)' : '') + '</p>';
   document.getElementById('uniRightResult').innerHTML = '<p style="color:#34d399">⏳ 等待左侧完成后启动右侧(资金反转)扫描...</p>';
+  document.getElementById('uniAthResult').innerHTML = '<p style="color:#38bdf8">⏳ 等待左右完成后启动近5年高二次突破扫描...</p>';
   // Start polling IMMEDIATELY (before the possibly-slow POST returns) to avoid UI freeze
   if (!_uniPollTimer) _uniPollTimer = setInterval(pollUnifiedStatus, 3000);
   try {
@@ -6383,6 +6433,7 @@ async function pollUnifiedStatus() {
     if (d.phase === 'market') phaseLabel = '🌐 共享行情抓取...';
     else if (d.phase === 'left') phaseLabel = '◀ 左侧短期扫描: ' + (d.step || '');
     else if (d.phase === 'right') phaseLabel = '▶ 右侧交易扫描: ' + (d.step || '');
+    else if (d.phase === 'ath') phaseLabel = '▲ 近5年高二次突破: ' + (d.step || '');
     else phaseLabel = d.step || '';
     phase.innerHTML = phaseLabel;
     // Live sub-status hints
@@ -6392,6 +6443,9 @@ async function pollUnifiedStatus() {
     }
     if (d.right && d.right.status === 'running') {
       document.getElementById('uniRightResult').innerHTML = '<p style="color:#34d399">⏳ 右侧扫描中: ' + _escapeHtml(d.right.step || '') + ' (' + (d.right.progress||0) + '%)</p>';
+    }
+    if (d.ath && (d.ath.status === 'running')) {
+      document.getElementById('uniAthResult').innerHTML = '<p style="color:#38bdf8">⏳ 近5年高扫描中: ' + _escapeHtml(d.ath.step || '') + ' (' + (d.ath.progress||0) + '%)</p>';
     }
     if (d.status === 'running') {
       st.textContent = '扫描进行中';
@@ -6429,12 +6483,16 @@ async function loadUnifiedResult() {
     }
     var left = d.left || {};
     var right = d.right || {};
+    var ath = d.ath || {};
     var leftHtml = (!left || !left.top_picks) ? _buildScanResultHtml([]) : _buildScanResultHtml(left.top_picks || []);
     var rightHtml = (!right || !right.picks) ? _buildRightSideHtml([], right) : _buildRightSideHtml(right.picks || [], right);
+    var athHtml = _buildAthRebreakHtml(ath.picks || [], ath);
     if (!left.top_picks && !left.date) leftHtml = '<p style="color:#6b7280">暂无左侧扫描结果（尚未扫描或正在运行）。</p>';
     if (!right.picks && !right.date) rightHtml = '<p style="color:#6b7280">暂无右侧扫描结果（尚未扫描或正在运行）。</p>';
+    if (!ath.picks && !ath.date) athHtml = '<p style="color:#6b7280">暂无近5年高二次突破结果（尚未扫描或正在运行）。</p>';
     document.getElementById('uniLeftResult').innerHTML = leftHtml;
     document.getElementById('uniRightResult').innerHTML = rightHtml;
+    document.getElementById('uniAthResult').innerHTML = athHtml;
   } catch(e) {
     document.getElementById('uniLeftResult').innerHTML = '<p style="color:#ef4444">加载结果失败: ' + e.message + '</p>';
   }
@@ -6986,11 +7044,12 @@ async function pollLtStatus() {
     if (!d.status || d.status === '') return;
     prog.style.display = 'block';
     const phases = {
-      'collecting_signals': {pct: '15%', text: '收集近14天新闻信号...'},
-      'analyzing_metals': {pct: '30%', text: '贵金属分析 (黄金/白银)...'},
-      'analyzing_themes': {pct: '50%', text: 'LLM 趋势研判...'},
-      'mapping_stocks': {pct: '65%', text: '投资主题 → 候选个股...'},
-      'assessing_upside': {pct: '80%', text: '空间评估: ' + (d.assessed_count||0) + '/' + (d.candidate_count||'?')},
+      'collecting_signals': {pct: '12%', text: '收集近14天新闻信号...'},
+      'analyzing_metals': {pct: '28%', text: '贵金属分析 (黄金/白银)...'},
+      'analyzing_factors': {pct: '40%', text: '宏观/油/美元/利率/加密分析...'},
+      'analyzing_themes': {pct: '55%', text: 'LLM 趋势研判...'},
+      'mapping_stocks': {pct: '68%', text: '投资主题 → 候选个股...'},
+      'assessing_upside': {pct: '82%', text: '空间评估: ' + (d.assessed_count||0) + '/' + (d.candidate_count||'?')},
       'final_selection': {pct: '92%', text: 'LLM 精选推荐...'},
     };
     if (d.status === 'done') {
@@ -7059,6 +7118,66 @@ function renderLtResult(data) {
       });
       if (outlook.summary) h += '<div style="font-size:0.85em;color:#e0e0e0;margin-top:4px">' + outlook.summary + '</div>';
     }
+    h += '</div>';
+  }
+  var factors = data.factors || {};
+  var fOutlook = factors.llm_outlook || {};
+  var hasMacro = (factors.macro && ((factors.macro.series||[]).some(function(s){return s.data_available;}) || (factors.macro.official_headlines||[]).length));
+  var factorKeys = [
+    {key:'oil', label:'油价', emoji:'🛢️'},
+    {key:'dollar', label:'美元', emoji:'💵'},
+    {key:'rates', label:'美债', emoji:'📉'},
+    {key:'crypto', label:'加密', emoji:'₿'}
+  ];
+  var hasSeries = factorKeys.some(function(fk){ var m = factors[fk.key]; return m && m.data_available; });
+  if (hasMacro || hasSeries || fOutlook.summary) {
+    h += '<div style="margin-bottom:16px"><h3 style="color:#38bdf8;margin:0 0 10px">🌡️ 宏观与市场温度计</h3>';
+    if (hasMacro) {
+      h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:10px;margin-bottom:8px">';
+      h += '<div style="font-weight:700;color:#e0e0e0;margin-bottom:6px">官方宏观</div>';
+      (factors.macro.series||[]).forEach(function(s){
+        if (!s.data_available) return;
+        h += '<div style="font-size:0.82em;color:#a0a4b8">' + escHtml(s.label||s.id) + ': ' + escHtml(String(s.latest)) + ' (前值 ' + escHtml(String(s.prior==null?'-':s.prior)) + ')</div>';
+      });
+      (factors.macro.official_headlines||[]).slice(0,5).forEach(function(hd){
+        h += '<div style="font-size:0.78em;color:#8b8fa4">· ' + escHtml(hd.headline||'') + '</div>';
+      });
+      var mo = fOutlook.macro;
+      if (mo) {
+        h += '<div style="font-size:0.82em;color:#60a5fa;margin-top:4px">展望: ' + escHtml(mo.trend||'') + '</div>';
+        if (mo.drivers) h += '<div style="font-size:0.78em;color:#a0a4b8">驱动: ' + escHtml(mo.drivers) + '</div>';
+        if (mo.advice) h += '<div style="font-size:0.78em;color:#a3e635">建议: ' + escHtml(mo.advice) + '</div>';
+        if (mo.a_share_implication) h += '<div style="font-size:0.78em;color:#38bdf8">A股: ' + escHtml(mo.a_share_implication) + '</div>';
+      }
+      h += '</div>';
+    }
+    factorKeys.forEach(function(fk){
+      var m = factors[fk.key];
+      var o = fOutlook[fk.key];
+      if ((!m || !m.data_available) && !o) return;
+      var trendColor = (m && m.trend === '上涨') ? '#22c55e' : (m && m.trend === '下跌') ? '#ef4444' : (m && m.trend === '过热') ? '#f59e0b' : '#8b8fa4';
+      h += '<div style="background:#0f1117;border:1px solid #2a2d3e;border-radius:8px;padding:10px;margin-bottom:8px">';
+      h += '<div style="display:flex;justify-content:space-between;align-items:center">';
+      h += '<span style="font-size:1em;font-weight:700;color:#e0e0e0">' + fk.emoji + ' ' + fk.label + ' ' + ((m && m.latest_price)!=null ? m.latest_price : '-') + '</span>';
+      if (m && m.data_available) h += '<span style="color:' + trendColor + ';font-weight:600">' + escHtml(m.trend||'') + '</span>';
+      h += '</div>';
+      if (m && m.data_available) {
+        h += '<div style="display:flex;gap:12px;margin-top:6px;font-size:0.82em;color:#a0a4b8">';
+        h += '<span>14天: ' + ((m.change_14d_pct||0)>0?'+':'') + (m.change_14d_pct||0).toFixed(1) + '%</span>';
+        h += '<span>60天: ' + ((m.change_60d_pct||0)>0?'+':'') + (m.change_60d_pct||0).toFixed(1) + '%</span>';
+        h += '<span>RSI: ' + (m.rsi_14||'-') + '</span>';
+        h += '<span>52周位: ' + (m.position_vs_52w||'-') + '%</span>';
+        h += '</div>';
+      }
+      if (o) {
+        h += '<div style="font-size:0.82em;color:#60a5fa;margin-top:4px">展望: ' + escHtml(o.trend||'') + '</div>';
+        if (o.drivers) h += '<div style="font-size:0.78em;color:#a0a4b8">驱动: ' + escHtml(o.drivers) + '</div>';
+        if (o.advice) h += '<div style="font-size:0.78em;color:#a3e635">建议: ' + escHtml(o.advice) + '</div>';
+        if (o.a_share_implication) h += '<div style="font-size:0.78em;color:#38bdf8">A股: ' + escHtml(o.a_share_implication) + '</div>';
+      }
+      h += '</div>';
+    });
+    if (fOutlook.summary) h += '<div style="font-size:0.85em;color:#e0e0e0;margin-top:4px">' + escHtml(fOutlook.summary) + '</div>';
     h += '</div>';
   }
   var themes = data.themes || [];
@@ -7146,6 +7265,8 @@ async function loadLtHistory() {
       h += '<span style="color:#8b8fa4">' + (entry.picks||[]).length + ' 只推荐</span></div>';
       if (entry.gold_trend) h += '<span style="font-size:0.78em;color:#fbbf24">金: ' + entry.gold_trend + ' ¥' + (entry.gold_price||'-') + '</span> ';
       if (entry.silver_trend) h += '<span style="font-size:0.78em;color:#a0a4b8">银: ' + entry.silver_trend + ' ¥' + (entry.silver_price||'-') + '</span>';
+      if (entry.oil_trend) h += ' <span style="font-size:0.78em;color:#fb923c">油: ' + entry.oil_trend + '</span>';
+      if (entry.dollar_trend) h += ' <span style="font-size:0.78em;color:#38bdf8">美元: ' + entry.dollar_trend + '</span>';
       (entry.picks||[]).forEach(p => {
         h += '<div style="font-size:0.78em;color:#a0a4b8">  ' + (p.name||p.symbol) + ' (空间' + (p.upside_score||'?') + ') — ' + (p.theme||'') + '</div>';
       });

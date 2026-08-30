@@ -24,7 +24,7 @@ last-updated: 2026-08-16
 | 网页功能 | 一句话 | 详解（DeepSeek 策略 · 小白版） |
 |---|---|---|
 | **A股分析 & AI预测** | 你指定一只股票，做深度研判 | [strategy-ashare-analysis-deepseek.md](../stock-modules/strategy-ashare-analysis-deepseek.md) |
-| **AI 推荐（左侧+右侧）** | 一次扫描，抄底与跟趋势两份报告 | [strategy-unified-left-right-deepseek.md](../stock-modules/strategy-unified-left-right-deepseek.md) |
+| **AI 推荐（左侧+右侧+近5年高）** | 一次扫描，抄底 / 跟趋势 / 前高回踩再突破 | [strategy-unified-left-right-deepseek.md](../stock-modules/strategy-unified-left-right-deepseek.md) · [strategy-ath-rebreak-deepseek.md](../stock-modules/strategy-ath-rebreak-deepseek.md) |
 | **AI 股票推荐(长期)** | 新闻主题 + 贵金属，约 3 个月～1 年布局 | [strategy-long-term-deepseek.md](../stock-modules/strategy-long-term-deepseek.md) |
 | **午盘极速隔夜套利 (T+1)** | 午休决策，尾盘买、次日早盘卖 | [strategy-midday-t1-deepseek.md](../stock-modules/strategy-midday-t1-deepseek.md) |
 | **优质低估** | 同业低估 + 财务排雷，约 6 个月～2 年 | [strategy-quality-value-deepseek.md](../stock-modules/strategy-quality-value-deepseek.md) |

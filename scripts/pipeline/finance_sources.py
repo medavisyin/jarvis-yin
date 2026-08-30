@@ -6,9 +6,18 @@ import json
 import os
 import re
 from collections import defaultdict
+from datetime import datetime, timedelta
 from typing import Any
 
 from finance_news_filter import filter_and_rank_items
+
+_NEAR_DUP_THRESHOLD = 0.5
+_STOPWORDS = frozenset({
+    "the", "a", "an", "of", "and", "or", "to", "in", "on", "for", "as", "at",
+    "by", "from", "with", "after", "over", "up", "down", "is", "are", "be",
+    "its", "it", "this", "that", "was", "were", "has", "have", "had", "will",
+    "into", "than", "then", "vs", "via", "per",
+})
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
 _CATALOG_PATH = os.path.join(_DIR, "finance_sources.json")
@@ -117,6 +126,79 @@ def drop_china_domain_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]
         if cat != "china-policy" and url and CHINA_DOMAIN_RE.search(url):
             continue
         kept.append(it)
+    return kept
+
+
+def news_tokens(text: str) -> set[str]:
+    raw = (text or "").lower()
+    tokens: set[str] = set()
+    for word in re.findall(r"[a-z0-9]+", raw):
+        if word not in _STOPWORDS and len(word) > 1:
+            tokens.add(word)
+    chars = re.findall(r"[\u4e00-\u9fff]", raw)
+    for i in range(len(chars) - 1):
+        tokens.add(chars[i] + chars[i + 1])
+    return tokens
+
+
+def _item_tokens(item: dict[str, Any]) -> set[str]:
+    return news_tokens(f"{item.get('title') or ''} {item.get('summary') or ''}")
+
+
+def _jaccard(a: set[str], b: set[str]) -> float:
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def finance_title_key(title: str) -> str:
+    """Same key as same-day exact-title merge dedupe."""
+    return (title or "").lower().strip()[:80]
+
+
+def load_previous_day_title_keys(output_dir: str, report_date: str) -> set[str]:
+    """Titles from yesterday's merged finance-news-data.json (played in audio/RAG)."""
+    try:
+        day = datetime.strptime(report_date, "%Y-%m-%d")
+    except ValueError:
+        return set()
+    prev = (day - timedelta(days=1)).strftime("%Y-%m-%d")
+    abs_out = os.path.abspath(output_dir)
+    date_folder = os.path.dirname(abs_out)
+    if os.path.basename(date_folder) != report_date:
+        return set()
+    path = os.path.join(
+        os.path.dirname(date_folder), prev, "finance-news", "finance-news-data.json"
+    )
+    if not os.path.isfile(path):
+        return set()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return set()
+    keys: set[str] = set()
+    for block in data.get("categories") or []:
+        for it in block.get("items") or []:
+            key = finance_title_key(it.get("title") or "")
+            if key:
+                keys.add(key)
+    return keys
+
+
+def drop_near_duplicates(
+    items: list[dict[str, Any]],
+    threshold: float = _NEAR_DUP_THRESHOLD,
+) -> list[dict[str, Any]]:
+    """Keep first item when later ones look like the same story (Jaccard)."""
+    kept: list[dict[str, Any]] = []
+    kept_tokens: list[set[str]] = []
+    for item in items:
+        toks = _item_tokens(item)
+        if any(_jaccard(toks, prev) >= threshold for prev in kept_tokens):
+            continue
+        kept.append(item)
+        kept_tokens.append(toks)
     return kept
 
 
@@ -280,6 +362,12 @@ def merge_source_jsons(
         kept_always.append(item)
     filtered = kept_always + filtered_rest
     filtered = drop_china_domain_items(filtered)
+    prev_keys = load_previous_day_title_keys(output_dir, report_date)
+    if prev_keys:
+        filtered = [
+            it for it in filtered
+            if finance_title_key(it.get("title") or "") not in prev_keys
+        ]
 
     by_category: dict[str, list] = defaultdict(list)
     for item in filtered:
@@ -288,6 +376,10 @@ def merge_source_jsons(
     categories = []
     for cat in CATEGORIES:
         cat_items = by_category.get(cat["id"], [])
+        if not cat_items:
+            continue
+        cat_items = sorted(cat_items, key=lambda x: x.get("_priority", 99))
+        cat_items = drop_near_duplicates(cat_items)
         if not cat_items:
             continue
         categories.append({

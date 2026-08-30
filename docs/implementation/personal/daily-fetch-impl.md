@@ -5,7 +5,7 @@ tags:
   - daily-fetch
 category: personal
 status: current
-last-updated: 2026-07-29
+last-updated: 2026-08-29
 ---
 
 # Daily Fetch Pipeline
@@ -22,7 +22,7 @@ Finance news details: [../briefing-pipeline/finance-news-impl.md](../briefing-pi
 
 ### System Context
 
-The pipeline bridges **orchestrated subprocesses** (`run-all-sources.py` and friends) with **in-process orchestration** in `_run_daily_fetch`, which also handles wiki indexing per team member, PowerShell reports, and audio. Related but separate CLI tools (`briefing-template.py` for PDF, `generate-audio.py` for narration-from-JSON MP3) share the same `briefing-data.json` schema produced by `merge-sources.py`; the Daily Fetch path does not invoke those scripts—it generates audio directly in the agent.
+The pipeline bridges **orchestrated subprocesses** (`run-all-sources.py` and friends) with **in-process orchestration** in `_run_daily_fetch`, which also handles wiki indexing per team member, PowerShell reports, and audio. Related but separate CLI tools (`briefing-template.py` for PDF, `generate-audio.py` for narration-from-JSON MP3) share the same `briefing-data.json` schema produced by `merge-sources.py`; the Daily Fetch path does not invoke those scripts—it generates audio directly in the agent. Jarvis starts APScheduler at local 08:00 and runs `_run_daily_fetch(only_steps=NEWS_ONLY_STEPS)` (AI + Finance listen-ready). It skips if a job is already running or today's `ai-briefing.mp3` and `finance-news/finance-news-data.json` exist. Missed ticks (`misfire_grace_time=60`) are dropped.
 
 ```mermaid
 flowchart TD
@@ -145,11 +145,12 @@ flowchart TD
 
 ### Long-term
 
-- Scheduler (Windows Task Scheduler / cron) or webhook-triggered runs calling the same APIs.
+- **DONE (2026-08-28)**: in-process APScheduler 08:00 local, news-only steps (`scripts/rag/daily_fetch_schedule.py`). Not OS cron / Task Scheduler.
 - Optional invocation of `briefing-template.py` after merge for automatic PDF in the same job.
 
 ## References
 
+- `scripts/rag/daily_fetch_schedule.py` — 08:00 APScheduler helpers (NEWS_ONLY_STEPS, skip-if-done)
 - `scripts/rag/agent.py` — Daily Fetch routes and `_run_daily_fetch`
 - `scripts/pipeline/run-all-sources.py` — End-to-end fetch orchestration
 - `scripts/pipeline/preflight-check.py`, `merge-sources.py`, `filter_topics.py`, `topic_index.py`, `run-finance-news.py`

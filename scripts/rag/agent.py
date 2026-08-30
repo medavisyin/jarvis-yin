@@ -1120,6 +1120,12 @@ def api_memory_extract_batch():
 @app.route("/api/health")
 def api_health():
     """Health check — verifies Ollama and Qdrant are reachable."""
+    try:
+        from daily_fetch_schedule import poll_due_job
+
+        poll_due_job()
+    except Exception:
+        pass
     status = {"ollama": False, "qdrant": False, "model": OLLAMA_MODEL,
               "fast_model": OLLAMA_MODEL_FAST}
     try:
@@ -1592,6 +1598,7 @@ from routes.daily_fetch import (
     _load_aws_cert_progress,
     _format_aws_cert_progress,
     _update_aws_cert_progress,
+    _start_daily_fetch_scheduler,
 )
 app.register_blueprint(daily_fetch_bp)
 
@@ -1638,4 +1645,5 @@ if __name__ == "__main__":
     _get_embed_model()
     _get_qdrant()
     print("Ready! Open your browser.", flush=True)
+    _start_daily_fetch_scheduler()
     app.run(host=host, port=port, debug=False, threaded=True)

@@ -69,7 +69,7 @@ def normalize_output_lang(value: str | None) -> str:
 def analysis_slot_key(
     analysis_kind: str,
     learner_level: str = "university",
-    output_lang: str = "en",
+    output_lang: str = "zh",
 ) -> str:
     kind = (analysis_kind or KIND_VOCAB).strip().lower() or KIND_VOCAB
     level = normalize_learner_level(learner_level)
@@ -285,7 +285,7 @@ def allowed_kinds(book_type: str) -> set[str]:
 def system_prompt_for_kind(
     analysis_kind: str,
     learner_level: str = "university",
-    output_lang: str = "en",
+    output_lang: str = "zh",
 ) -> str:
     kind = (analysis_kind or KIND_VOCAB).strip().lower()
     if kind not in _KIND_SYSTEM:
@@ -356,7 +356,7 @@ def analysis_user_message(
     analysis_kind: str = KIND_VOCAB,
     book_type: str = "novel",
     learner_level: str = "university",
-    output_lang: str = "en",
+    output_lang: str = "zh",
 ) -> str:
     kind = (analysis_kind or KIND_VOCAB).strip().lower()
     cont = ""
@@ -375,6 +375,11 @@ def analysis_user_message(
         task = _vocab_user_task(learner_level, output_lang)
     else:
         task = _KIND_USER_TASK.get(kind, _KIND_USER_TASK[KIND_VOCAB])
+        if normalize_output_lang(output_lang) == "zh":
+            task += (
+                " Write the analysis in Simplified Chinese; "
+                "keep quoted phrases in English."
+            )
     return (
         f"Book/section: {title}\n"
         f"Book type: {book_type}\n"

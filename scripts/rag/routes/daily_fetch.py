@@ -35,6 +35,14 @@ from briefing_translate import (
     translate_briefing_data,
 )
 from config import JIRA_REPORT_SCRIPT, KNOWLEDGE_ROOT, REPORTS_ROOT
+from daily_fetch_schedule import (
+    NEWS_ONLY_STEPS,
+    _run_scheduled_daily_fetch as _schedule_tick,
+    _start_daily_fetch_scheduler as _start_scheduler_impl,
+    make_start_job,
+    poll_due_job,
+    scheduler_status,
+)
 from tools import tool_commit_summary
 from learning.constants import LEARNING_SESSION_IDS as _LEARNING_SESSION_IDS
 from routes.ai_news import (
@@ -1089,6 +1097,28 @@ def _run_daily_fetch(
         job["status"] = "error"
         job["step"] = str(e)
         job["steps"] = steps
+
+
+def _run_scheduled_daily_fetch():
+    """Cron entry: skip if busy/done, else start NEWS_ONLY_STEPS via existing worker."""
+    start_job = make_start_job(_daily_fetch_jobs, _run_daily_fetch)
+    return _schedule_tick(
+        _daily_fetch_jobs,
+        reports_root=REPORTS_ROOT,
+        start_job=start_job,
+    )
+
+
+def _start_daily_fetch_scheduler():
+    """Bind the in-process sleep-loop job to this module's worker and start it."""
+    return _start_scheduler_impl(job_func=_run_scheduled_daily_fetch)
+
+
+@daily_fetch_bp.route("/api/toolbar/daily-fetch/scheduler", methods=["GET"])
+def api_daily_fetch_scheduler():
+    """Scheduler running flag, next fire, last tick, log path."""
+    poll_due_job()
+    return jsonify(scheduler_status())
 
 
 @daily_fetch_bp.route("/api/toolbar/daily-fetch", methods=["POST"])

@@ -1,21 +1,22 @@
 # 长期股票扫描器 (long_term_scanner) — 详细功能文档
 
 **文件路径**: `scripts/stock/long_term_scanner.py`  
-**最后更新**: 2026-04-27
+**最后更新**: 2026-08-30
 
 ---
 
 ## 1. 模块概述
 
-- **核心职责**: 基于**近 14 天**国际新闻、AI/科技简报、黑天鹅预警、热门板块、全球情绪指标，结合**上海金/银基准价（SGE）**的**强制贵金属分析**，经多步 **LLM** 输出 **3–5 个投资主题**与**最多 5 只**长期推荐个股，并生成 Markdown + JSON + RAG 索引。
+- **核心职责**: 基于**近 14 天**国际新闻、AI/科技简报、**6 类财经新闻**、黑天鹅预警、热门板块、全球情绪指标，结合**上海金/银基准价（SGE）**与 **油/美元/美债10Y/BTC 温度计 + 官方宏观仪表盘**，经多步 **LLM** 输出 **3–5 个投资主题**与**最多 5 只**长期推荐个股，并生成 Markdown + JSON + RAG 索引。
 - **系统角色**: Stock 子系统中的**中长期主题/宏观驱动**分支，与短期全市场 `scanner.py` 互补；强调**宁缺毋滥**（可无推荐）。
 - **上下游**  
-  - **上游**: 环境变量或默认 `JARVIS_REPORTS_ROOT`（如 `C:/reports/ai`）下的 `YYYY-MM-DD/world-news/world-news-data.json`、`briefing-data.json`；`black_swan_detector`、`hot_sectors`、`market_sentiment`、`akshare` SGE 贵金属、`technical_analysis`、`china_market_data`。  
+  - **上游**: `JARVIS_REPORTS_ROOT` 下 `YYYY-MM-DD/world-news/world-news-data.json`、`briefing-data.json`、**`finance-news/finance-news-data.json`（只读规范路径，不用 `finance_news_data_path` 回退）**；`black_swan_detector`、`hot_sectors`、`market_sentiment`、`akshare` SGE 贵金属与 `macro_usa_*`、Yahoo chart（油/DXY/10Y/BTC，`STOCK_PROXY`）、`technical_analysis`、`china_market_data`。  
   - **下游**: `STOCK_REPORTS_ROOT/long_term/` 下 `YYYY-MM-DD.json`、`-report.md`、`history.json`；RAG `item_type=stock_scan_long`。
 
 ```
-[14日新闻+简报] + [黑天鹅] + [热门板块] + [全球情绪]
+[14日 6类财经+AI简报]（旧world-news静默并入综合市场） + [黑天鹅] + [热门板块] + [全球情绪]
        → 贵金属(SGE) + LLM展望
+       → 温度计(宏观/油/美元/利率/BTC) + 一次合并 LLM 展望
        → LLM 主题 → 主题映射个股 → 基本面过滤 → 逐只 _upside_assessment
        → 取 viable 子集 → LLM 最终精选 ≤5 → 落盘/RAG/历史
 ```
@@ -26,7 +27,7 @@
 
 - **主题投资 (Thematic investing)**: 从政策、技术、地缘、大宗等**长期驱动**归纳**1–3 个月**级机会，优于单只股票的短期噪声；本模块由 LLM 显式输出 `time_horizon`、`catalysts`、`risk`、`confidence`。
 - **贵金属与宏观对冲**: 黄金常被视为**实际利率/货币信用/避险**的定价对象；白银工业属性更强。**金银比**（代码中约 >80 白银相对便宜、<60 白银偏贵）为经典**相对价值**参考，在 A 股映射到有色、资源品情绪。
-- **新闻与预期差**: 世界新闻与 AI 简报代表**信息流**；与 A 股传导通过**政策预期、海外科技映射、避险情绪**等（LLM prompt 要求同时考虑国际与国内政策线）。
+- **新闻与预期差**: 世界新闻、AI 简报与 6 类财经新闻代表**信息流**；与 A 股传导通过**政策预期、海外科技映射、避险情绪、利率与大宗**等。主题 prompt 禁止只凭科技简报出题。
 - **分位与过热**（`_upside_assessment`）: 使用**个股自身历史**的 60 日收益分位、52 周位置、RSI、量价、资金阶段，体现**「白酒涨 50% 与银行涨 25% 意义不同」**的行业自适应思想。
 
 ---
@@ -35,11 +36,12 @@
 
 ### 3.1 核心数据结构
 
-- **信号** `_collect_signals` 返回: `world_news`, `ai_tech_news`（列表项含 `date`, `source_type`, `headline`, `summary` 等）, `black_swan`, `hot_sectors`, `market_sentiment`, `collection_window`。  
-- **贵金属** `_analyze_precious_metals`: `gold`/`silver` 为 `_analyze_metal` 结果，另含 `gold_silver_ratio`, `ratio_signal`。  
+- **信号** `_collect_signals` 返回: `world_news`, `ai_tech_news`, `finance_news`, `finance_by_category`, `black_swan`, `hot_sectors`, `market_sentiment`, `collection_window`。财经项含 `source_id`、优先 `title_zh`。  
+- **贵金属** `_analyze_precious_metals`: `gold`/`silver` 为 `_analyze_series` 结果，另含 `gold_silver_ratio`, `ratio_signal`。  
+- **温度计** `_analyze_all_factors`: `macro` 仪表盘 + `oil`/`dollar`/`rates`/`crypto` 序列 + `llm_outlook`。  
 - **主题** LLM 数组元素: `name`, `logic`, `industries`, `catalysts`, `time_horizon`, `risk`, `confidence` 等（以实际解析为准）。  
 - **候选** `_map_themes_to_candidates`: 每只有 `symbol`, `name`, `theme`, `match_reason`, `time_horizon`, `upside`（由 Step5 填充）等。  
-- **结果 JSON** `_save_results`: `date`, `meta`, `precious_metals`, `themes`, `picks`。
+- **结果 JSON** `_save_results`: `date`, `meta`, `precious_metals`, `factors`, `themes`, `picks`。
 
 ### 3.2 关键函数/类
 
@@ -48,19 +50,26 @@
 | `start_lt_scan(use_deepseek=False)` | 后台线程 `_run_lt_scan`，设 `_use_deepseek`。 |
 | `stop_lt_scan` / `get_lt_status` | 停止与状态。 |
 | `get_lt_latest_result` / `get_lt_result_by_date` / `list_lt_scan_dates` / `get_lt_history` | 查询结果与历史。 |
-| `_collect_signals` | 滚动 14 日读 JSON，拼新闻；拉黑天鹅/热门/情绪。 |
+| `_collect_signals` | 滚动 14 日读世界新闻、AI 简报、**规范 finance-news JSON**；再 `_collect_live_market_signals`。 |
 | `_extract_news_items` | 支持 `categories`/`sections` 与 `list` 两种结构。 |
-| `_analyze_precious_metals` / `_analyze_metal` | SGE 数据、RSI、60 日分位、`upside_score`、趋势标签。 |
-| `_build_signal_summary` | 拼成 LLM 可读长文本（含贵金属摘要）。 |
-| `_llm_theme_analysis` | 主题 JSON 数组。 |
-| `_llm_metals_outlook` | 贵金属 LLM JSON（`llm_outlook` 挂到 `metals`）。 |
+| `_extract_finance_news_items` | 优先 `title_zh` / `summary_zh`，保留 `source_id`。 |
+| `_analyze_precious_metals` / `_analyze_metal` / `_analyze_series` | SGE 或任意 date+price 序列：RSI、60 日分位、`upside_score`、趋势。`None` 安全。 |
+| `_fetch_yahoo_daily` / `_yahoo_chart_to_df` | Yahoo 1y 日线（query1/query2，`STOCK_PROXY`）；DXY 可回退 `DXY`。 |
+| `_build_macro_dashboard` / `_fetch_usa_macro_history` | 官方宏观最新 vs 前值；akshare `macro_usa_*` 软失败。 |
+| `_analyze_all_factors` | 组合宏观仪表盘 + 油/美元/利率/BTC。 |
+| `_build_signal_summary` | 拼 LLM 文本；财经每类最多 20 条，按日期从近到远，同日官方源优先。 |
+| `_theme_system_prompt` / `_llm_theme_analysis` | 主题 JSON；须引用新因子，禁止只凭科技简报。 |
+| `_llm_metals_outlook` | 贵金属 LLM JSON（独立一次调用）。 |
+| `_llm_thermometer_outlook` / `_parse_thermometer_outlook` | 五块合并一次 LLM。 |
 | `_map_themes_to_candidates` | 主题 `industries` 与热门板块名**子串匹配**，取龙头+成分。 |
 | `_filter_candidates` | 全市场 spot 过滤：非 ST、PE 0–200、市值 ≥ 30 亿（`3e9`）。 |
 | `_upside_assessment(symbol)` | 五维加权综合 `upside_score` 与结论文本。 |
 | `_llm_final_selection` | 对最多 20 只候选文本化，要求空间分等，返回 ≤5。 |
 | `_generate_report` / `_save_results` / `_index_report_to_rag` | Markdown、JSON、RAG（chunk 800）。 |
 
-**常量**: `SIGNAL_WINDOW_DAYS=14`, `MAX_PICKS=5`。
+**常量**: `SIGNAL_WINDOW_DAYS=14`, `MAX_PICKS=5`, `FINANCE_CATEGORIES`, `HEADLINES_PER_FINANCE_CAT=20`, `YAHOO_SERIES`, `USA_MACRO_SERIES`。
+
+**贵金属单品种**现由 `_analyze_series` 实现（`_analyze_metal` 只负责 fetch）。油/美元/10Y/BTC 共用同一套统计。
 
 ### 3.3 算法与计算逻辑
 
@@ -75,7 +84,7 @@
 
 **主流程中候选缩减**（`_run_lt_scan_inner`）: 对候选逐一算 `upside` 后，`scored` 为 `upside_score>0`，降序；`min_viable = max(5, len(scored)//2)`，**取前 `min_viable` 只**进最终 LLM（无候选则结束）。这是**动态取半**的启发式，而非固定 Top-K。
 
-**LLM 调用** `_call_llm_json`: DeepSeek 优先（若 `_use_deepseek` 且 key 成功），否则 Ollama，`temperature=0.4`；**JSON 解析**含 markdown 围栏与片段修复。
+**LLM 调用** `_call_llm_json`: DeepSeek 优先（若 `_use_deepseek` 且 key 成功），否则 Ollama，`temperature=0.4`。一次完整扫描 **4 次** LLM：金银展望、温度计展望、主题、终选。
 
 ---
 

@@ -3,7 +3,7 @@
 **用途**: 指导未来新增股票推荐策略（如"事件驱动""打板""定投择时"等），并把它接入统一扫描器 `unified_scanner`，与左侧/右侧并存输出独立报告。
 **最后更新**: 2026-07-01
 
-> 本文是**接口规范 + 模板**，不要求重构现有代码。现有 `scanner.py` / `right_side_scanner.py` 已自然遵循本规范，可直接作为参考实现。
+> 本文是**接口规范 + 模板**，不要求重构现有代码。现有 `scanner.py` / `right_side_scanner.py` 已自然遵循本规范；`ath_rebreak_scanner.py` 是挂在 `unified_scanner` 上的第一套额外插件（第三栏）。
 
 ---
 
