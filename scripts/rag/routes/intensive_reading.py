@@ -125,9 +125,12 @@ def _sniff_format(path: str, ext: str) -> str | None:
 def api_list_books():
     try:
         books = list_books(_books_dir())
-        progress = load_all_progress()
+        progress = load_all_progress(books_dir=_books_dir())
         for b in books:
             bid = b.get("book_id")
+            meta_prog = b.get("progress") if isinstance(b.get("progress"), dict) else None
+            if meta_prog and "chunk_index" in meta_prog:
+                continue
             if bid and bid in progress:
                 b["progress"] = progress[bid]
             else:
@@ -227,7 +230,7 @@ def api_get_book(book_id: str):
     meta = load_meta(_books_dir(), book_id)
     if not meta:
         return jsonify({"error": "Book not found"}), 404
-    prog = load_progress(book_id)
+    prog = load_progress(book_id, books_dir=_books_dir())
     meta["progress"] = prog
     meta["toc"] = load_toc(_books_dir(), book_id)
     return jsonify(meta)
@@ -431,9 +434,15 @@ def api_save_progress():
     chunk_index = int(data.get("chunk_index", 0))
     total = int(data.get("total") or meta.get("chunk_count") or 0)
     title = meta.get("title") or book_id
-    mid = save_progress(book_id, title, chunk_index, total)
-    if mid is None:
-        return jsonify({"ok": False, "warning": "Failed to write conversation memory"}), 200
+    try:
+        mid = save_progress(
+            book_id, title, chunk_index, total, books_dir=_books_dir()
+        )
+    except FileNotFoundError:
+        return jsonify({"error": "Book not found"}), 404
+    except OSError as e:
+        traceback.print_exc()
+        return jsonify({"error": f"Failed to save progress: {e}"}), 500
     return jsonify({"ok": True, "memory_id": mid, "chunk_index": chunk_index})
 
 
@@ -473,6 +482,9 @@ def api_analyze():
             "error": f"Invalid analysis_kind {analysis_kind!r} for book_type {book_type}",
             "allowed": sorted(allowed_kinds(book_type)),
         }), 400
+    learner_reflection = (data.get("learner_reflection") or data.get("reflection") or "")[:8000]
+    if analysis_kind == "socratic" and not str(learner_reflection).strip():
+        return jsonify({"error": "learner_reflection is required for 读后感"}), 400
 
     full_text = chunk.get("text") or ""
     try:
@@ -512,6 +524,7 @@ def api_analyze():
         book_type=book_type,
         learner_level=learner_level,
         output_lang=output_lang,
+        learner_reflection=learner_reflection,
     )
 
     def generate():

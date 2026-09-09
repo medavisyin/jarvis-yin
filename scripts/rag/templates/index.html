@@ -252,6 +252,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
 #irSpeakingBtns button{font-size:0.75em}
 #irSpeakingResult{white-space:pre-wrap;color:#c4c8f0;font-size:0.86em;line-height:1.6}
 #irSpeakingResult .ir-speak-h{color:#8b8fa4;font-size:0.75em;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.04em}
+#irAnalysis .ir-reflection-pane{display:flex;flex-direction:column;gap:10px;min-height:100%}
+#irAnalysis .ir-reflection-notes{width:100%;box-sizing:border-box;background:#12141c;color:#e8eaf2;
+  border:1px solid #3a3d4a;border-radius:6px;padding:8px 10px;font-size:0.86em;line-height:1.5;
+  font-family:inherit;resize:vertical;min-height:88px}
+#irReflectionComment{white-space:pre-wrap;color:#c4c8f0;font-size:0.86em;line-height:1.6}
 .modal-panel{background:#161822;border:1px solid #2a2d3a;border-radius:12px;max-width:680px;width:100%;
              max-height:86vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 12px 40px rgba(0,0,0,.55)}
 .modal-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #2a2d3a}
@@ -1741,7 +1746,7 @@ async function toolbarJiraDaily(btn) {
 var _IR_NOVEL_TABS = [
   {id:'vocab',label:'好词好句'},{id:'plot',label:'情节结构'},{id:'character',label:'人物动机'},
   {id:'narrator',label:'叙事视角'},{id:'culture',label:'社会文化'},{id:'rhetoric',label:'修辞功能'},
-  {id:'socratic',label:'苏格拉底提问'}
+  {id:'socratic',label:'读后感'}
 ];
 var _IR_MAG_TABS = [
   {id:'vocab',label:'好词好句'},{id:'claim_evidence',label:'论点vs论据'},{id:'stance',label:'立场与偏见'},
@@ -1787,13 +1792,41 @@ async function irOnLearnerPrefsChange() {
     showToast('Wait for generation to finish');
     return;
   }
-  irSaveLearnerPrefs();
-  if (!_irState.bookId) return;
+  var oldLevel = irGetLearnerLevel();
+  var oldLang = irGetOutputLang();
+  try {
+    oldLevel = localStorage.getItem('jarvis.ir.learnerLevel') || oldLevel;
+    oldLang = localStorage.getItem('jarvis.ir.outputLang') || oldLang;
+  } catch (e) {}
+  if (!_irState.bookId) {
+    irSaveLearnerPrefs();
+    return;
+  }
+  irCaptureReflection();
   irCaptureSpeakingOral();
+  var keptReflection = ((_irState.analyses.socratic || {}).reflection || '');
+  var keepKind = _irState.activeKind;
+  var keepPinned = !!_irState.tabPinned;
   if (_irState.bookType === 'magazine') {
     await irPersistSpeaking();
   }
-  await irLoadCachedAnalysis(_irState.chunkIndex);
+  if (_irState.analyses.socratic) {
+    await irPersistSlot(_irState.bookId, _irState.chunkIndex, 'socratic', _irState.analyses.socratic, {
+      learnerLevel: oldLevel,
+      outputLang: oldLang
+    });
+  }
+  irSaveLearnerPrefs();
+  await irLoadCachedAnalysis(_irState.chunkIndex, {
+    keepTab: true, kind: keepKind, pinned: keepPinned, skipRender: true
+  });
+  var slot = _irState.analyses.socratic || irEmptyAnalysisSlot();
+  if (keptReflection.trim()) {
+    slot.reflection = keptReflection;
+    _irState.analyses.socratic = slot;
+    await irPersistSlot(_irState.bookId, _irState.chunkIndex, 'socratic', slot);
+  }
+  irRenderTabs();
 }
 function irLoadLearnerPrefs() {
   try {
@@ -1813,7 +1846,7 @@ function irSaveLearnerPrefs() {
 }
 
 function irEmptyAnalysisSlot() {
-  return { text: '', offset: 0, part: 1, hasMore: false, genTrunc: false, lastOffset: 0, status: 'idle', error: '' };
+  return { text: '', offset: 0, part: 1, hasMore: false, genTrunc: false, lastOffset: 0, status: 'idle', error: '', reflection: '' };
 }
 
 function irEmptySpeaking() {
@@ -1888,9 +1921,9 @@ function irRenderTabs() {
       var sp = _irState.speaking || irEmptySpeaking();
       if (_irState.speakingBusy) mark = ' …';
       else if (sp.logic || sp.cue || sp.pressure_attack || sp.pressure_defense) mark = ' ✓';
-    } else if (slot.status === 'done') mark = ' ✓';
-    else if (slot.status === 'running') mark = ' …';
+    } else if (slot.status === 'running') mark = ' …';
     else if (slot.status === 'error') mark = ' !';
+    else if (slot.status === 'done' || (slot.reflection && String(slot.reflection).trim())) mark = ' ✓';
     btn.textContent = t.label + mark;
     btn.dataset.kind = t.id;
     btn.addEventListener('click', function() { irSelectTab(btn.dataset.kind); });
@@ -1906,6 +1939,10 @@ async function irSelectTab(kind) {
     return;
   }
   if (!kind || !_irState.analyses[kind]) return;
+  irCaptureReflection();
+  if (_irState.activeKind === 'socratic' && kind !== 'socratic' && _irState.bookId) {
+    await irPersistSlot(_irState.bookId, _irState.chunkIndex, 'socratic', _irState.analyses.socratic);
+  }
   irCaptureSpeakingOral();
   if (_irState.activeKind === 'speaking' && kind !== 'speaking') {
     await irPersistSpeaking();
@@ -1922,6 +1959,10 @@ function irShowActiveAnalysis() {
   var kind = _irState.activeKind;
   if (kind === 'speaking') {
     irShowSpeakingPane(box);
+    return;
+  }
+  if (kind === 'socratic') {
+    irShowReflectionPane(box);
     return;
   }
   var slot = _irState.analyses[kind] || irEmptyAnalysisSlot();
@@ -1951,6 +1992,81 @@ function irShowActiveAnalysis() {
     msg += (msg ? '\n\n' : '') + 'Error: ' + slot.error;
   }
   irRenderPlainParas(box, msg);
+}
+
+function irCaptureReflection() {
+  var ta = document.getElementById('irReflection');
+  if (!ta) return;
+  var slot = _irState.analyses.socratic;
+  if (!slot) {
+    slot = irEmptyAnalysisSlot();
+    _irState.analyses.socratic = slot;
+  }
+  slot.reflection = ta.value || '';
+}
+
+function irFillReflectionComment(slot) {
+  var el = document.getElementById('irReflectionComment');
+  if (!el) return;
+  slot = slot || irEmptyAnalysisSlot();
+  if (slot.status === 'idle' && !slot.text) {
+    el.textContent = '写完后点「评述」。';
+    return;
+  }
+  if (slot.status === 'running' && !slot.text) {
+    el.textContent = 'Generating…';
+    return;
+  }
+  if (slot.status === 'error' && !slot.text) {
+    el.textContent = 'Error: ' + (slot.error || 'failed');
+    return;
+  }
+  var msg = slot.text || '';
+  if (slot.status === 'running') {
+    el.textContent = msg || 'Generating…';
+    return;
+  }
+  if (slot.status === 'error' && slot.error) {
+    msg += (msg ? '\n\n' : '') + 'Error: ' + slot.error;
+  }
+  irRenderPlainParas(el, msg);
+}
+
+function irShowReflectionPane(box) {
+  if (!box) return;
+  var slot = _irState.analyses.socratic || irEmptyAnalysisSlot();
+  _irState.analyses.socratic = slot;
+  box.innerHTML = '';
+  var pane = document.createElement('div');
+  pane.className = 'ir-reflection-pane';
+  var lab = document.createElement('div');
+  lab.className = 'ir-speak-h';
+  lab.textContent = '你的读后感';
+  pane.appendChild(lab);
+  var ta = document.createElement('textarea');
+  ta.id = 'irReflection';
+  ta.className = 'ir-reflection-notes';
+  ta.placeholder = '用口语写这一章的表述和感悟，也可以提某个单词怎么用……';
+  ta.value = slot.reflection || '';
+  ta.disabled = slot.status === 'running';
+  ta.addEventListener('input', function() {
+    slot.reflection = ta.value || '';
+    irUpdateContinueBtn();
+  });
+  ta.addEventListener('blur', function() {
+    irCaptureReflection();
+    if (_irState.bookId) irPersistSlot(_irState.bookId, _irState.chunkIndex, 'socratic', slot);
+  });
+  pane.appendChild(ta);
+  var commentLab = document.createElement('div');
+  commentLab.className = 'ir-speak-h';
+  commentLab.textContent = '评述';
+  pane.appendChild(commentLab);
+  var comment = document.createElement('div');
+  comment.id = 'irReflectionComment';
+  pane.appendChild(comment);
+  box.appendChild(pane);
+  irFillReflectionComment(slot);
 }
 
 function irCaptureSpeakingOral() {
@@ -2943,6 +3059,11 @@ async function irLoadChunk(chunkIndex) {
     return;
   }
   _irState.chunkLoading = true;
+  irCaptureReflection();
+  var prevSlot = _irState.analyses && _irState.analyses.socratic;
+  if (_irState.bookId && prevSlot && _irState.speakingLoaded) {
+    await irPersistSlot(_irState.bookId, _irState.chunkIndex, 'socratic', prevSlot);
+  }
   irCaptureSpeakingOral();
   if (_irState.bookType === 'magazine') {
     await irPersistSpeaking();
@@ -3006,7 +3127,8 @@ async function irLoadChunk(chunkIndex) {
   }
 }
 
-async function irLoadCachedAnalysis(chunkIndex) {
+async function irLoadCachedAnalysis(chunkIndex, opts) {
+  opts = opts || {};
   irResetAnalyses();
   try {
     var r = await fetch('/api/intensive-reading/books/' + encodeURIComponent(_irState.bookId) +
@@ -3015,7 +3137,11 @@ async function irLoadCachedAnalysis(chunkIndex) {
     if (!r.ok) {
       _irState.speakingLoaded = true;
       _irState.speakingDirty = false;
-      irRenderTabs();
+      if (opts.keepTab && opts.kind && _irState.analyses[opts.kind]) {
+        _irState.activeKind = opts.kind;
+        _irState.tabPinned = !!opts.pinned;
+      }
+      if (!opts.skipRender) irRenderTabs();
       return;
     }
     var tabs = d.tabs || {};
@@ -3031,7 +3157,8 @@ async function irLoadCachedAnalysis(chunkIndex) {
         hasMore: !!s.hasMore,
         genTrunc: !!s.genTrunc,
         lastOffset: typeof s.lastOffset === 'number' ? s.lastOffset : 0,
-        error: s.error || ''
+        error: s.error || '',
+        reflection: s.reflection || ''
       };
     });
     if (d.speaking && typeof d.speaking === 'object') {
@@ -3040,31 +3167,41 @@ async function irLoadCachedAnalysis(chunkIndex) {
         if (d.speaking[k] != null) _irState.speaking[k] = d.speaking[k];
       });
     }
-    // Prefer first analysis tab with content (skip speaking)
-    var pick = (_irState.tabs[0] && _irState.tabs[0].id) || 'vocab';
-    for (var i = 0; i < (_irState.tabs || []).length; i++) {
-      var id = _irState.tabs[i].id;
-      if (id === 'speaking') continue;
-      var slot = _irState.analyses[id];
-      if (slot && slot.text) { pick = id; break; }
+    if (opts.keepTab && opts.kind && _irState.analyses[opts.kind]) {
+      _irState.activeKind = opts.kind;
+      _irState.tabPinned = !!opts.pinned;
+    } else {
+      var pick = (_irState.tabs[0] && _irState.tabs[0].id) || 'vocab';
+      for (var i = 0; i < (_irState.tabs || []).length; i++) {
+        var id = _irState.tabs[i].id;
+        if (id === 'speaking') continue;
+        var slot = _irState.analyses[id];
+        if (slot && (slot.text || (slot.reflection && String(slot.reflection).trim()))) {
+          pick = id;
+          break;
+        }
+      }
+      _irState.activeKind = pick;
+      _irState.tabPinned = false;
     }
-    _irState.activeKind = pick;
-    _irState.tabPinned = false;
   } catch (e) { /* empty cache ok */ }
   _irState.speakingLoaded = true;
   _irState.speakingDirty = false;
-  irRenderTabs();
+  if (!opts.skipRender) irRenderTabs();
 }
 
-async function irPersistSlot(bookId, chunkIndex, kind, slot) {
+async function irPersistSlot(bookId, chunkIndex, kind, slot, keyOpts) {
   if (!bookId || !slot) return;
+  var level = (keyOpts && keyOpts.learnerLevel) || irGetLearnerLevel();
+  var lang = (keyOpts && keyOpts.outputLang) || irGetOutputLang();
+  var cacheKind = (!kind || kind === 'speaking') ? kind : (kind + '__' + level + '__' + lang);
   try {
     var r = await fetch('/api/intensive-reading/books/' + encodeURIComponent(bookId) +
       '/chunks/' + encodeURIComponent(chunkIndex) + '/analysis', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        kind: irTabCacheKey(kind),
+        kind: cacheKind,
         slot: {
           text: slot.text || '',
           status: slot.status || 'idle',
@@ -3074,8 +3211,9 @@ async function irPersistSlot(bookId, chunkIndex, kind, slot) {
           genTrunc: !!slot.genTrunc,
           lastOffset: slot.lastOffset || 0,
           error: slot.error || '',
-          learner_level: irGetLearnerLevel(),
-          output_lang: irGetOutputLang()
+          learner_level: level,
+          output_lang: lang,
+          reflection: slot.reflection || ''
         },
         merge: true
       })
@@ -3147,6 +3285,15 @@ function irUpdateContinueBtn() {
   if (langWrap) langWrap.style.display = 'flex';
   if (gbtn) gbtn.style.display = '';
   var slot = _irState.analyses[_irState.activeKind] || irEmptyAnalysisSlot();
+  if (_irState.activeKind === 'socratic') {
+    if (cbtn) cbtn.style.display = 'none';
+    if (gbtn) {
+      var notes = (slot.reflection || '').trim();
+      gbtn.disabled = irBusy() || !notes;
+      gbtn.textContent = (slot.status === 'done' || slot.text) ? '再评述' : '评述';
+    }
+    return;
+  }
   if (gbtn) {
     gbtn.disabled = irBusy();
     gbtn.textContent = (slot.status === 'done' || slot.text) ? 'Regenerate' : 'Generate';
@@ -3170,6 +3317,11 @@ async function irGenerateActiveTab() {
   if (kind === 'speaking') return;
   if (!kind || !_irState.analyses[kind]) {
     showToast('Select a tab first');
+    return;
+  }
+  irCaptureReflection();
+  if (kind === 'socratic' && !((_irState.analyses.socratic.reflection || '').trim())) {
+    showToast('先写读后感再评述');
     return;
   }
   await irRunAnalyzeKind(kind, { continueMode: false, persist: true });
@@ -3196,6 +3348,7 @@ async function irRunAnalyzeKind(kind, opts) {
   var chunkIndexSnap = _irState.chunkIndex;
   var slot = _irState.analyses[kind] || irEmptyAnalysisSlot();
   _irState.analyses[kind] = slot;
+  irCaptureReflection();
   _irState.analyzing = true;
   slot.status = 'running';
   slot.error = '';
@@ -3241,7 +3394,8 @@ async function irRunAnalyzeKind(kind, opts) {
         part: part,
         previous_analysis: previous,
         learner_level: irGetLearnerLevel(),
-        output_lang: irGetOutputLang()
+        output_lang: irGetOutputLang(),
+        learner_reflection: slot.reflection || ''
       })
     });
     if (!r.ok) {
@@ -3272,7 +3426,12 @@ async function irRunAnalyzeKind(kind, opts) {
               : full;
             slot.text = live;
             if (kind === _irState.activeKind) {
-              document.getElementById('irAnalysis').textContent = live;
+              if (kind === 'socratic') {
+                var liveEl = document.getElementById('irReflectionComment');
+                if (liveEl) liveEl.textContent = live;
+              } else {
+                document.getElementById('irAnalysis').textContent = live;
+              }
             }
           } else if (msg.type === 'error') {
             throw new Error(msg.content || 'Analyze failed');
@@ -3317,7 +3476,8 @@ async function irRunAnalyzeKind(kind, opts) {
       hasMore: !!slot.hasMore,
       genTrunc: !!slot.genTrunc,
       lastOffset: slot.lastOffset || 0,
-      error: slot.error || ''
+      error: slot.error || '',
+      reflection: slot.reflection || ''
     };
     await irPersistSlot(bookIdSnap, chunkIndexSnap, kind, slotSnap);
   }

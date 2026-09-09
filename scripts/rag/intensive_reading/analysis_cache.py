@@ -33,6 +33,7 @@ def empty_slot() -> dict[str, Any]:
         "error": "",
         "learner_level": "",
         "output_lang": "",
+        "reflection": "",
     }
 
 
@@ -104,6 +105,8 @@ def normalize_slot(raw: Any) -> dict[str, Any]:
         out["learner_level"] = str(raw.get("learner_level") or "")
     if "output_lang" in raw:
         out["output_lang"] = str(raw.get("output_lang") or "")
+    if "reflection" in raw:
+        out["reflection"] = str(raw.get("reflection") or "")
     # Never persist "running" across sessions
     if out["status"] == "running":
         out["status"] = "idle" if not out["text"] else "done"

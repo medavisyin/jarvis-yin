@@ -85,7 +85,7 @@ NOVEL_TABS: list[dict[str, str]] = [
     {"id": "narrator", "label": "叙事视角"},
     {"id": "culture", "label": "社会文化"},
     {"id": "rhetoric", "label": "修辞功能"},
-    {"id": "socratic", "label": "苏格拉底提问"},
+    {"id": "socratic", "label": "读后感"},
 ]
 
 MAGAZINE_TABS: list[dict[str, str]] = [
@@ -203,13 +203,16 @@ Task — why this craft choice, not just what device:
 Goal: intention, not "this is a nice simile." No vocabulary list.
 """
 
-_SYSTEM_SOCRATIC = """You are a stern literature professor running a Socratic seminar.
+_SYSTEM_SOCRATIC = """You are a warm, sharp close-reading coach responding to a Chinese learner's informal reading notes (读后感) on THIS passage.
 """ + _BASE_RULES + """
-Task — do NOT summarize the passage. Pose 3 sharp questions that force the learner to take a stand \
-(moral dilemma, authorial manipulation of emotion, identification with a character, thematic judgment).
-For each question: one sentence of why it matters, then leave space for the learner's answer \
-(do not answer for them). Optionally add one follow-up probe under each.
-Goal: the learner forms THEIR reading, not yours. No vocabulary list.
+Task — respond to the learner's notes, not a fresh essay of your own:
+- Engage their take on the chapter/excerpt: what they noticed, felt, or guessed. Agree, complicate, or gently correct using evidence from the passage.
+- If they mention words, phrases, or usage, comment on those specifically (meaning in this sentence, tone, why the author chose them).
+- Answer any questions they asked. If they asked none, still reply to their points.
+- Treat informal / colloquial Chinese as welcome; do not scold register. You may briefly polish a phrase only if it helps them reuse it.
+- Do NOT pose a Socratic questionnaire. Do NOT ignore their notes to dump a generic analysis.
+- Quote short English bits from the passage or from their notes when useful.
+Keep it conversational and focused (short sections or bullets). Suitable for a side panel.
 """
 
 _SYSTEM_CLAIM_EVIDENCE = """You are a journalism / rhetoric coach for magazine close reading (e.g. Economist, New Yorker).
@@ -337,7 +340,7 @@ _KIND_USER_TASK: dict[str, str] = {
     "narrator": "Produce the narrative-lens and reliability analysis for this passage.",
     "culture": "Produce the socio-cultural annotations for this passage.",
     "rhetoric": "Produce the rhetorical-function analysis for this passage.",
-    "socratic": "Pose three Socratic stand-taking questions for this passage (do not answer them).",
+    "socratic": "Respond to the learner's informal reading notes on this passage.",
     "claim_evidence": "Separate claims from evidence in this magazine excerpt.",
     "stance": "Analyze editorial stance and possible bias in this excerpt.",
     "cultural_cues": "Gloss Western cultural cues and assumed background knowledge.",
@@ -357,6 +360,7 @@ def analysis_user_message(
     book_type: str = "novel",
     learner_level: str = "university",
     output_lang: str = "zh",
+    learner_reflection: str = "",
 ) -> str:
     kind = (analysis_kind or KIND_VOCAB).strip().lower()
     cont = ""
@@ -380,6 +384,12 @@ def analysis_user_message(
                 " Write the analysis in Simplified Chinese; "
                 "keep quoted phrases in English."
             )
+    if kind == "socratic":
+        notes = (learner_reflection or "").strip()
+        task += (
+            "\n\nLearner's informal notes (colloquial is OK; respond to THESE notes):\n"
+            f"\"\"\"\n{notes}\n\"\"\""
+        )
     return (
         f"Book/section: {title}\n"
         f"Book type: {book_type}\n"
