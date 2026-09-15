@@ -33,6 +33,9 @@ INDEX_PATH = TOPIC_INDEX_PATH
 SIMILARITY_THRESHOLD = 0.55
 STALE_DAYS = 1
 GRACE_PERIOD_DAYS = 3
+CANDIDATE_LIMIT = 100
+ALIAS_COMPARE_CAP = 8
+TOPIC_DEDUP_TIMEOUT_SECONDS = 180
 
 
 def _normalize(text: str) -> str:
@@ -62,16 +65,60 @@ def _topic_hash(title: str) -> str:
     return hashlib.sha256(normalized.encode()).hexdigest()[:12]
 
 
+def format_filter_subprocess_error(exc: BaseException, stderr: str = "") -> str:
+    """Human-readable step error; do not dump the full argv list."""
+    timeout = getattr(exc, "timeout", None)
+    if timeout is not None:
+        msg = f"timed out after {timeout}s"
+    else:
+        raw = str(exc)
+        if raw.startswith("Command ["):
+            msg = type(exc).__name__
+        else:
+            msg = raw[:300]
+    err = (stderr or "").strip()
+    if err:
+        msg = f"{msg}: {err[-400:]}"
+    return msg[:500]
+
+
 class TopicIndex:
     def __init__(self, path: str = INDEX_PATH):
         self.path = path
         self.data = self._load()
+        self._rebuild_lookup()
 
     def _load(self) -> dict:
         if os.path.exists(self.path):
             with open(self.path, "r", encoding="utf-8") as f:
                 return json.load(f)
         return {"version": 1, "last_updated": "", "topics": {}}
+
+    def _rebuild_lookup(self) -> None:
+        self._title_to_id: Dict[str, str] = {}
+        self._kw_index: Dict[str, set] = {}
+        self._topic_cache: Dict[str, dict] = {}
+        for tid, topic in self.topics.items():
+            self._index_topic(tid, topic)
+
+    def _index_topic(self, tid: str, topic: dict) -> None:
+        aliases = topic.get("aliases") or []
+        titles = [topic.get("canonical_title") or ""] + list(aliases)
+        norms = [_normalize(t) for t in titles if t]
+        keywords: set = set()
+        for t in titles:
+            if t:
+                keywords |= _extract_keywords(t)
+        self._topic_cache[tid] = {
+            "canon": norms[0] if norms else "",
+            "alias_norms": (norms[1:][-ALIAS_COMPARE_CAP:] if len(norms) > 1 else []),
+            "keywords": keywords,
+        }
+        for n in norms:
+            if n:
+                self._title_to_id.setdefault(n, tid)
+        for kw in keywords:
+            self._kw_index.setdefault(kw, set()).add(tid)
 
     def save(self):
         self.data["last_updated"] = date.today().isoformat()
@@ -88,23 +135,41 @@ class TopicIndex:
         Find a matching topic in the index.
         Returns (topic_id, is_new). If no match, topic_id is a new hash and is_new=True.
         """
+        if not getattr(self, "_topic_cache", None) and self.topics:
+            self._rebuild_lookup()
+
         norm_title = _normalize(title)
         new_keywords = _extract_keywords(title + " " + (summary or ""))
+
+        exact_id = self._title_to_id.get(norm_title)
+        if exact_id:
+            return exact_id, False
+
+        counts: Dict[str, int] = {}
+        for kw in new_keywords:
+            for tid in self._kw_index.get(kw, ()):
+                counts[tid] = counts.get(tid, 0) + 1
+        ranked = sorted(counts.items(), key=lambda x: -x[1])[:CANDIDATE_LIMIT]
+        candidate_ids = [tid for tid, _ in ranked]
+        if not candidate_ids:
+            return _topic_hash(title), True
 
         best_id = None
         best_score = 0.0
 
-        for tid, topic in self.topics.items():
-            canon = _normalize(topic["canonical_title"])
+        for tid in candidate_ids:
+            cache = self._topic_cache.get(tid) or {}
+            canon = cache.get("canon") or _normalize(
+                self.topics.get(tid, {}).get("canonical_title", "")
+            )
             title_sim = difflib.SequenceMatcher(None, norm_title, canon).ratio()
-
-            for alias in topic.get("aliases", []):
-                alias_sim = difflib.SequenceMatcher(None, norm_title, _normalize(alias)).ratio()
+            for alias_n in cache.get("alias_norms") or []:
+                alias_sim = difflib.SequenceMatcher(None, norm_title, alias_n).ratio()
                 title_sim = max(title_sim, alias_sim)
+                if title_sim >= 0.92:
+                    break
 
-            existing_keywords = set()
-            for alias in [topic["canonical_title"]] + topic.get("aliases", []):
-                existing_keywords |= _extract_keywords(alias)
+            existing_keywords = cache.get("keywords") or set()
             if new_keywords and existing_keywords:
                 overlap = len(new_keywords & existing_keywords)
                 total = min(len(new_keywords), len(existing_keywords))
@@ -113,7 +178,6 @@ class TopicIndex:
                 keyword_sim = 0
 
             combined = 0.6 * title_sim + 0.4 * keyword_sim
-
             if combined > best_score:
                 best_score = combined
                 best_id = tid
@@ -159,6 +223,7 @@ class TopicIndex:
                 "status": "new",
                 "last_significant_update": today,
             }
+        self._index_topic(topic_id, self.topics[topic_id])
 
     def classify(self, title: str, summary: str = "",
                  today: str = None) -> dict:
@@ -307,13 +372,13 @@ def _run_tests():
                          "HI-MoE: Hierarchical Instance-Conditioned MoE",
                          "2026-04-07", "Introduced MoE for object detection", "Arxiv ML")
 
-        # Test 2: Same topic next day, same info → stale
+        # Test 2: Same topic next day, same info, still in grace period → Continuing
         result2 = idx.classify("HI-MoE: Hierarchical Instance-Conditioned MoE",
                                "MoE for object detection with two-level routing",
                                "2026-04-08")
-        assert result2["classification"] == "stale", f"Expected 'stale', got '{result2['classification']}'"
+        assert result2["classification"] == "updated", f"Expected 'updated', got '{result2['classification']}'"
         assert not result2["is_new"]
-        print(f"  [PASS] Test 2: Same topic, same info -> 'stale'")
+        print(f"  [PASS] Test 2: Same topic within grace period -> 'updated'")
         passed += 1
 
         # Test 3: Same topic with genuinely new information -> updated
@@ -372,6 +437,39 @@ def _run_tests():
         stats = idx.stats()
         assert stats["total"] > 0
         print(f"  [PASS] Test 8: Stats returns valid data (total={stats['total']})")
+        passed += 1
+
+        # Test 9: Timeout errors must not dump argv
+        class _FakeTimeout(Exception):
+            def __init__(self):
+                self.timeout = 60
+                super().__init__("Command ['python', 'filter_topics.py'] timed out after 60 seconds")
+
+        fmt = format_filter_subprocess_error(_FakeTimeout(), stderr="matching")
+        assert "timed out after 60s" in fmt, fmt
+        assert "filter_topics.py" not in fmt, fmt
+        print(f"  [PASS] Test 9: Timeout error formatting omits command argv")
+        passed += 1
+
+        # Test 10: Newest aliases must be eligible for fuzzy match (not oldest 8)
+        json.dump({"version": 1, "last_updated": "", "topics": {}},
+                  open(tmp_path, "w", encoding="utf-8"))
+        idx_alias = TopicIndex(path=tmp_path)
+        idx_alias.update_topic(
+            "mega", "Zebra Unrelated Canonical Title About Banking",
+            "2026-01-01", "initial", "Test")
+        for i in range(8):
+            idx_alias.update_topic(
+                "mega", f"Old Alias Number {i} Completely Different Wording",
+                "2026-01-02", "initial", "Test")
+        idx_alias.update_topic(
+            "mega", "Anthropic Ships New Constitutional Classifiers For Claude",
+            "2026-01-03", "initial", "Test")
+        result10 = idx_alias.classify(
+            "Anthropic Ships Constitutional Classifiers Update For Claude",
+            "", "2026-01-04")
+        assert not result10["is_new"], "Expected newest-alias fuzzy match"
+        print(f"  [PASS] Test 10: Fuzzy match uses newest aliases, not oldest eight")
         passed += 1
 
     finally:

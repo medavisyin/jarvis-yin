@@ -10,7 +10,7 @@ Generates a daily AI industry briefing from 10 authoritative sources, plus world
 - **中国新闻 audio** (`china-news.mp3`) — Chinese political/financial news podcast (Sina, People's Daily)
 - **Glossary updates** — new terms appended to `references/ai-glossary-and-trends.md`
 
-Audio language for each type is configurable via the ⚙ Global Settings popup in the Jarvis UI.
+Audio language for each type is configurable in **Settings** on the Agent UI (`http://localhost:18889/settings`).
 
 All outputs land in `<REPORTS_ROOT>/YYYY-MM-DD/` (default `C:/reports/ai/`, configurable via `JARVIS_REPORTS_ROOT` env var).
 
@@ -166,14 +166,26 @@ set BRIEFING_PROXY=socks5://localhost:10808
 
 An AI-powered assistant that answers questions using context from the local knowledge base (18,000+ indexed chunks), with tool access to Jira, git commits, and Confluence.
 
+The **:18889** UI is a **React SPA** (`web/` — Vite, TypeScript, shadcn/ui). Python still owns every `/api` route (FastAPI via `scripts/rag/web_api.py`). Search UI **:18888** stays Flask.
+
+Frontend suite (how React is wired, how to start it, how it talks to Python): [`docs/implementation/web/`](docs/implementation/web/). Page → `/api` catalog: [`docs/implementation/rag/agent-spa-impl.md`](docs/implementation/rag/agent-spa-impl.md).
+
 ### Start the agent
 
+Build the frontend once (skip if `web/dist/index.html` already exists), then start the API:
+
 ```bash
+cd web
+npm install
+npm run build
+cd ..
 python scripts/rag/agent.py
 # Open http://localhost:18889
 ```
 
-**Default model:** `qwen3.5:4b` via Ollama (switchable in the UI header dropdown)
+After UI code changes, run `npm run build` again and **hard-refresh** the browser. For HMR: keep `agent.py` running and use `cd web && npm run dev` (Vite `:5173` proxies `/api` to 18889).
+
+**Default model:** `qwen3.5:4b` via Ollama (switchable on **Settings**)
 
 ### How it works
 
@@ -201,64 +213,35 @@ python scripts/rag/agent.py
 | LLM inference (qwen3.5:4b, CPU) | ~15-35s |
 | LLM inference (qwen3-vl:8b, CPU) | ~60-100s |
 
-### Toolbar
+### Agent UI (React SPA)
 
-The agent toolbar is organized into five categories:
+Left sidebar: **Chat**, **News**, **Stock**, **Reading**, **Medavis**, **Settings**. News / Stock / Medavis are accordion groups with nested URLs. Theme on Settings: **Day / Night / Reading** (Reading is a global warm-paper preset).
 
-**Medavis** (team tools):
-| Button | Action |
-|--------|--------|
-| Wiki Fetch | Multi-select team members + date range, CQL-based Confluence fetch |
-| Jira Daily | Runs Jira/Confluence report and shows in chat |
-| Commit Summary | Select members + date range, generates git commit analysis |
-| Team Activity | Generates team member activity report |
+| Path | What you get |
+|------|----------------|
+| `/` | Chat (sessions + SSE) |
+| `/news/daily` … `/news/notes` | Daily fetch, AI news, audio, Explain This, trend, finance summary, learning, notes |
+| `/stock/watch` | Watchlist (AG Grid) |
+| `/stock/scan` | Scanners. First button **Left-Right-ATH** = unified left/right/ATH scan (`/api/stock/unified_scan`). **AI scan** is a separate left-side LLM scan (`/api/stock/scan`) |
+| `/stock/weekly` `/analyze` `/national` `/train` | Weekly, single-stock analyze, national team, price train |
+| `/reading` | Intensive reading (Literata passage; analysis cache + 解释) |
+| `/medavis/wiki` … `/projects` | Wiki fetch, Jira, commits, platform updates, team activity, projects |
+| `/settings` | Theme, health, chat model, audio langs, DeepSeek key, finance sources |
 
-**Usage Tools**:
-| Button | Action |
-|--------|--------|
-| Audio from Knowledge | Two-step wizard: pick source type → select documents/chapters → generate ~10 min educational audio with web enrichment |
-| Explain This | Deep-dive explanation of any AI/tech topic using RAG + web search |
-
-**Data Analysis**:
-| Button | Action |
-|--------|--------|
-| Trend Analysis | Predictions based on RAG data across AI news, wiki, Jira, commits |
-| AI News KB | Categorize, track, and summarize AI news items |
-
-**A股分析 & AI预测** (Stock):
-| Button | Action |
-|--------|--------|
-| 股票全面分析 | Full analysis: technical, fundamental, sentiment, ML, LLM synthesis |
-| 自选股管理 | Watchlist CRUD, data refresh, metadata enrichment |
-| AI 股票推荐 | 3-layer market scanner with LLM scoring |
-| 明日价格预测 | XGBoost regression for next-day close/high/low with verification |
-| 市场信号 | Fear & Greed index, VIX, black swan detection |
-
-**Personal**:
-| Button | Action |
-|--------|--------|
-| Daily Fetch | Full pipeline: AI sources + world news + Chinese news + commits + Jira |
-
-**Learning**:
-| Button | Action |
-|--------|--------|
-| AI Learning | Fundamentals-first AI learning with web references |
-| Tech English | Article analysis from AI news for English practice |
-| Casual English | Article analysis from world news for English practice |
-| AWS AIF-C01 | AWS Certified AI Practitioner exam prep: teach/quiz/progress modes |
-| My Notes | Review saved notes from conversations |
+Finance source **editing** lives on Settings, not Daily fetch. Full API table: [`docs/implementation/rag/agent-spa-impl.md`](docs/implementation/rag/agent-spa-impl.md).
 
 ### Conversation Memory
 
 Chat sessions persist across browser refreshes and server restarts. A collapsible sidebar shows recent sessions — click to load, auto-saves after each response. Sessions stored in `<REPORTS_ROOT>/.chat-sessions/`.
 
-For detailed architecture, see [`docs/rag-agent-design.md`](docs/rag-agent-design.md).
+For backend chat internals, see [`docs/implementation/rag/agent-impl.md`](docs/implementation/rag/agent-impl.md). For how the React UI is built and talks to Python, see [`docs/implementation/web/`](docs/implementation/web/).
 
 ### Dependencies
 
 ```bash
-pip install ollama qdrant-client sentence-transformers flask pypdf
+pip install ollama qdrant-client sentence-transformers fastapi uvicorn pypdf
 ollama pull qwen3.5:4b
+cd web && npm install && npm run build
 ```
 
 ---
@@ -370,13 +353,19 @@ The embedding model (`all-MiniLM-L6-v2`, ~80MB) downloads on first use and is ca
 ```
 jarvis/
 ├── README.md                         # This file (human reference)
+├── web/                              # Agent UI (React + Vite + TypeScript + shadcn)
+│   ├── src/                          # Pages, layouts, features
+│   └── dist/                         # Production build served by FastAPI at :18889
 ├── bin/                              # Executable launchers (double-click from Explorer)
 │   ├── jarvis-start.bat              # Start both servers (Search UI + Agent)
 │   ├── jarvis-stop.bat               # Stop both servers
 │   ├── jarvis-restart.bat            # Restart both servers
 │   └── jarvis-servers.bat            # Interactive server manager menu
 ├── docs/
-│   └── rag-agent-design.md           # Jarvis architecture & design document
+│   ├── getting-started.md            # Setup guide
+│   ├── implementation/web/                   # Frontend suite (React Agent UI)
+│   ├── implementation/rag/agent-spa-impl.md  # Page → /api catalog
+│   └── implementation/rag/agent-impl.md      # Agent Python / SSE internals
 ├── references/
 │   ├── knowledge-scope.md            # Your profile — edit to customize depth
 │   └── ai-glossary-and-trends.md     # Living glossary, updated each run
@@ -417,7 +406,9 @@ jarvis/
     │   ├── scanner.py                # 3-layer market scanner
     │   └── llm_reasoning.py          # Ollama narrative synthesis
     └── rag/                          # RAG subsystem
-        ├── agent.py                  # Jarvis — AI assistant with tools & streaming
+        ├── agent.py                  # FastAPI agent: /api + serves web/dist SPA
+        ├── spa_static.py             # Vite dist mount + SPA fallback
+        ├── web_api.py                # Flask-shaped FastAPI helpers
         ├── search_ui.py              # Flask web UI for semantic search (standalone)
         ├── reindex_all.py            # Incremental indexing orchestrator (run daily)
         ├── index_briefing.py         # Indexes briefings into Qdrant RAG store

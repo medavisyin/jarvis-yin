@@ -5,7 +5,7 @@ tags:
   - navigation
 category: hub
 status: current
-last-updated: 2026-05-02
+last-updated: 2026-09-15
 ---
 
 # Jarvis Implementation Documentation
@@ -14,11 +14,21 @@ This folder holds detailed implementation guides for the Jarvis project. Each do
 
 Documentation is organized in two complementary views: **by category** (function-oriented, 25 docs) and **by subsystem** (code-oriented, original docs).
 
+**Frontend is its own suite** — [web/](./web/) — not nested under RAG. RAG still holds the Python agent and the page→`/api` catalog.
+
 ```
 docs/implementation/
 ├── README.md                        # This file
 ├── workflow-overview.md             # Master workflow — routes to all features
 ├── tech-stack-overview.md           # All technologies explained
+│
+├── web/                             # FRONTEND — React Agent UI (`web/` in repo root)
+│   ├── README.md                    # Hub: architecture, run, Python bridge
+│   ├── architecture.md              # Two trees, Vite/React, FastAPI serves dist
+│   ├── react-integration.md         # Pages, shadcn, Tailwind, AG Grid, themes
+│   ├── run-and-serve.md             # npm build/dev, agent.py, hard-refresh
+│   ├── request-flow.md              # React fetch → FastAPI (JSON / SSE / jobs)
+│   └── python-bridge.md             # fetch / SSE / jobs → /api/*
 │
 ├── medavis/                         # MEDAVIS — Work / Enterprise functions
 │   ├── confluence-impl.md           # Confluence search & indexing
@@ -63,6 +73,7 @@ docs/implementation/
 │   ├── reindex-all-impl.md          # reindex_all.py orchestration
 │   ├── search-ui-impl.md            # search_ui.py
 │   ├── agent-impl.md                # agent.py
+│   ├── agent-spa-impl.md            # Page → /api catalog (design: ../web/)
 │   ├── eval-datasets-impl.md        # RAG evaluation & HF datasets integration
 │   ├── learning-features-impl.md    # Learning modes (AI, English, AWS Cert, Notes)
 │   └── global-settings-impl.md     # Global settings UI + audio language
@@ -93,6 +104,20 @@ docs/implementation/
 
 ## Function-Oriented Documentation (by Category)
 
+### FRONTEND — React Agent UI (`web/`)
+
+The live UI at **http://127.0.0.1:18889/**. Search UI **:18888** is Flask and stays under USAGE TOOL / RAG.
+
+| Document | Description |
+|----------|-------------|
+| [web/README.md](./web/) | Hub — how React is wired, how to start it, how it talks to Python |
+| [architecture.md](./web/architecture.md) | Two trees (`web/` vs `scripts/`), SPA mount, AppShell layers |
+| [react-integration.md](./web/react-integration.md) | Adding pages, shadcn components, Tailwind, AG Grid, themes |
+| [run-and-serve.md](./web/run-and-serve.md) | `npm run build`, `agent.py`, Vite HMR, troubleshooting |
+| [request-flow.md](./web/request-flow.md) | How a React click becomes `fetch` → FastAPI → JSON / SSE / job poll |
+| [python-bridge.md](./web/python-bridge.md) | `apiJson` / SSE / jobs; same-origin `/api`; no CORS in production |
+| [agent-spa-impl.md](./rag/agent-spa-impl.md) | Route table + every page’s `/api` map |
+
 ### MEDAVIS — Work / Enterprise (6 functions)
 
 | # | Document | Description |
@@ -108,7 +133,7 @@ docs/implementation/
 
 | # | Document | Description |
 |---|----------|-------------|
-| 6 | [rag-agent-impl.md](./usage-tool/rag-agent-impl.md) | RAG agent — user-facing chat UX, SSE streaming, intent routing, session persistence. See also [rag/agent-impl.md](./rag/agent-impl.md) for backend internals. |
+| 6 | [rag-agent-impl.md](./usage-tool/rag-agent-impl.md) | RAG agent — user-facing chat UX, SSE streaming, intent routing, session persistence. Backend: [rag/agent-impl.md](./rag/agent-impl.md). Frontend suite: [web/](./web/). API catalog: [rag/agent-spa-impl.md](./rag/agent-spa-impl.md). |
 | 7 | [search-ui-impl.md](./usage-tool/search-ui-impl.md) | Search UI — user-facing search experience, result display, feedback loop, library management. See also [rag/search-ui-impl.md](./rag/search-ui-impl.md) for backend internals. |
 | 8 | [reindex-all-impl.md](./usage-tool/reindex-all-impl.md) | Reindex orchestration — user-facing CLI and toolbar triggers, manifest-based orchestration. See also [rag/reindex-all-impl.md](./rag/reindex-all-impl.md) for backend internals. |
 | 9 | [custom-indexing-impl.md](./usage-tool/custom-indexing-impl.md) | Custom file indexing — CLI to add/scan/list/remove PDF/Markdown files with YAML front matter support. |
@@ -147,6 +172,17 @@ docs/implementation/
 
 ## Subsystem-Oriented Documentation (by Code Area)
 
+### Frontend (`web/`)
+
+| Document | Description |
+|----------|-------------|
+| [web/README.md](./web/) | Frontend hub. |
+| [architecture.md](./web/architecture.md) | React SPA served by FastAPI; production vs Vite HMR. |
+| [react-integration.md](./web/react-integration.md) | Component layers, shadcn, routing, themes, Vitest. |
+| [run-and-serve.md](./web/run-and-serve.md) | Install, build, start, hard-refresh, troubleshooting. |
+| [request-flow.md](./web/request-flow.md) | React click → `fetch` → FastAPI (JSON, SSE, start+poll). |
+| [python-bridge.md](./web/python-bridge.md) | How the browser calls Python `/api` (JSON, SSE, jobs). |
+
 ### RAG Indexers
 
 | Document | Description |
@@ -157,7 +193,8 @@ docs/implementation/
 | [index-custom-impl.md](./rag/index-custom-impl.md) | Implementation of `index_custom.py` for custom source indexing. |
 | [reindex-all-impl.md](./rag/reindex-all-impl.md) | How `reindex_all.py` orchestrates full or partial reindexing. |
 | [search-ui-impl.md](./rag/search-ui-impl.md) | Implementation of `search_ui.py` (embedding, Qdrant search, Flask UI). |
-| [agent-impl.md](./rag/agent-impl.md) | Implementation of `agent.py` — thin Flask orchestrator (~1,405 lines) with routes extracted to Blueprints (`routes/`), query pipeline (`pipeline.py`), conversation memory (`memory/`), intent classification, tool dispatch. |
+| [agent-impl.md](./rag/agent-impl.md) | Implementation of `agent.py` — FastAPI orchestrator with Blueprints, query pipeline, memory. Frontend: [web/](./web/). API map: [agent-spa-impl.md](./rag/agent-spa-impl.md). |
+| [agent-spa-impl.md](./rag/agent-spa-impl.md) | Page → `/api` catalog for Chat, News, Stock, Reading, Medavis, Settings. |
 | [eval-datasets-impl.md](./rag/eval-datasets-impl.md) | RAG evaluation & data management — HF `datasets` integration, precision/recall/MRR metrics, CLI tools. |
 | [learning-features-impl.md](./rag/learning-features-impl.md) | Learning modes: AI Learning, Tech English, Casual English, AWS AIF-C01 Cert, Notes system. |
 | [global-settings-impl.md](./rag/global-settings-impl.md) | Global settings popup: audio language selection for AI Briefing, World News, Chinese News, Knowledge audio. |
@@ -202,10 +239,11 @@ The stock module keeps **data and model computation on the machine**; the **opti
 
 1. **[workflow-overview.md](./workflow-overview.md)** — Start here for the master workflow diagram connecting all 25+ features with links to each detailed doc.
 2. **[tech-stack-overview.md](./tech-stack-overview.md)** — Architecture, data flow, and which scripts touch which systems.
-3. **Category docs** — Pick the category matching your interest (MEDAVIS, USAGE TOOL, DATA ANALYSIS, PERSONAL, LEARNING) and read the relevant function docs.
-4. **Briefing pipeline** — Follow [fetcher-pattern-impl.md](./briefing-pipeline/fetcher-pattern-impl.md), then [pipeline-orchestration-impl.md](./briefing-pipeline/pipeline-orchestration-impl.md), then [topic-dedup-impl.md](./briefing-pipeline/topic-dedup-impl.md) and [output-generation-impl.md](./briefing-pipeline/output-generation-impl.md) if you work on sources, merge, or PDF/audio/video output.
-5. **RAG** — Read [reindex-all-impl.md](./rag/reindex-all-impl.md) for orchestration, then the specific indexer doc (`index-*-impl.md`) you are changing; finish with [search-ui-impl.md](./rag/search-ui-impl.md) and [agent-impl.md](./rag/agent-impl.md) for query paths.
+3. **Frontend** — Forgotten React/`fetch`/`apiJson`? Read **[../learning/frontend/](../learning/frontend/)** first. Then [web/](./web/) (architecture → run-and-serve → [request-flow](./web/request-flow.md) → python-bridge) and the [API catalog](./rag/agent-spa-impl.md).
+4. **Category docs** — Pick the category matching your interest (MEDAVIS, USAGE TOOL, DATA ANALYSIS, PERSONAL, LEARNING) and read the relevant function docs.
+5. **Briefing pipeline** — Follow [fetcher-pattern-impl.md](./briefing-pipeline/fetcher-pattern-impl.md), then [pipeline-orchestration-impl.md](./briefing-pipeline/pipeline-orchestration-impl.md), then [topic-dedup-impl.md](./briefing-pipeline/topic-dedup-impl.md) and [output-generation-impl.md](./briefing-pipeline/output-generation-impl.md) if you work on sources, merge, or PDF/audio/video output.
+6. **RAG** — Read [reindex-all-impl.md](./rag/reindex-all-impl.md) for orchestration, then the specific indexer doc (`index-*-impl.md`) you are changing; finish with [search-ui-impl.md](./rag/search-ui-impl.md) and [agent-impl.md](./rag/agent-impl.md) (Python chat path).
 
 ## Prerequisites
 
-New to embeddings, vector search, Flask, Playwright, local LLMs, or PDF tooling? The **[learning guides](../learning/)** are organized by topic (RAG, LLM, ML, Hugging Face, Python Web, Data Acquisition). They are written to support the implementation docs and reduce the need to read upstream documentation from scratch. After that, [tech-stack-overview.md](./tech-stack-overview.md) ties those concepts to Jarvis-specific paths, ports, and filenames.
+New to embeddings, vector search, **React / `apiJson`**, Flask, Playwright, local LLMs, or PDF tooling? The **[learning guides](../learning/)** are organized by topic (RAG, LLM, ML, Hugging Face, **[Frontend](../learning/frontend/)**, Python Web, Data Acquisition). They are written to support the implementation docs and reduce the need to read upstream documentation from scratch. After that, [tech-stack-overview.md](./tech-stack-overview.md) ties those concepts to Jarvis-specific paths, ports, and filenames.

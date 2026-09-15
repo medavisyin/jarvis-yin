@@ -17,6 +17,10 @@ import importlib.util
 import os
 import sys
 
+_scripts_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+if _scripts_dir not in sys.path:
+    sys.path.insert(0, _scripts_dir)
+
 _parent_config = os.path.join(os.path.dirname(__file__), "..", "config.py")
 _spec = importlib.util.spec_from_file_location("jarvis_config", _parent_config)
 _mod = importlib.util.module_from_spec(_spec)
@@ -82,11 +86,11 @@ def get_deepseek_key() -> str:
 
 def _get_deepseek_client():
     """Create an OpenAI client configured for the DeepSeek API."""
-    from openai import OpenAI
+    from tracing import make_openai_client
     key = get_deepseek_key()
     if not key:
         return None
-    return OpenAI(api_key=key, base_url=DEEPSEEK_BASE_URL)
+    return make_openai_client(api_key=key, base_url=DEEPSEEK_BASE_URL)
 
 
 def call_deepseek(system_prompt: str, user_prompt: str,

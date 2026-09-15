@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 import tempfile
 import traceback
-
-from flask import Blueprint, Response, jsonify, request
 
 _ROUTES_DIR = os.path.dirname(os.path.abspath(__file__))
 _RAG_DIR = os.path.dirname(_ROUTES_DIR)
@@ -16,6 +15,8 @@ _SCRIPTS_DIR = os.path.dirname(_RAG_DIR)
 for _p in (_SCRIPTS_DIR, _RAG_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+from web_api import Blueprint, Response, jsonify, request
 
 from config import BOOKS_ROOT, JARVIS_ROOT
 
@@ -39,6 +40,15 @@ from intensive_reading.ingest import (
     update_meta_fields,
 )
 from intensive_reading.progress import load_all_progress, load_progress, save_progress
+from intensive_reading.speak import (
+    can_pad_silence,
+    edge_rate_for,
+    prepend_silence_mp3,
+    speak_text_for_tts,
+    synthesize_speech,
+    validate_speak_text,
+)
+from tts_voices import resolve_tts_voice
 from intensive_reading.prompts import (
     PASSAGE_WINDOW,
     KIND_VOCAB,
@@ -57,6 +67,7 @@ from intensive_reading.prompts import (
 )
 
 intensive_reading_bp = Blueprint("intensive_reading", __name__)
+_log = logging.getLogger(__name__)
 
 ALLOWED_EXT = {".pdf", ".epub"}
 MAX_UPLOAD_MB = 80
@@ -807,3 +818,41 @@ def api_speaking():
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _speak_voice_en() -> str:
+    gender = "female"
+    try:
+        import agent as agent_mod
+
+        gs = getattr(agent_mod, "_GLOBAL_SETTINGS", None) or {}
+        if isinstance(gs, dict) and gs.get("audio_voice_en"):
+            gender = gs.get("audio_voice_en")
+    except Exception:
+        pass
+    return resolve_tts_voice("en", gender)
+
+
+@intensive_reading_bp.route("/api/intensive-reading/speak", methods=["POST"])
+def api_speak_selection():
+    data = request.get_json(silent=True) or {}
+    try:
+        text = validate_speak_text(data.get("text"))
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    rate = edge_rate_for(data.get("rate"))
+    pad = can_pad_silence()
+    spoken = speak_text_for_tts(text, pad_silence=pad)
+    try:
+        audio = synthesize_speech(text=spoken, voice=_speak_voice_en(), rate=rate)
+        if pad:
+            audio = prepend_silence_mp3(audio)
+    except TimeoutError:
+        _log.warning("intensive-reading speak timed out")
+        return jsonify({"error": "TTS timed out"}), 504
+    except Exception:
+        _log.exception("intensive-reading speak failed")
+        return jsonify({"error": "TTS failed"}), 502
+    if not audio:
+        return jsonify({"error": "TTS produced no audio"}), 502
+    return Response(audio, mimetype="audio/mpeg")

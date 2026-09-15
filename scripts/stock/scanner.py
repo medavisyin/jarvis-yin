@@ -51,6 +51,7 @@ LAYER2_BATCH = 20
 LAYER2_CANDIDATE_CAP = 100
 LAYER3_CAP = 30
 MIN_BUYABILITY_SCORE = 60
+LEFT_NEAR_20D_HIGH_VETO_PCT = -5.0
 
 _scan_lock = threading.Lock()
 _scan_thread: threading.Thread | None = None
@@ -67,6 +68,63 @@ def _sina_prefix(symbol: str) -> str:
     if symbol.startswith(("6", "5", "9")):
         return "sh"
     return "sz"
+
+
+def _rsi_from_indicator_df(df) -> tuple[float | None, bool]:
+    """Read RSI from compute_indicators output (column rsi_14)."""
+    if df is None or len(df) == 0:
+        return None, False
+    col = "rsi_14" if "rsi_14" in df.columns else ("RSI" if "RSI" in df.columns else None)
+    if col is None:
+        return None, False
+    raw = df[col].iloc[-1]
+    try:
+        if raw is None or pd.isna(raw):
+            return None, False
+        rsi_f = float(raw)
+    except (TypeError, ValueError):
+        return None, False
+    return rsi_f, rsi_f > 75
+
+
+def _attach_left_position_metrics(stock: dict, df) -> None:
+    if df is None or len(df) < 5 or "close" not in df.columns:
+        return
+    close = float(df["close"].iloc[-1])
+    high_s = df["high"] if "high" in df.columns else df["close"]
+    n20 = min(20, len(df))
+    hx = float(high_s.tail(n20).max())
+    if hx and not pd.isna(close) and not pd.isna(hx):
+        stock["dd_20"] = round((close / hx - 1) * 100, 2)
+    if len(df) >= 21:
+        prev = float(df["close"].iloc[-21])
+        if prev:
+            stock["ret_20d"] = round((close / prev - 1) * 100, 2)
+
+
+def left_side_chase_veto_reason(stock: dict) -> str | None:
+    """Hard-reject left-side buys sitting within 5% of the 20-day high."""
+    dd = stock.get("dd_20")
+    try:
+        dd_f = float(dd) if dd is not None else None
+    except (TypeError, ValueError):
+        dd_f = None
+    if dd_f is None or pd.isna(dd_f):
+        return "距20日高未知，禁止买入"
+    if dd_f > LEFT_NEAR_20D_HIGH_VETO_PCT:
+        return f"距20日高仅{dd_f:.1f}%，高位禁买"
+    return None
+
+
+def apply_left_side_chase_veto(stock: dict) -> dict:
+    reason = left_side_chase_veto_reason(stock)
+    if reason and stock.get("verdict") == "买入":
+        stock = dict(stock)
+        stock["verdict"] = "观望"
+        stock["veto_reason"] = reason
+        prev = str(stock.get("reasoning") or "").strip()
+        stock["reasoning"] = f"{prev} [否决:{reason}]".strip()
+    return stock
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +351,8 @@ def _enrich_one(stock: dict) -> dict:
             fetch_daily_ohlcv(sym)
             _sc_ohlcv.mark_ohlcv(sym)
         df = load_ohlcv(sym)
+        if df is not None:
+            _attach_left_position_metrics(stock, df)
         if df is not None and len(df) >= 30:
             df = compute_indicators(df)
             sig = evaluate_signals(df)
@@ -303,11 +363,9 @@ def _enrich_one(stock: dict) -> dict:
             tech_score = (bullish - bearish) * 10 + 50
             tech_score = max(0, min(100, tech_score))
 
-            if "RSI" in df.columns and len(df) > 0:
-                rsi_val = df["RSI"].iloc[-1]
-                if rsi_val and rsi_val > 75:
-                    overbought = True
-                    tech_score = max(0, tech_score - 20)
+            rsi_val, overbought = _rsi_from_indicator_df(df)
+            if overbought:
+                tech_score = max(0, tech_score - 20)
     except Exception as e:
         log.warning("  %s 技术分析失败: %s", sym, e)
 
@@ -404,7 +462,7 @@ def _enrich_one(stock: dict) -> dict:
         "ff_signals": ff_signals,
         "ff_data_missing": ff_data_missing,
         "sentiment_score": sentiment_score,
-        "rsi": round(rsi_val, 1) if rsi_val else None,
+        "rsi": None if rsi_val is None else round(rsi_val, 1),
         "overbought": overbought,
         "signals": signals,
     })
@@ -502,6 +560,13 @@ def _layer3_llm_rank(candidates: list[dict]) -> list[dict]:
     if overbought_rejected:
         log.info("Layer 3: 排除 %d 只超买股票 (RSI>75)", len(overbought_rejected))
 
+    chase_rejected = [c for c in viable if left_side_chase_veto_reason(c)]
+    viable = [c for c in viable if not left_side_chase_veto_reason(c)]
+    for stock in chase_rejected:
+        stock["veto_reason"] = left_side_chase_veto_reason(stock)
+    if chase_rejected:
+        log.info("Layer 3: 排除 %d 只高位票 (距20日高不足5%%或未知)", len(chase_rejected))
+
     candidates_sorted = sorted(viable, key=lambda x: x.get("score_l2", 0), reverse=True)
     top = candidates_sorted[:LAYER3_CAP]
 
@@ -542,6 +607,8 @@ def _layer3_llm_rank(candidates: list[dict]) -> list[dict]:
         except (TypeError, ValueError):
             return True
         return False
+
+    all_evaluated = [apply_left_side_chase_veto(s) for s in all_evaluated]
 
     buyable = [s for s in all_evaluated
                if s.get("verdict") == "买入"
@@ -699,6 +766,8 @@ def _build_deepseek_scoring_prompt(stock: dict) -> str:
 【行情快照】
   最新价: ¥{price}
   今日涨跌: {stock.get('change_pct', 'N/A')}%
+  近20日涨幅: {stock.get('ret_20d', 'N/A')}%
+  距20日高点: {stock.get('dd_20', 'N/A')}%
   换手率: {stock.get('turnover_rate', 'N/A')}%
   成交额: {_format_amount(stock.get('amount'))}
   市盈率(PE): {stock.get('pe', 'N/A')}
@@ -825,6 +894,8 @@ def _build_scoring_prompt(stock: dict) -> str:
 - 股票: {stock['name']} ({stock['symbol']})
 - 最新价: ¥{price}
 - 涨跌幅: {stock.get('change_pct', 'N/A')}%
+- 近20日涨幅: {stock.get('ret_20d', 'N/A')}%
+- 距20日高点: {stock.get('dd_20', 'N/A')}%
 - 换手率: {stock.get('turnover_rate', 'N/A')}%
 - 市盈率(PE): {stock.get('pe', 'N/A')}
 - RSI: {rsi_text}

@@ -49,6 +49,11 @@ if /I "%TARGET%"=="ALL" (
 
 timeout /t 3 /nobreak >nul
 
+if /I not "%TARGET%"=="UI" if /I not "%TARGET%"=="TELEGRAM" (
+    echo Ensuring Agent UI ^(web/dist^) is built...
+    "%PYTHON%" "%SCRIPT_DIR%..\scripts\rag\ensure_web_dist.py"
+)
+
 if /I "%TARGET%"=="ALL" (
     call :StartUI
     timeout /t 2 /nobreak >nul
@@ -99,12 +104,12 @@ exit /b 0
 
 :StartUI
 echo Starting Search UI (port %PORT_UI%)...
-start "Jarvis Search" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\rag\search_ui.py" %PORT_UI%
+start "Jarvis Search" /D "%SCRIPT_DIR%.." cmd /k ""%PYTHON%" "scripts\rag\search_ui.py" %PORT_UI%"
 exit /b 0
 
 :StartAgent
 echo Starting Agent (port %PORT_AGENT%, LAN --host 0.0.0.0)...
-start "Jarvis Agent" /min "%PYTHON%" "%SCRIPT_DIR%..\scripts\rag\agent.py" %PORT_AGENT% --host 0.0.0.0
+start "Jarvis Agent" /D "%SCRIPT_DIR%.." cmd /k ""%PYTHON%" "scripts\rag\agent.py" %PORT_AGENT% --host 0.0.0.0"
 exit /b 0
 
 :StartTelegram

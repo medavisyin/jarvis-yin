@@ -42,6 +42,31 @@ def _today_str() -> str:
     return datetime.now().strftime("%Y%m%d")
 
 
+def dataframe_as_of_date(
+    df: pd.DataFrame | None,
+    columns: tuple[str, ...] = ("日期", "统计日期", "date"),
+) -> str | None:
+    """Return YYYY-MM-DD from the last non-null value of the first matching column."""
+    if df is None or df.empty:
+        return None
+    for col in columns:
+        if col not in df.columns:
+            continue
+        series = df[col].dropna()
+        if series.empty:
+            continue
+        raw = str(series.iloc[-1]).strip()
+        if not raw or raw.lower() == "nan":
+            continue
+        if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
+            return raw[:10]
+        digits = "".join(ch for ch in raw if ch.isdigit())[:8]
+        if len(digits) == 8:
+            return _normalize_date(digits)
+        return raw
+    return None
+
+
 def _cache_fresh(path: str, max_age_hours: float = 12) -> bool:
     """Check if a cache file exists and is fresh enough."""
     if not os.path.isfile(path):
@@ -268,6 +293,53 @@ def stock_fund_flow_signals(symbol: str) -> dict:
     return result
 
 
+_ACCUM_MAX_RET_20D_PCT = 10.0
+
+
+def _closes_from_ohlcv_df(df: pd.DataFrame | None) -> list[float] | None:
+    if df is None or df.empty:
+        return None
+    work = df.copy()
+    date_col = next((c for c in ("日期", "date", "Date") if c in work.columns), None)
+    if date_col:
+        work[date_col] = pd.to_datetime(work[date_col], errors="coerce")
+        work = work.dropna(subset=[date_col]).sort_values(date_col)
+    col = next((c for c in ("收盘", "close", "Close") if c in work.columns), None)
+    if col is None:
+        return None
+    closes = pd.to_numeric(work[col], errors="coerce").dropna().tolist()
+    return closes if len(closes) >= 5 else None
+
+
+def _load_local_daily_closes(symbol: str) -> list[float] | None:
+    path = os.path.join(STOCK_DATA_DIR, symbol, "daily.csv")
+    if not os.path.isfile(path):
+        return None
+    try:
+        df = pd.read_csv(path, encoding="utf-8-sig")
+    except Exception:
+        return None
+    return _closes_from_ohlcv_df(df)
+
+
+def _fetch_akshare_closes(symbol: str) -> list[float] | None:
+    try:
+        hist = ak.stock_zh_a_hist(
+            symbol=symbol,
+            period="daily",
+            start_date=(datetime.now() - timedelta(days=90)).strftime("%Y%m%d"),
+            end_date=datetime.now().strftime("%Y%m%d"),
+            adjust="qfq",
+        )
+    except Exception:
+        return None
+    return _closes_from_ohlcv_df(hist)
+
+
+def _closes_for_accumulation(symbol: str) -> list[float] | None:
+    return _load_local_daily_closes(symbol) or _fetch_akshare_closes(symbol)
+
+
 def detect_smart_money_accumulation(symbol: str, ff_df: pd.DataFrame,
                                      net_col: str, pct_col: str = None) -> dict:
     """检测聪明钱布局期信号 — 资金进但价格不涨。
@@ -275,10 +347,12 @@ def detect_smart_money_accumulation(symbol: str, ff_df: pd.DataFrame,
     核心逻辑:
       - 资金持续流入 (3日/5日主力净流入 > 0)
       - 价格横盘或微跌 (近5日涨幅 < 2%)
-      - 两者背离越大 = 吸筹信号越强
+      - 近20日涨幅过大则不得标为布局期（避免高位横盘冒充吸筹）
+      - 价格数据缺失时失败闭合，禁止把涨幅当成 0% 横盘
 
     Returns dict with:
-      - smart_money_phase: "布局期" / "拉升期" / "出货期" / "无信号"
+      - smart_money_phase: "布局期" / "拉升期" / "出货期" / "观察期" / "无信号"
+        价格数据缺失或 20 日涨幅过大时为观察期，绝不把缺失涨幅当成 0% 横盘。
       - accumulation_score: 0-100
       - accumulation_signal: True/False (upgraded)
       - fund_price_divergence: 资金强度与价格变化的背离度
@@ -288,6 +362,7 @@ def detect_smart_money_accumulation(symbol: str, ff_df: pd.DataFrame,
         "smart_money_phase": "无信号",
         "accumulation_score": 0,
         "fund_price_divergence": 0,
+        "accumulation_signal": False,
         "detail": "",
     }
 
@@ -303,21 +378,22 @@ def detect_smart_money_accumulation(symbol: str, ff_df: pd.DataFrame,
 
     positive_days_5 = sum(1 for v in vals[-5:] if v > 0)
 
-    try:
-        import akshare as _ak
-        hist = _ak.stock_zh_a_hist(symbol=symbol, period="daily",
-                                    start_date=(datetime.now() - timedelta(days=15)).strftime("%Y%m%d"),
-                                    end_date=datetime.now().strftime("%Y%m%d"), adjust="qfq")
-        if hist is not None and len(hist) >= 5:
-            closes = pd.to_numeric(hist["收盘"], errors="coerce").tolist()
-            price_chg_5d = (closes[-1] - closes[-5]) / closes[-5] * 100 if closes[-5] else 0
-            price_chg_3d = (closes[-1] - closes[-3]) / closes[-3] * 100 if closes[-3] else 0
-        else:
-            price_chg_5d = 0
-            price_chg_3d = 0
-    except Exception:
-        price_chg_5d = 0
-        price_chg_3d = 0
+    closes = _closes_for_accumulation(symbol)
+    if not closes:
+        result["smart_money_phase"] = "观察期"
+        result["detail"] = "价格数据缺失，禁止默认横盘"
+        return result
+
+    last = closes[-1]
+    prev5 = closes[-5]
+    if not prev5:
+        result["smart_money_phase"] = "观察期"
+        result["detail"] = "价格数据缺失，禁止默认横盘"
+        return result
+    price_chg_5d = (last - prev5) / prev5 * 100
+    price_chg_20d = None
+    if len(closes) >= 21 and closes[-21]:
+        price_chg_20d = (last - closes[-21]) / closes[-21] * 100
 
     fund_strength = 0
     if net_5d > 0:
@@ -352,12 +428,23 @@ def detect_smart_money_accumulation(symbol: str, ff_df: pd.DataFrame,
     result["accumulation_score"] = accum_score
 
     if fund_strength >= 50 and price_chg_5d < 2:
-        result["smart_money_phase"] = "布局期"
-        result["accumulation_signal"] = True
-        if price_chg_5d < 0:
-            result["detail"] = f"资金持续流入(5日{positive_days_5}天净流入)但股价微跌{price_chg_5d:.1f}%，典型吸筹模式"
+        if price_chg_20d is not None and price_chg_20d > _ACCUM_MAX_RET_20D_PCT:
+            result["smart_money_phase"] = "观察期"
+            result["accumulation_signal"] = False
+            result["detail"] = (
+                f"近20日已涨{price_chg_20d:.1f}%，不视为吸筹横盘"
+            )
         else:
-            result["detail"] = f"资金持续流入(5日{positive_days_5}天净流入)股价横盘({price_chg_5d:+.1f}%)，主力悄悄建仓"
+            result["smart_money_phase"] = "布局期"
+            result["accumulation_signal"] = True
+            if price_chg_5d < 0:
+                result["detail"] = (
+                    f"资金持续流入(5日{positive_days_5}天净流入)但股价微跌{price_chg_5d:.1f}%，典型吸筹模式"
+                )
+            else:
+                result["detail"] = (
+                    f"资金持续流入(5日{positive_days_5}天净流入)股价横盘({price_chg_5d:+.1f}%)，主力悄悄建仓"
+                )
     elif fund_strength >= 40 and price_chg_5d > 5:
         result["smart_money_phase"] = "拉升期"
         result["accumulation_signal"] = False
@@ -1055,10 +1142,12 @@ def national_team_monitor(force_refresh: bool = False) -> dict:
         "signals": {"broad_total_change": "无数据", "anomalies": []},
         "fetched_at": datetime.now().isoformat(),
         "force_refresh": force_refresh,
+        "sse_stat_date": None,
     }
 
     sse_df = fetch_etf_shares_sse(force_refresh=force_refresh)
     szse_df = fetch_etf_shares_szse(force_refresh=force_refresh)
+    result["sse_stat_date"] = dataframe_as_of_date(sse_df, columns=("统计日期", "日期"))
 
     broad_total = 0
     sector_total = 0
@@ -1686,6 +1775,7 @@ def national_team_fund_signals(force_refresh: bool = False) -> dict:
                     "consecutive_inflow": consecutive,
                     "consecutive_outflow": consec_out,
                     "signal": signal,
+                    "latest_date": dataframe_as_of_date(df_flow, columns=("日期", "date")),
                 }
     except Exception as e:
         log.warning("国家队资金信号-大盘资金流获取失败: %s", e)

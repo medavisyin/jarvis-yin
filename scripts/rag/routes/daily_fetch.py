@@ -11,8 +11,6 @@ import sys
 import threading
 import uuid as _uuid
 from datetime import datetime, timedelta
-from flask import Blueprint, jsonify, request
-
 _ROUTES_DIR = os.path.dirname(os.path.abspath(__file__))
 _RAG_DIR = os.path.dirname(_ROUTES_DIR)
 _SCRIPTS_DIR = os.path.dirname(_RAG_DIR)
@@ -20,6 +18,8 @@ _PIPELINE_DIR = os.path.join(_SCRIPTS_DIR, "pipeline")
 for _p in (_SCRIPTS_DIR, _RAG_DIR, _PIPELINE_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+from web_api import Blueprint, jsonify, request
 
 from finance_sources import (
     AUDIO_FILES,
@@ -35,6 +35,7 @@ from briefing_translate import (
     translate_briefing_data,
 )
 from config import JIRA_REPORT_SCRIPT, KNOWLEDGE_ROOT, REPORTS_ROOT
+from topic_index import TOPIC_DEDUP_TIMEOUT_SECONDS, format_filter_subprocess_error
 from daily_fetch_schedule import (
     NEWS_ONLY_STEPS,
     _run_scheduled_daily_fetch as _schedule_tick,
@@ -561,12 +562,25 @@ def _run_daily_fetch(
                 if os.path.exists(input_json):
                     r2 = sp.run(
                         ["python", filter_script, input_json, filtered_json, "--mode", "aggressive"],
-                        capture_output=True, text=False, timeout=60, cwd=scripts_dir
+                        capture_output=True, text=False,
+                        timeout=TOPIC_DEDUP_TIMEOUT_SECONDS, cwd=scripts_dir
                     )
                     stdout2 = r2.stdout.decode("utf-8", errors="replace") if r2.stdout else ""
-                    steps.append({"step": "topic_dedup", "exit_code": r2.returncode, "output": stdout2[-300:]})
+                    stderr2 = r2.stderr.decode("utf-8", errors="replace") if r2.stderr else ""
+                    out = stdout2[-300:]
+                    if r2.returncode != 0:
+                        out = format_filter_subprocess_error(
+                            RuntimeError(f"exit {r2.returncode}"),
+                            stderr2 or stdout2,
+                        )
+                    steps.append({"step": "topic_dedup", "exit_code": r2.returncode, "output": out})
             except Exception as e:
-                steps.append({"step": "topic_dedup", "exit_code": 1, "output": str(e)[:200]})
+                err = ""
+                raw_err = getattr(e, "stderr", None)
+                if raw_err:
+                    err = raw_err.decode("utf-8", errors="replace") if isinstance(raw_err, (bytes, bytearray)) else str(raw_err)
+                steps.append({"step": "topic_dedup", "exit_code": 1,
+                              "output": format_filter_subprocess_error(e, err)})
 
         if _should_run("ai_learning_knowledge"):
             job["step"] = "Extracting AI news into learning knowledge..."
@@ -792,10 +806,28 @@ def _run_daily_fetch(
                     filtered_json = os.path.join(output_dir, "briefing-data-filtered.json")
                     if os.path.exists(input_json):
                         job["step"] = "Running topic deduplication on fresh data..."
-                        sp.run(
-                            ["python", filter_script, input_json, filtered_json, "--mode", "aggressive"],
-                            capture_output=True, text=False, timeout=60, cwd=scripts_dir
-                        )
+                        try:
+                            r_dedup = sp.run(
+                                ["python", filter_script, input_json, filtered_json, "--mode", "aggressive"],
+                                capture_output=True, text=False,
+                                timeout=TOPIC_DEDUP_TIMEOUT_SECONDS, cwd=scripts_dir
+                            )
+                            stdout_d = r_dedup.stdout.decode("utf-8", errors="replace") if r_dedup.stdout else ""
+                            stderr_d = r_dedup.stderr.decode("utf-8", errors="replace") if r_dedup.stderr else ""
+                            out_d = stdout_d[-300:]
+                            if r_dedup.returncode != 0:
+                                out_d = format_filter_subprocess_error(
+                                    RuntimeError(f"exit {r_dedup.returncode}"),
+                                    stderr_d or stdout_d,
+                                )
+                            steps.append({"step": "topic_dedup", "exit_code": r_dedup.returncode, "output": out_d})
+                        except Exception as e:
+                            err = ""
+                            raw_err = getattr(e, "stderr", None)
+                            if raw_err:
+                                err = raw_err.decode("utf-8", errors="replace") if isinstance(raw_err, (bytes, bytearray)) else str(raw_err)
+                            steps.append({"step": "topic_dedup", "exit_code": 1,
+                                          "output": format_filter_subprocess_error(e, err)})
             except Exception as e:
                 steps.append({"step": "refetch_ai", "exit_code": 1, "output": str(e)[:300]})
 

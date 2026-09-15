@@ -9,15 +9,15 @@ Jarvis combines a daily briefing pipeline (fetch, merge, deduplicate, render) wi
 ```text
 ┌──────────────────────────────────────────────────────────────────────────┐
 │                         USER / AUTOMATION                                 │
-│  Browser UI (18888 Search) │ Browser / API client (18889 Agent + stock) │
+│  Browser UI (18888 Search Flask) │ Browser (18889 React SPA + FastAPI) │
 └─────────────────────────────┬──────────────────────────────────────────┘
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────────────────┐
-│  Flask                                                                     │
-│  search_ui.py :18888  →  embed query → Qdrant vector search → ranked hits │
-│  agent.py :18889      →  RAG search → prompt + Ollama (localhost:11434)    │
-│                         → SSE stream │ blueprints: daily_fetch, stock_bp     │
+│  Search UI Flask :18888     Agent FastAPI/uvicorn :18889                   │
+│  search_ui.py → embed query → Qdrant vector search → ranked hits          │
+│  agent.py     → serves web/dist SPA; RAG + Ollama (localhost:11434)       │
+│                 → SSE stream │ blueprints: toolbar, daily_fetch, stock, IR │
 └─────────────┬───────────────────────────────┬───────────────────────────────┘
               │                               │
               ▼                               ▼
@@ -67,11 +67,21 @@ Jarvis combines a daily briefing pipeline (fetch, merge, deduplicate, render) wi
 
 **What it is:** A lightweight Python web framework for HTTP routes, templates, JSON APIs, and streaming responses.
 
-**Why Jarvis uses it:** Jarvis exposes two local HTTP services: a search interface for human debugging and exploration, and an agent API that streams model output.
+**Why Jarvis uses it:** The **Search UI** on port 18888 is a Flask app for browsing retrieved chunks without an LLM.
 
 **Version / model:** Pin Flask (and Werkzeug) in `requirements` or lockfiles for reproducible deployments.
 
-**Architecture role:** **`search_ui.py`** serves the Search UI on **port 18888**. **`agent.py`** serves the RAG-backed agent on **port 18889**, including server-sent events (SSE) for streamed answers.
+**Architecture role:** **`search_ui.py`** serves the Search UI on **port 18888** (Flask). **`agent.py`** serves the RAG-backed agent on **port 18889** (FastAPI via `scripts/rag/web_api.py` + uvicorn), including server-sent events (SSE) for streamed answers. The browser UI on 18889 is the React app in **`web/`** (see **[web/](./web/)**; API catalog [rag/agent-spa-impl.md](./rag/agent-spa-impl.md)).
+
+---
+
+### React + Vite + shadcn/ui (`web/`)
+
+**What it is:** The Agent frontend: React 19, TypeScript, Vite 6, Tailwind, shadcn/ui, React Router, AG Grid on Stock tables.
+
+**Why Jarvis uses it:** Replace the single-file `templates/index.html` UI while keeping every existing `/api` and SSE contract.
+
+**Architecture role:** `npm run build` writes `web/dist`. FastAPI (`spa_static.py`) serves it at `/`. Nested routes (`/news/daily`, `/stock/watch`, `/medavis/wiki`) fall back to `index.html`. Themes: Day (`:root`), Night (`html.dark`), Reading (`html[data-theme=reading]`). Dev: Vite `:5173` proxies `/api` to 18889. Full suite: **[web/](./web/)**.
 
 ---
 
@@ -187,7 +197,8 @@ Jarvis combines a daily briefing pipeline (fetch, merge, deduplicate, render) wi
 |------------|----------------------------|
 | sentence-transformers | Indexers, `search_ui.py`, `agent.py` |
 | qdrant-client | Indexers, `search_ui.py`, `agent.py`; snapshot `.rag-store.json` |
-| Flask | `search_ui.py` (:18888), `agent.py` (:18889) |
+| Flask | `search_ui.py` (:18888) |
+| FastAPI / uvicorn | `agent.py` (:18889) via `scripts/rag/web_api.py` Flask-compat layer |
 | Ollama | `agent.py` → `localhost:11434` |
 | DeepSeek (optional) | `scripts/stock/config.py` `call_deepseek` / `get_deepseek_key`; stock synthesis & scanner TOP 5 only |
 | Playwright | All `fetch-*.py` |

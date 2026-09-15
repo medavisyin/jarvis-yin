@@ -8,7 +8,11 @@ import sys
 import traceback
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request, send_file
+_RAG_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _RAG_DIR not in sys.path:
+    sys.path.insert(0, _RAG_DIR)
+
+from web_api import Blueprint, jsonify, request, send_file
 
 # ---------------------------------------------------------------------------
 # Stock Analysis API

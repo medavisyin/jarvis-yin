@@ -4,7 +4,7 @@ tags:
   - navigation
 category: hub
 status: current
-last-updated: 2026-04-22
+last-updated: 2026-09-15
 ---
 
 # Jarvis Documentation
@@ -18,15 +18,36 @@ last-updated: 2026-04-22
 | You want to... | Start here |
 |-----------------|------------|
 | **Set up Jarvis** | [Getting Started](getting-started.md) |
+| **Frontend (React Agent UI)** | **[Frontend suite](implementation/web/)** — how React is wired, how to start it, how it talks to Python |
+| **Learn frontend (`apiJson`, React, Vite)** | **[Frontend learning](learning/frontend/)** — 5 chapters from HTTP to Jarvis screens |
 | **Operate / debug** | [Backend Overview](backend-overview.md) |
 | **Understand the code** | [Implementation Index](implementation/README.md) |
-| **Learn RAG concepts** | [Learning Chapters](learning/) (Ch. 1–8) |
+| **Learn RAG concepts** | [Learning Chapters](learning/rag/) (Ch. 1–8) |
 | **Use stock features** | [Stock Usage Guide (中文)](guides/stock-usage-guide.md) |
 | **股票推荐策略(小白)** | [Stock Strategy Guide (中文)](guides/stock-strategy-guide.md) — 左右侧交易原理与报告解读 |
 | **新增股票策略(开发)** | [New Strategy Guide (中文)](guides/stock-new-strategy-guide.md) — 插件接口规范与模板 |
 | **Learn stock investing** | [Stock Learning Track (中文)](learning/stock/) — 从零到合格投资者 |
 | **Use Telegram remote** | [Telegram Bot Guide](guides/telegram-bot-guide.md) |
 | **See the roadmap** | [Enhancement Plan](plans/2026-04-17-jarvis-next.md) |
+
+---
+
+## Frontend (Agent UI)
+
+The browser UI on **port 18889** is a React app in repo folder **`web/`**. Python in **`scripts/rag/`** owns `/api/*`. This is a **separate documentation suite** from RAG indexers — do not look for it only under Implementation → RAG.
+
+| Document | What it covers |
+|----------|----------------|
+| **[Frontend hub](implementation/web/)** | Start here |
+| [Architecture](implementation/web/architecture.md) | Two trees (`web/` vs `scripts/`), Vite/React/shadcn layers, FastAPI serving `web/dist` |
+| [React integration](implementation/web/react-integration.md) | Pages, shadcn, Tailwind, AG Grid, routing, themes |
+| [Run and serve](implementation/web/run-and-serve.md) | `npm run build`, `agent.py`, Vite HMR on `:5173`, hard-refresh |
+| [Request flow](implementation/web/request-flow.md) | How a React click becomes `fetch` → FastAPI → JSON / SSE / job poll |
+| [Python bridge](implementation/web/python-bridge.md) | `apiJson` / SSE / jobs, same-origin `/api`, no CORS in production |
+| [Page → `/api` catalog](implementation/rag/agent-spa-impl.md) | Route table and every screen’s endpoints |
+| **[Learn frontend](learning/frontend/)** | Tutorial: browser, React, Vite, line-by-line `apiJson` / SSE / `pollJob` |
+
+Search UI on **port 18888** stays Flask and is documented under [Search UI](implementation/rag/search-ui-impl.md), not this suite.
 
 ---
 
@@ -51,7 +72,8 @@ docs/
 ├── implementation/              # Developer implementation docs
 │   ├── README.md                # Implementation navigation hub
 │   ├── tech-stack-overview.md   # All technologies explained
-│   ├── rag/                     # RAG system (agent, indexers, search, settings)
+│   ├── web/                     # Frontend suite (React Agent UI at :18889)
+│   ├── rag/                     # RAG system (Python agent, indexers, search, API catalog)
 │   ├── briefing-pipeline/       # Daily briefing (fetchers, merge, audio, world news)
 │   └── stock/                   # Stock module (10 docs: TA, ML, scanner, APIs)
 │
@@ -61,7 +83,8 @@ docs/
 │   ├── machine-learning/       # XGBoost, embeddings, feature engineering
 │   ├── huggingface/            # Sentence Transformers, HF Hub, fine-tuning
 │   ├── stock/                  # A-share investing: basics → valuation → risk → Jarvis workflow (8 ch.)
-│   ├── python-web/             # Flask, async/concurrency, testing
+│   ├── frontend/               # React Agent UI (browser, Vite, apiJson, SSE)
+│   ├── python-web/             # Flask Search UI, async/concurrency, testing
 │   ├── data-acquisition/       # Playwright, PDF, TTS, pipeline patterns
 │   └── devops-tools/           # Git, PowerShell, Atlassian integration
 │
@@ -89,6 +112,7 @@ docs/
 
 | Document | Description |
 |----------|-------------|
+| **[Frontend suite](implementation/web/)** | React on FastAPI: architecture, how to start, Python `/api` bridge |
 | [System Architecture](design/architecture.md) | Full system architecture with Mermaid diagrams (context, layers, data flow, deployment) |
 | [RAG Agent Design](design/rag-agent-design.md) | Auto-RAG, SSE streaming, tool system, performance benchmarks |
 
@@ -106,11 +130,24 @@ docs/
 
 Detailed developer documentation. See [Implementation Index](implementation/README.md) for full navigation.
 
+**Frontend (React Agent UI):**
+
+| Document | Script(s) / folder |
+|----------|-------------------|
+| [Frontend hub](implementation/web/) | `web/` — React + Vite; FastAPI serves `web/dist` |
+| [Architecture](implementation/web/architecture.md) | Two trees, SPA mount, AppShell layers |
+| [React integration](implementation/web/react-integration.md) | shadcn, routes, themes, tests |
+| [Run and serve](implementation/web/run-and-serve.md) | `npm run build` / `npm run dev` / `agent.py` |
+| [Request flow](implementation/web/request-flow.md) | React `fetch` → FastAPI hop-by-hop (JSON / SSE / jobs) |
+| [Python bridge](implementation/web/python-bridge.md) | `web/src/lib/api.ts` → `/api/*` |
+| [API catalog](implementation/rag/agent-spa-impl.md) | Page → endpoint map |
+
 **RAG System:**
 
 | Document | Script(s) |
 |----------|-----------|
-| [Chat Agent](implementation/rag/agent-impl.md) | `agent.py` — auto-RAG, SSE, tools, Daily Fetch, audio, wiki fetch |
+| [Chat Agent](implementation/rag/agent-impl.md) | `agent.py` — auto-RAG, SSE, tools |
+| [SPA API catalog](implementation/rag/agent-spa-impl.md) | Page → `/api` map (frontend design lives in [web/](implementation/web/)) |
 | [Briefing Indexer](implementation/rag/index-briefing-impl.md) | `index_briefing.py` |
 | [Confluence Indexers](implementation/rag/index-confluence-impl.md) | `index_confluence.py`, `index_confluence_user.py` |
 | [Codebase Indexer](implementation/rag/index-codebase-impl.md) | `index_codebase.py` |
@@ -149,6 +186,7 @@ Detailed developer documentation. See [Implementation Index](implementation/READ
 | [LLM](learning/llm/) | [Ollama Local LLM](learning/llm/ollama-local-llm.md), [Prompt Engineering](learning/llm/llm-prompt-engineering.md) |
 | [Machine Learning](learning/machine-learning/) | [ML Fundamentals](learning/machine-learning/ch1-ml-fundamentals.md), [Training & Evaluation](learning/machine-learning/ch2-model-training-evaluation.md), [XGBoost](learning/machine-learning/xgboost-gradient-boosting.md), [Feature Engineering](learning/machine-learning/feature-engineering-ta.md) |
 | [Hugging Face](learning/huggingface/) | [Sentence Transformers](learning/huggingface/sentence-transformers.md) |
+| [Frontend](learning/frontend/) | [Ch.1 HTTP/JSON](learning/frontend/ch1-browser-http-json.md), [Ch.2 React](learning/frontend/ch2-react-state-routing.md), [Ch.3 Vite/TS](learning/frontend/ch3-vite-typescript-ui.md), [Ch.4 apiJson/SSE](learning/frontend/ch4-apijson-sse-jobs.md), [Ch.5 Jarvis screens](learning/frontend/ch5-jarvis-pages-to-python.md) |
 | [Python Web](learning/python-web/) | [Flask Web Server](learning/python-web/flask-web-server.md), [Async & Concurrency](learning/python-web/async-concurrency-python.md), [Testing](learning/python-web/testing-python-apps.md) |
 | [Data Acquisition](learning/data-acquisition/) | [Playwright Scraping](learning/data-acquisition/playwright-scraping.md), [PDF Processing](learning/data-acquisition/pypdf-reportlab.md), [Edge TTS](learning/data-acquisition/edge-tts-speech.md) |
 | [Stock Investing (中文)](learning/stock/) | [市场基础](learning/stock/ch1-stock-market-basics.md), [财务报表](learning/stock/ch2-financial-statements.md), [估值方法](learning/stock/ch3-valuation-methods.md), [技术分析](learning/stock/ch4-technical-analysis.md), [风险管理](learning/stock/ch5-risk-management.md), [策略体系](learning/stock/ch6-investment-strategies.md), [量化与ML](learning/stock/ch7-quantitative-methods.md), [Jarvis实战](learning/stock/ch8-jarvis-workflow.md), [增强路线图](learning/stock/ch9-enhancement-roadmap.md), [A股深度解析](learning/stock/ch10-astock-deep-dive.md) |
@@ -167,6 +205,18 @@ Read in order to understand the concepts behind the system:
 | 6 | [Advanced RAG](learning/rag/ch6-advanced-rag-techniques.md) | Hybrid search, reranking, semantic chunking, HyDE |
 | 7 | [ML for Retrieval](learning/rag/ch7-ml-for-retrieval.md) | Neural embeddings, fine-tuning, learning-to-rank |
 | 8 | [Learning Roadmap](learning/rag/ch8-learning-roadmap.md) | 3-track plan (RAG, LLM, HuggingFace) with resources |
+
+### Frontend (Agent UI) learning
+
+If you have forgotten HTML, React, or `fetch`, read this track in order. Implementation (how to start the UI) is [implementation/web/](implementation/web/). Hub: [learning/frontend/](learning/frontend/).
+
+| # | Chapter | What You'll Learn |
+|:-:|---------|-------------------|
+| 1 | [The browser, HTTP, JSON](learning/frontend/ch1-browser-http-json.md) | `fetch`, JSON, same-origin `/api`, SPA vs API |
+| 2 | [React: components, state, routing](learning/frontend/ch2-react-state-routing.md) | JSX, `useState`/`useEffect`, React Router, AppShell |
+| 3 | [Vite, TypeScript, Tailwind, shadcn](learning/frontend/ch3-vite-typescript-ui.md) | `npm run build`, `web/dist`, `@/` alias, themes |
+| 4 | [apiJson, SSE, job polling](learning/frontend/ch4-apijson-sse-jobs.md) | Line-by-line `apiJson` / `apiSsePost` / `apiUpload` / `pollJob` |
+| 5 | [Jarvis pages → Python](learning/frontend/ch5-jarvis-pages-to-python.md) | Chat stream, scanner poll, reading upload |
 
 ## Plans & Roadmaps
 
@@ -198,8 +248,9 @@ Read in order to understand the concepts behind the system:
 │  (资金流/北向/龙虎)              Timing → 买入/回避信号        │
 │  + 国家队ETF监控                Backtest → T+1回测          │
 │                                                              │
-│  Port 18888: Search UI (Library, Chunk Analysis)             │
-│  Port 18889: Jarvis Agent (Chat, Tools, Audio, Stock)        │
+│  Port 18888: Search UI Flask (Library, Chunk Analysis)           │
+│  Port 18889: React SPA + FastAPI (Chat, News, Stock, Reading,     │
+│              Medavis, Settings)                                   │
 │  Telegram Bot: Remote command interface (polling)              │
 │                                                              │
 │  Embedding: all-MiniLM-L6-v2 (384-dim)                      │

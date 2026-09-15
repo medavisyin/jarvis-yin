@@ -10,7 +10,9 @@ for real-time streaming to the client.
 """
 
 import logging
+import os
 import re
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
@@ -137,12 +139,84 @@ def _auto_tool_jira() -> str:
 # ---------------------------------------------------------------------------
 # Main LLM generation loop
 # ---------------------------------------------------------------------------
+def _usage_from_chunk(chunk) -> dict:
+    prompt = getattr(chunk, "prompt_eval_count", None)
+    out = getattr(chunk, "eval_count", None)
+    if prompt is None and out is None:
+        return {}
+    details = {}
+    if prompt is not None:
+        details["input_tokens"] = int(prompt)
+    if out is not None:
+        details["output_tokens"] = int(out)
+    return details
+
+
+_start_generation = None
+
+
+def _get_start_generation():
+    global _start_generation
+    if _start_generation is None:
+        _scripts = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        if _scripts not in sys.path:
+            sys.path.insert(0, _scripts)
+        from tracing import start_generation as _sg
+        _start_generation = _sg
+    return _start_generation
+
+
+def _traced_ollama_chat(ollama_mod, call_kwargs: dict, *, session_id=None):
+    """Call ollama.chat; yield (token_text, chunk). Records one Langfuse generation."""
+    start_generation = _get_start_generation()
+
+    stream = call_kwargs.get("stream", True)
+    with start_generation(
+        name="ollama-chat",
+        model=call_kwargs.get("model") or "",
+        input={"messages": call_kwargs.get("messages")},
+        session_id=session_id,
+        metadata={"stream": stream},
+    ) as gen:
+        try:
+            result = ollama_mod.chat(**call_kwargs)
+        except Exception as exc:
+            try:
+                gen.update(output=str(exc), metadata={"error": True})
+            except Exception:
+                pass
+            raise
+        full = ""
+        last_chunk = None
+        if stream:
+            for chunk in result:
+                last_chunk = chunk
+                msg = getattr(chunk, "message", None)
+                text = (getattr(msg, "content", None) or "") if msg is not None else ""
+                full += text
+                yield text, chunk
+        else:
+            last_chunk = result
+            msg = getattr(result, "message", None)
+            full = (getattr(msg, "content", None) or "") if msg is not None else ""
+            yield full, result
+        usage = _usage_from_chunk(last_chunk) if last_chunk is not None else {}
+        update_kwargs = {"output": full}
+        if usage:
+            update_kwargs["usage_details"] = usage
+        try:
+            gen.update(**update_kwargs)
+        except Exception:
+            pass
+
+
 def run_agent(user_query: str, image_b64: str | None = None,
               conversation_history: list[dict] | None = None,
               system_prompt_override: str | None = None,
               rag_query_override: str | None = None,
               suggested_tools: list[str] | None = None,
-              auto_prefetch: list[str] | None = None):
+              auto_prefetch: list[str] | None = None,
+              session_id: str | None = None):
     """
     Generator that yields SSE events as the agent reasons.
     Uses streaming LLM output for perceived-instant responses.
@@ -313,20 +387,19 @@ def run_agent(user_query: str, image_b64: str | None = None,
                 "options": {"num_ctx": num_ctx, "num_predict": 4096},
             }
             call_kwargs["tools"] = effective_tools
-            stream = ollama.chat(**call_kwargs)
+            stream_iter = _traced_ollama_chat(ollama, call_kwargs, session_id=session_id)
+            full_content = ""
+            tool_calls = []
+            for text, chunk in stream_iter:
+                c = chunk.message
+                if text:
+                    full_content += text
+                    yield {"type": "token", "content": text}
+                if c.tool_calls:
+                    tool_calls.extend(c.tool_calls)
         except Exception as e:
             yield {"type": "error", "message": f"Ollama error: {e}"}
             return
-
-        full_content = ""
-        tool_calls = []
-        for chunk in stream:
-            c = chunk.message
-            if c.content:
-                full_content += c.content
-                yield {"type": "token", "content": c.content}
-            if c.tool_calls:
-                tool_calls.extend(c.tool_calls)
 
         if not tool_calls:
             suggestions = []
@@ -351,18 +424,22 @@ def run_agent(user_query: str, image_b64: str | None = None,
             if tool_name == "analyze_image" and image_b64:
                 focus = tool_args.get("image_description_request", "Describe this image in detail")
                 try:
-                    vision_resp = ollama.chat(
-                        model=_OLLAMA_MODEL,
-                        messages=[{
+                    vision_kwargs = {
+                        "model": _OLLAMA_MODEL,
+                        "messages": [{
                             "role": "user",
                             "content": focus,
                             "images": [image_b64],
                         }],
-                        stream=False,
-                        think=False,
-                        options={"num_ctx": 2048, "num_predict": 512},
-                    )
-                    result_str = vision_resp.message.content or "No analysis produced."
+                        "stream": False,
+                        "think": False,
+                        "options": {"num_ctx": 2048, "num_predict": 512},
+                    }
+                    result_str = "No analysis produced."
+                    for text, _chunk in _traced_ollama_chat(
+                        ollama, vision_kwargs, session_id=session_id
+                    ):
+                        result_str = text or result_str
                 except Exception as e:
                     result_str = f"Vision analysis error: {e}"
             else:

@@ -191,7 +191,7 @@ jarvis/                               # Project root (C:\jarvis or wherever inst
 
 ## The Two Web Servers
 
-Jarvis runs **two independent Flask servers**. They do NOT communicate with each other.
+Jarvis runs **two independent HTTP services**. They do NOT communicate with each other. Search UI (`:18888`) is Flask. The Agent (`:18889`) is FastAPI serving a React SPA (`web/dist`) plus `/api`. Frontend suite: [implementation/web/](implementation/web/). API catalog: [implementation/rag/agent-spa-impl.md](implementation/rag/agent-spa-impl.md).
 
 ### Server 1: RAG Search UI (`search_ui.py`) — Port 18888
 
@@ -223,7 +223,7 @@ python -u -B scripts/rag/search_ui.py 18888
 
 ### Server 2: Jarvis Chat Agent (`agent.py`) — Port 18889
 
-**Purpose:** An AI-powered chat assistant with RAG context, tool calling, and streaming responses.
+**Purpose:** React SPA + FastAPI RAG chat, News, Stock, Reading, Medavis. Frontend: [implementation/web/](implementation/web/). API catalog: [implementation/rag/agent-spa-impl.md](implementation/rag/agent-spa-impl.md).
 
 **Features:**
 | Feature | Description |

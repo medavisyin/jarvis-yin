@@ -5,12 +5,12 @@ tags:
   - getting-started
 category: guide
 status: current
-last-updated: 2026-05-07
+last-updated: 2026-09-14
 ---
 
 # Getting Started: Build Jarvis from Zero
 
-A complete beginner's guide. By the end you will have a working Jarvis system that collects AI news, generates PDF reports and audio podcasts, and lets you chat with an AI assistant backed by your own local knowledge base.
+A complete beginner's guide. By the end you will have a working Jarvis system that collects AI news, generates PDF reports and audio podcasts, and lets you chat with an AI assistant backed by your own local knowledge base. The chat UI on port **18889** is a **React** app; the Search UI on **18888** stays Flask.
 
 **Time required:** ~45 minutes (mostly waiting for downloads).
 
@@ -49,7 +49,7 @@ Jarvis is a personal AI assistant that runs entirely on your own computer. It ha
 |------|-------------|
 | **Briefing Pipeline** | Scrapes 10 AI news sources and 6 world/Chinese news agencies every day, then produces a PDF report, world news audio, Chinese news audio, and AI briefing audio |
 | **Search UI** | A web page where you can search through everything Jarvis has collected — no AI model needed |
-| **Chat Agent** | An AI chatbot that answers your questions using your local knowledge base, with access to tools like Jira, git, and Confluence |
+| **Chat Agent** | React UI on port 18889 plus a FastAPI backend. Answers questions from the local knowledge base, with tools (Jira, git, Confluence), News, Stock, Reading, and Medavis |
 
 All data stays on your machine. No cloud APIs, no subscriptions, no data leaving your network.
 
@@ -71,7 +71,7 @@ All data stays on your machine. No cloud APIs, no subscriptions, no data leaving
 │              ┌───────────┴───────────┐                       │
 │              ▼                       ▼                       │
 │     Search UI (:18888)      Chat Agent (:18889)              │
-│     (browse & search)       (AI answers + tools)             │
+│     Flask browse & search   React SPA + FastAPI + tools      │
 │              │                       │                       │
 │              └───────────┬───────────┘                       │
 │                          ▼                                   │
@@ -185,14 +185,16 @@ Open a terminal, navigate to the project root, and install:
 ```bash
 cd ~/jarvis    # or C:\jarvis on Windows
 
-pip install flask qdrant-client sentence-transformers pypdf reportlab edge-tts playwright requests pyyaml feedparser ollama rank-bm25 python-telegram-bot httpx
+pip install flask fastapi "uvicorn[standard]" python-multipart qdrant-client sentence-transformers pypdf reportlab edge-tts playwright requests pyyaml feedparser ollama rank-bm25 python-telegram-bot httpx "langfuse>=4"
 ```
 
 **What each package does:**
 
 | Package | Purpose |
 |---------|---------|
-| `flask` | Runs the two web servers (Search UI and Chat Agent) |
+| `flask` | Runs the Search UI web server (`:18888`) |
+| `fastapi` / `uvicorn` | Runs the Chat Agent HTTP API (`:18889`) including SSE streaming |
+| `python-multipart` | Parses book-upload forms on the agent |
 | `qdrant-client` | The vector database that stores and searches your knowledge |
 | `sentence-transformers` | Turns text into numbers (embeddings) so the computer can compare meanings |
 | `pypdf` | Reads text from PDF files |
@@ -206,6 +208,7 @@ pip install flask qdrant-client sentence-transformers pypdf reportlab edge-tts p
 | `rank-bm25` | Keyword search engine used alongside vector search |
 | `python-telegram-bot` | Controls a Telegram bot for remote Jarvis access from your phone |
 | `httpx` | Async HTTP client with optional SOCKS proxy support |
+| `langfuse` | Optional LLM tracing (prompts, completions, latency, token counts). Off unless keys are set |
 
 > **What is pip?** `pip` is Python's package installer. It downloads libraries from the internet and installs them so your Python scripts can use them.
 
@@ -413,15 +416,23 @@ You should see a search page. Try searching for any AI topic. The **Library** ta
 
 ## Step 9 — Start the Jarvis Agent
 
-Open a **second terminal** (keep the Search UI running in the first one) and run:
+Build the React UI once (skip if `web/dist/index.html` already exists), then start the API:
 
 ```bash
+cd web
+npm install
+npm run build
+cd ..
 python scripts/rag/agent.py
 ```
 
+This starts the Chat Agent with **uvicorn** (FastAPI). The browser loads the SPA from `web/dist`. URLs and the SSE chat protocol stay at **http://localhost:18889**. Search UI on port 18888 remains Flask.
+
+After you change frontend code, **`bin\jarvis-start.bat` rebuilds `web/dist` when sources are newer** (`ensure_web_dist.py`). Then **hard-refresh** the browser. For HMR while coding: keep `agent.py` running and use `cd web && npm run dev` (Vite `:5173` proxies `/api` to 18889).
+
 Open your browser and go to: **http://localhost:18889**
 
-You should see a chat interface. Try asking something like:
+You should see a left sidebar (Chat, News, Stock, Reading, Medavis, Settings) and a chat panel. Try asking something like:
 
 - "What's new in AI today?"
 - "Explain what RAG is"
@@ -429,11 +440,13 @@ You should see a chat interface. Try asking something like:
 
 The agent will automatically search the knowledge base for relevant context and generate an answer using the Ollama model.
 
+Frontend design, how to start it, and how it talks to Python: **[implementation/web/](implementation/web/)**. Page → `/api` catalog: [agent-spa-impl.md](implementation/rag/agent-spa-impl.md).
+
 **First-time startup is slower** (~15–30 seconds) because it loads the embedding model (~80 MB download on first use) and the Qdrant knowledge base into memory.
 
 > **What is the difference between the Search UI and the Agent?**
-> - **Search UI** (port 18888): Fast, simple search. Shows you raw chunks from the knowledge base. No AI generation. Works without Ollama.
-> - **Agent** (port 18889): Full AI chatbot. Searches the knowledge base, then uses the LLM to write a human-readable answer. Needs Ollama running.
+> - **Search UI** (port 18888): Fast, simple Flask search. Shows you raw chunks from the knowledge base. No AI generation. Works without Ollama.
+> - **Agent** (port 18889): React SPA + FastAPI. Full AI chatbot plus News, Stock, Reading, Medavis. Needs Ollama running.
 
 ---
 
@@ -445,7 +458,7 @@ Use the batch launchers in the `bin\` folder:
 
 | Launcher | What It Does |
 |----------|-------------|
-| `bin\jarvis-start.bat` | Starts all three services (Search UI + Agent + Telegram Bot) in minimized windows |
+| `bin\jarvis-start.bat` | Stops 18888/18889, **rebuilds the React UI if `web/` changed**, starts Search + Agent in visible consoles, Telegram minimized. |
 | `bin\jarvis-stop.bat` | Stops both servers |
 | `bin\jarvis-restart.bat` | Restarts both servers |
 | `bin\jarvis-servers.bat` | Interactive menu: start, stop, restart, check status |
@@ -489,7 +502,7 @@ Run through this checklist:
 | # | Check | How | Expected |
 |:-:|-------|-----|----------|
 | 1 | Python installed | `python3 --version` (or `python --version` on Windows) | `Python 3.10+` |
-| 2 | Packages installed | `python -c "import flask, qdrant_client, sentence_transformers"` | No error |
+| 2 | Packages installed | `python -c "import flask, fastapi, uvicorn, qdrant_client, sentence_transformers"` | No error |
 | 3 | Playwright ready | `python -c "from playwright.sync_api import sync_playwright"` | No error |
 | 4 | Ollama running | `ollama list` | Shows `qwen3.5:4b` |
 | 5 | ffmpeg installed | `ffmpeg -version` | Version info |
@@ -614,6 +627,21 @@ Jarvis uses a **smart proxy strategy**: for each domain, it first tries a direct
 
 Set via `scripts/bot_telegram.env` file.
 
+### Optional: LLM tracing with Langfuse
+
+Tracing is **off** unless both keys are set. If Langfuse is down, Jarvis still answers (fail-open).
+
+Start the self-hosted stack using `deploy/langfuse/README.md`, then put the project keys in `.env` (see `.env.example`). `bin/jarvis-start.bat` does **not** start Langfuse.
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `LANGFUSE_PUBLIC_KEY` | Langfuse public key | empty (tracing off) |
+| `LANGFUSE_SECRET_KEY` | Langfuse secret key | empty (tracing off) |
+| `LANGFUSE_BASE_URL` | Self-hosted Langfuse base URL (SDK v4 name) | `http://localhost:3000` |
+| `LANGFUSE_HOST` | Alias for `LANGFUSE_BASE_URL` | same default |
+
+After restarting Jarvis, send one chat in the agent UI and (if configured) one DeepSeek stock analyze. Confirm a trace in http://localhost:3000: prompt, completion, latency, and token counts.
+
 ---
 
 ## Proxy Configuration (Optional)
@@ -702,7 +730,8 @@ New to AI and programming? Here are the key terms used throughout this guide:
 | **Vector** | Another word for embedding — a list of numbers representing meaning. |
 | **Qdrant** | The vector database that stores embeddings and lets you search by meaning. |
 | **Chunk** | A small piece of a document (a few paragraphs). Documents are split into chunks for better search. |
-| **Flask** | A Python library for building web servers. Jarvis uses it for both the Search UI and the Agent. |
+| **Flask** | Python web library. Jarvis uses it for the **Search UI** on port 18888. |
+| **FastAPI / uvicorn** | Serves the Agent on port 18889 (`/api` + React `web/dist`). |
 | **Port** | A number that identifies a specific service on your computer. Like a door number. |
 | **SSE (Server-Sent Events)** | A technology that lets the server stream text to your browser in real time (how chat tokens appear one by one). |
 | **JSON** | A text format for structured data. Looks like `{"key": "value"}`. Jarvis stores data in JSON files. |
@@ -718,6 +747,8 @@ Now that Jarvis is running, explore further:
 
 | Goal | Read |
 |------|------|
+| Change the React Agent UI (`web/`) | **[Frontend suite](implementation/web/)** |
+| Re-learn React / `fetch` / `apiJson` | **[Frontend learning](learning/frontend/)** |
 | Understand the full system architecture | [Backend Overview](backend-overview.md) |
 | Learn how RAG works conceptually | [Ch. 1: RAG Concepts](ch1-rag-concepts.md) |
 | Understand the technologies used | [Tech Stack Overview](implementation/tech-stack-overview.md) |

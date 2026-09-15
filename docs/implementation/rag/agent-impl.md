@@ -2,18 +2,20 @@
 
 ## Overview
 
-`agent.py` is the main Jarvis RAG chat application: a **thin Flask orchestrator** (~1,405 lines) that streams answers over **Server-Sent Events (SSE)**, wires **automatic retrieval** from Qdrant with optional **tool calling** (Jira, git commits, Confluence search, etc.), and serves a **chat UI** loaded from **`scripts/rag/templates/index.html`** (large standalone HTML/CSS/JS file, read at process startup and rendered via `render_template_string`). Heavy HTTP surface area has been moved into **`routes/`** Blueprints (`toolbar`, `ai_news`, `daily_fetch`, `stock`). Query understanding runs through **`pipeline.py`** (routing → intent → RAG confidence → **conversation memory** injection → optional decomposition) before **`agent_loop.run_agent`** performs auto-RAG and generation.
+`agent.py` is the main Jarvis RAG chat application: a **thin FastAPI orchestrator** (Flask-shaped via `web_api.py`) that streams answers over **Server-Sent Events (SSE)**, wires **automatic retrieval** from Qdrant with optional **tool calling** (Jira, git commits, Confluence search, etc.), and serves the **React SPA** from **`web/dist`**. If `web/dist/index.html` is missing, it falls back to **`scripts/rag/templates/index.html`**. Heavy HTTP surface area lives in **`routes/`** Blueprints (`toolbar`, `ai_news`, `daily_fetch`, `stock`, `intensive_reading`). Query understanding runs through **`pipeline.py`** (routing → intent → RAG confidence → **conversation memory** injection → optional decomposition) before **`agent_loop.run_agent`** performs auto-RAG and generation.
+
+**Frontend suite (how React is wired, started, and talks to Python):** [../web/](../web/). **Page → `/api` catalog:** [agent-spa-impl.md](./agent-spa-impl.md).
 
 Location: `scripts/rag/agent.py`. Default URL: **`http://127.0.0.1:18889`** (`python agent.py [port]`).
 
 ## Technologies
 
-- **Flask:** HTTP API, `Response` with `text/event-stream` for SSE; chat page from external `templates/index.html` loaded into memory as `AGENT_HTML`
+- **FastAPI / uvicorn:** HTTP API via `web_api.py`; `text/event-stream` for SSE; SPA from `web/dist` (`spa_static.py`)
 - **sentence-transformers:** batched embeddings for auto-RAG and memory (via `rag_engine` / `memory`)
 - **qdrant-client:** in-memory collections (`ai_briefings`, `conversation_memory`) loaded from snapshots; filtered vector search
 - **ollama (Python package):** `ollama.chat` with `stream=True` for token streaming; native tool-call support; health via `ollama.list`
 - **`ollama` HTTP API (requests):** used in `intent.py` for fast LLM classify/enhance paths
-- **Front end:** single-file `templates/index.html` (markdown rendering, image upload, session sidebar, toolbar actions, stock modals, etc.)
+- **Front end:** React app in **`web/`** — see [../web/](../web/). Legacy `templates/index.html` is only a fallback when dist is missing.
 
 The top-of-file docstring still mentions `requests`; chat uses the **`ollama`** client library, while intent enhancement/classification uses **`requests`** against the Ollama HTTP API.
 
@@ -22,10 +24,10 @@ The top-of-file docstring still mentions `requests`; chat uses the **`ollama`** 
 ```mermaid
 flowchart TB
   subgraph client [Browser]
-    UI[Chat UI templates/index.html]
+    UI[React SPA web/dist]
   end
-  subgraph orchestrator [agent.py Flask]
-    Idx["GET /"]
+  subgraph orchestrator [agent.py FastAPI]
+    Idx["GET / SPA"]
     Core["Core routes: /api/agent, health, memory, sessions, notes, settings"]
     BP["register_blueprint: toolbar, ai_news, daily_fetch, stock"]
   end
@@ -76,7 +78,7 @@ flowchart TB
 
 | Area | Role |
 |------|------|
-| **`agent.py`** | Flask app, core JSON routes, blueprint registration, learning wiring (helpers in `learning/helpers.py`), memory API, UI bootstrap |
+| **`agent.py`** | FastAPI app, core JSON routes, blueprint registration, learning wiring, memory API, SPA mount |
 | **`routes/toolbar.py`** | Reindex, chunk analysis, deep-dive session seed, wiki-fetch, commit-summary, Jira report, trend-analysis |
 | **`routes/ai_news.py`** | AI news KB (scan, summary), audio-from-knowledge jobs, audio/report file serving |
 | **`routes/daily_fetch.py`** | Daily fetch pipeline jobs, history/continue, learning-session and learning-context helpers |
@@ -92,7 +94,8 @@ flowchart TB
 | **`tools/`** | `TOOL_SCHEMAS`, registrations, tool implementations (`implementations.py`, `registry.py`, `schemas.py`) |
 | **`learning/`** | `constants.py` + **`helpers.py`** — topic resolution (`resolve_english_topic_by_name`), learning input classification (`classify_and_resolve_learning_input`), `fetch_fresh_topics`, `web_search_references`; imported from `agent.py` |
 | **`prompts.py`** | System prompts for full/compact/learning modes |
-| **`templates/index.html`** | All client-side HTML/CSS/JS for the agent UI |
+| **`templates/index.html`** | Legacy UI fallback if `web/dist` is missing |
+| **`web/`** | React SPA — [../web/](../web/); API map [agent-spa-impl.md](./agent-spa-impl.md) |
 
 Approximate sizes (line counts drift with edits): blueprint modules are typically **~350–1,050** lines each; `agent.py` **~1.4k** lines; the UI template **several thousand** lines.
 
@@ -183,7 +186,7 @@ Core application routes are implemented **in `agent.py`**. Toolbar, AI news KB, 
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/` | Chat UI (`templates/index.html` via `render_template_string`) |
+| `GET` | `/` | React SPA (`web/dist`) or legacy HTML if dist is missing |
 | `POST` | `/api/agent` | SSE chat; pipeline pre-processes non-learning queries |
 | `GET` | `/api/health` | Ollama, Qdrant, model/config probe |
 | `GET` / `POST` | `/api/switch-model` | Read or set chat model (`RAG_AGENT_MODEL` / global) |
@@ -252,8 +255,8 @@ Orchestration, background threads, segmented narration, wiki fetch, merge recove
 - **Parallel auto-work:** Auto-RAG and optional commit/Jira still run concurrently in **`agent_loop`** where applicable; pipeline sessions pass **`auto_prefetch`** so tool choice matches upstream intent/decomposition instead of a second keyword pass.
 - **Conditional tool schemas:** Still used when auto-context saturates prompts (agent loop responsibility).
 - **Iteration cap:** `MAX_AGENT_ITERATIONS` prevents infinite tool loops.
-- **External UI file:** **`templates/index.html`** keeps `agent.py` maintainable versus a mega inline string — still rendered through **`render_template_string`** for simplicity (no separate build step).
-- **Blueprints:** Large domains (stock, daily fetch, ai news/audio, toolbar) register on one Flask app — clear ownership and grep-friendly files.
+- **External UI:** React in **`web/`** (`npm run build` → `web/dist`). See [../web/](../web/). Legacy `templates/index.html` is fallback only.
+- **Blueprints:** Large domains (stock, daily fetch, ai news/audio, toolbar, intensive reading) register on the FastAPI Flask-compat app.
 - **Fast model for batch tasks:** Narration/classify uses **`qwen3:1.7b`** tier models where appropriate (see env vars).
 - **No-cache headers:** HTML responses send strict no-cache headers so refreshed JS/CSS is picked up immediately.
 - **Daily Fetch background jobs:** Long pipelines stay off HTTP request latency (daemon threads + polling in `daily_fetch` blueprint).

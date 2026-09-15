@@ -1,12 +1,15 @@
-# Tests & temporary files
-tests/
+# Temporary files and caches
 tmp/
 logs/
+.pytest_cache/
 
 # Local intensive-reading books (PDFs, EPUBs, chunks, analyses)
 # Keep the empty directory in git; do not push book content.
 docs/books/**
 !docs/books/.gitkeep
+
+# Frontend (Vite)
+web/node_modules/
 
 # Python
 __pycache__/

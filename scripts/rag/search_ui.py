@@ -22,6 +22,7 @@ from flask import Flask, request, jsonify, render_template_string
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from config import REPORTS_ROOT, SNAPSHOT_PATH, KNOWLEDGE_ROOT, PROJECT_DIRS_PATH
+from snapshot_io import load_snapshot_dict
 
 COLLECTION = "ai_briefings"
 VECTOR_SIZE = 384
@@ -1127,8 +1128,7 @@ def _get_client():
             vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
         )
         if os.path.exists(SNAPSHOT_PATH):
-            with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            data = load_snapshot_dict(SNAPSHOT_PATH)
             points = data.get("points", [])
             batch_size = 100
             for i in range(0, len(points), batch_size):
@@ -1145,8 +1145,7 @@ def get_stats() -> str:
     if not os.path.exists(SNAPSHOT_PATH):
         return "No indexed data yet. Run index_briefing.py first."
     try:
-        with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        data = load_snapshot_dict(SNAPSHOT_PATH)
         return f"Indexed chunks: {data.get('count', 0)}"
     except Exception as e:
         return f"Error: {e}"
@@ -1624,8 +1623,7 @@ def api_delete():
     if not os.path.exists(SNAPSHOT_PATH):
         return jsonify({"error": "No snapshot file", "removed": 0})
 
-    with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
-        snap = json.load(f)
+    snap = load_snapshot_dict(SNAPSHOT_PATH)
 
     before = len(snap["points"])
     snap["points"] = [

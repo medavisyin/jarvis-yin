@@ -33,12 +33,12 @@ last-updated: 2026-05-07
                     ▼                  ▼                   ▼
        ┌────────────────────┐  ┌─────────────┐  ┌────────────────────┐
        │  SEARCH UI (:18888)│  │ AGENT (:18889│  │  CLI / AUTOMATION   │
-       │  search_ui.py      │  │  agent.py    │  │  scripts/*          │
+       │  Flask search_ui   │  │  React+API   │  │  scripts/*          │
        └────────┬───────────┘  └──────┬──────┘  └────────┬───────────┘
                 │                     │                   │
                 ▼                     ▼                   ▼
   ┌──────────────────────────────────────────────────────────────────┐
-  │                     FLASK BLUEPRINTS & ROUTES                    │
+  │                     HTTP ROUTES (FastAPI blueprints on :18889)       │
   │                                                                  │
   │  toolbar_bp    daily_fetch_bp    stock_bp    (agent core)        │
   │                                                                  │
@@ -242,7 +242,7 @@ last-updated: 2026-05-07
 
 | # | Feature | Impl Doc |
 |---|---------|----------|
-| 1 | RAG Agent Chat | [rag-agent-impl.md](./usage-tool/rag-agent-impl.md) |
+| 1 | RAG Agent Chat | [rag-agent-impl.md](./usage-tool/rag-agent-impl.md) — UI: [web/](./web/) |
 | 2 | Search UI / Library | [search-ui-impl.md](./usage-tool/search-ui-impl.md) |
 | 3 | Reindex Orchestration | [reindex-all-impl.md](./usage-tool/reindex-all-impl.md) |
 | 4 | Custom File Indexing | [custom-indexing-impl.md](./usage-tool/custom-indexing-impl.md) |
@@ -373,7 +373,8 @@ last-updated: 2026-05-07
 | 4 | Index Custom | [index-custom-impl.md](./rag/index-custom-impl.md) |
 | 5 | Reindex All | [reindex-all-impl.md](./rag/reindex-all-impl.md) |
 | 6 | Search UI | [search-ui-impl.md](./rag/search-ui-impl.md) |
-| 7 | Agent | [agent-impl.md](./rag/agent-impl.md) |
+| 7 | Agent (Python) | [agent-impl.md](./rag/agent-impl.md) |
+| — | Frontend (React) | **[web/](./web/)** — architecture, run, Python bridge; API catalog [agent-spa-impl.md](./rag/agent-spa-impl.md) |
 | 8 | Eval Datasets | [eval-datasets-impl.md](./rag/eval-datasets-impl.md) |
 | 9 | Learning Features | [learning-features-impl.md](./rag/learning-features-impl.md) |
 | 10 | Global Settings | [global-settings-impl.md](./rag/global-settings-impl.md) |

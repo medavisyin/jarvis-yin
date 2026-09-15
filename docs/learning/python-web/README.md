@@ -17,8 +17,9 @@
 
 | Component | Pattern | Script |
 |-----------|---------|--------|
-| Search UI | Flask + embedded HTML template + JSON APIs | `scripts/rag/search_ui.py` |
-| RAG Agent | Flask + SSE streaming + background threads | `scripts/rag/agent.py` |
+| Search UI | Flask + HTML + JSON APIs | `scripts/rag/search_ui.py` |
+| RAG Agent UI | React SPA + FastAPI `/api` + SSE | `web/` + `scripts/rag/agent.py` — **[Frontend track](../frontend/)** |
+| RAG Agent HTTP | FastAPI (Flask-shaped `web_api.py`) + background threads | `scripts/rag/agent.py` |
 | Background indexing | `threading.Thread(daemon=True)` + job polling | `search_ui.py`, `agent.py` |
 | Pipeline orchestration | `concurrent.futures.ThreadPoolExecutor` | `scripts/pipeline/run-all-sources.py` |
 | Fetcher scripts | Async patterns, retry logic, proxy handling | `scripts/fetchers/` |
@@ -30,6 +31,7 @@
 - [Testing Python Apps](testing-python-apps.md) — pytest patterns
 - [Search UI Implementation](../../implementation/rag/search-ui-impl.md) — Flask API reference
 - [Agent Implementation](../../implementation/rag/agent-impl.md) — SSE streaming, sessions
+- [Frontend learning](../frontend/) — React, `apiJson`, Vite (Agent UI :18889)
 
 ## Suggested Learning Path
 
@@ -39,4 +41,4 @@
 
 ---
 
-*Part of the [Jarvis Learning Series](../). See also: [RAG](../rag/), [Data Acquisition](../data-acquisition/)*
+*Part of the [Jarvis Learning Series](../). See also: [RAG](../rag/), [Frontend](../frontend/), [Data Acquisition](../data-acquisition/)*

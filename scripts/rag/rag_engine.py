@@ -14,6 +14,7 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 from config import PROJECT_GRAPH_PATH, SNAPSHOT_PATH
+from snapshot_io import load_snapshot_dict
 
 COLLECTION = "ai_briefings"
 VECTOR_SIZE = 384
@@ -67,10 +68,9 @@ def get_qdrant():
         if os.path.exists(SNAPSHOT_PATH):
             _qdrant_points_snapshot_mtime = os.path.getmtime(SNAPSHOT_PATH)
             try:
-                with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
-                    data = json.load(f)
+                data = load_snapshot_dict(SNAPSHOT_PATH)
                 points = data.get("points", [])
-            except (json.JSONDecodeError, OSError, ValueError) as e:
+            except (OSError, ValueError) as e:
                 # A snapshot truncated by a killed writer must never brick
                 # startup — log and continue with an empty collection so the
                 # server still boots (re-index to repopulate).
@@ -107,10 +107,9 @@ def sync_qdrant_points_from_snapshot() -> None:
     if mtime <= _qdrant_points_snapshot_mtime:
         return
     try:
-        with open(SNAPSHOT_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        data = load_snapshot_dict(SNAPSHOT_PATH)
         points = data.get("points", [])
-    except (json.JSONDecodeError, OSError, ValueError) as e:
+    except (OSError, ValueError) as e:
         print(f"  WARNING: skipping snapshot reload, {SNAPSHOT_PATH} unreadable: {e}",
               flush=True)
         return

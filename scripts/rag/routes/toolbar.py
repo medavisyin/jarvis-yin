@@ -13,14 +13,14 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any, Iterator
 
-from flask import Blueprint, Response, jsonify, request
-
 _ROUTES_DIR = os.path.dirname(os.path.abspath(__file__))
 _RAG_PKG_DIR = os.path.dirname(_ROUTES_DIR)
 _SCRIPTS_DIR = os.path.dirname(_RAG_PKG_DIR)
 for _p in (_SCRIPTS_DIR, _RAG_PKG_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+from web_api import Blueprint, Response, jsonify, request
 
 from config import REPORTS_ROOT
 

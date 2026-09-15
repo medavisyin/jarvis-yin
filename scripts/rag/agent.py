@@ -10,7 +10,7 @@ Usage:
   Opens at http://localhost:18889 (or custom port)
   LAN access: set JARVIS_HOST=0.0.0.0 or pass --host 0.0.0.0
 
-Dependencies: pip install ollama qdrant-client sentence-transformers flask pypdf
+Dependencies: pip install ollama qdrant-client sentence-transformers fastapi uvicorn python-multipart pypdf
 """
 import base64
 import glob
@@ -29,11 +29,12 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from typing import Any
 
-from flask import Flask, Response, request, jsonify, render_template_string, make_response, send_file
+from web_api import Flask, Response, request, jsonify, render_template_string, make_response
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from config import (
     CHAT_SESSIONS_DIR,
+    JARVIS_ROOT,
     JIRA_REPORT_SCRIPT,
     KNOWLEDGE_ROOT,
     NOTES_FILE,
@@ -696,6 +697,7 @@ def api_agent():
                     rag_query_override=rag_query_override,
                     suggested_tools=ctx.all_suggested_tools,
                     auto_prefetch=_auto,
+                    session_id=session_id,
                 ):
                     yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 if disclaimer:
@@ -872,7 +874,8 @@ def api_agent():
                     for event in run_agent(effective_query, image_b64=image_b64,
                                            conversation_history=history,
                                            system_prompt_override=learning_prompt,
-                                           rag_query_override=None):
+                                           rag_query_override=None,
+                                           session_id=session_id):
                         yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
 
@@ -944,7 +947,8 @@ def api_agent():
                     for event in run_agent(effective_query, image_b64=image_b64,
                                            conversation_history=history,
                                            system_prompt_override=learning_prompt,
-                                           rag_query_override=None):
+                                           rag_query_override=None,
+                                           session_id=session_id):
                         yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                     yield "data: [DONE]\n\n"
 
@@ -1007,7 +1011,8 @@ def api_agent():
         for event in run_agent(effective_query, image_b64=image_b64,
                                conversation_history=history,
                                system_prompt_override=learning_prompt,
-                               rag_query_override=rag_query_override):
+                               rag_query_override=rag_query_override,
+                               session_id=session_id):
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         if web_refs:
             yield f"data: {json.dumps({'type': 'answer_chunk', 'content': chr(10) + chr(10) + web_refs + chr(10)}, ensure_ascii=False)}\n\n"
@@ -1616,19 +1621,25 @@ app.register_blueprint(intensive_reading_bp)
 # WEB UI
 # ===================================================================
 
-# Web UI template loaded from external file
+# Legacy HTML until `web/dist` exists (Vite build). Prefer SPA when built.
 _TEMPLATE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates")
-with open(os.path.join(_TEMPLATE_DIR, "index.html"), "r", encoding="utf-8") as _f:
-    AGENT_HTML = _f.read()
 
+from spa_static import mount_spa, resolve_index_html
 
-@app.route("/")
-def index():
-    resp = make_response(render_template_string(AGENT_HTML))
-    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    resp.headers["Pragma"] = "no-cache"
-    resp.headers["Expires"] = "0"
-    return resp
+_WEB_DIST = os.path.join(JARVIS_ROOT, "web", "dist")
+if resolve_index_html(_WEB_DIST):
+    mount_spa(app, _WEB_DIST)
+else:
+    with open(os.path.join(_TEMPLATE_DIR, "index.html"), "r", encoding="utf-8") as _f:
+        AGENT_HTML = _f.read()
+
+    @app.route("/")
+    def index():
+        resp = make_response(render_template_string(AGENT_HTML))
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+        return resp
 
 
 # ===================================================================
@@ -1646,4 +1657,5 @@ if __name__ == "__main__":
     _get_qdrant()
     print("Ready! Open your browser.", flush=True)
     _start_daily_fetch_scheduler()
-    app.run(host=host, port=port, debug=False, threaded=True)
+    import uvicorn
+    uvicorn.run(app, host=host, port=port)

@@ -1,6 +1,8 @@
 # Know-How: Flask Web Server
 
-A short introduction to **Flask** and how **Jarvis** uses it to expose search and chat over HTTP.
+A short introduction to **Flask** and how **Jarvis** uses it for the **Search UI**.
+
+> **Agent UI on port 18889 is no longer a Flask HTML page.** It is a React app (`web/`). Python there is FastAPI. Learn that stack in **[Frontend learning](../frontend/)** (including what `apiJson` is). This page is only about **Flask on port 18888** (`search_ui.py`).
 
 ## What is Flask?
 
@@ -15,19 +17,17 @@ Official documentation:
 
 ## How Jarvis uses Flask
 
-Jarvis runs **two** Flask applications:
+Jarvis still uses **one** Flask application for the library Search UI. The chat Agent is FastAPI + React.
 
 | App | Port | Role |
 |-----|------|------|
-| `search_ui.py` | **18888** | Search UI: library browsing, chunk inspection, search |
-| `agent.py` | **18889** | RAG chat agent backed by a local LLM |
+| `search_ui.py` | **18888** | Search UI: library browsing, chunk inspection, search (**Flask**) |
+| `agent.py` | **18889** | RAG chat + News/Stock/Reading APIs (**FastAPI**); browser UI is React — see [Frontend](../frontend/) |
 
-**Single-file deployment style:**
+**Search UI deployment style:**
 
-- Both apps use **`render_template_string()`** with **embedded HTML** strings (no separate `templates/` tree required for that pattern).
-- JSON APIs use **`jsonify()`** for structured responses.
-
-This keeps deployment simple: fewer files to copy, one process per app.
+- `search_ui.py` uses Flask templates / JSON APIs (`jsonify`).
+- Agent SPA files live in `web/dist`, not in Flask `render_template_string`.
 
 ## Key Flask concepts used in Jarvis
 
