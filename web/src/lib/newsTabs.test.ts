@@ -6,6 +6,7 @@ describe("NEWS_TABS", () => {
     const labels = NEWS_TABS.map((t) => t.label);
     expect(labels).toEqual([
       "Daily fetch",
+      "World monitor",
       "AI news",
       "Audio from Knowledge",
       "Explain This",
@@ -17,6 +18,7 @@ describe("NEWS_TABS", () => {
     expect(labels).not.toContain("Toolbar");
     expect(NEWS_TABS.map((t) => t.path)).toEqual([
       "/news/daily",
+      "/news/monitor",
       "/news/ai",
       "/news/audio",
       "/news/explain",

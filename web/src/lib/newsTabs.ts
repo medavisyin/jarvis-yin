@@ -1,5 +1,6 @@
 export const NEWS_TABS = [
   { id: "daily", label: "Daily fetch", path: "/news/daily" },
+  { id: "monitor", label: "World monitor", path: "/news/monitor" },
   { id: "ai", label: "AI news", path: "/news/ai" },
   { id: "audio", label: "Audio from Knowledge", path: "/news/audio" },
   { id: "explain", label: "Explain This", path: "/news/explain" },

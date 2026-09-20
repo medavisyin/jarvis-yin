@@ -272,6 +272,55 @@ async def main():
         else:
             print(f"  Finance news fetched in {finance_news_seconds}s")
 
+    world_news_script = os.path.join(SCRIPT_DIR, "run-world-news.py")
+    if os.path.isfile(world_news_script):
+        print("\n=== Phase 6: World News Fetch ===")
+        t = time.monotonic()
+        world_news_dir = os.path.join(output_dir, "world-news")
+        os.makedirs(world_news_dir, exist_ok=True)
+        leaf = os.path.basename(os.path.abspath(output_dir))
+        if len(leaf) == 10 and leaf[4] == "-" and leaf[7] == "-":
+            world_report_date = leaf
+        else:
+            from datetime import datetime as _dt
+            world_report_date = _dt.now().strftime("%Y-%m-%d")
+        cmd = [
+            sys.executable,
+            world_news_script,
+            "--output-dir",
+            world_news_dir,
+            "--no-translate",
+            "--report-date",
+            world_report_date,
+        ]
+        if args.proxy:
+            cmd.extend(["--proxy", args.proxy])
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=900)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            print("  Warning: World news fetch timed out after 900s")
+            stdout, stderr = b"", b""
+        world_news_seconds = round(time.monotonic() - t, 2)
+        out = stdout.decode("utf-8", errors="replace").strip()
+        if out:
+            for line in out.split("\n"):
+                print(f"  {line}")
+        if proc.returncode and proc.returncode != 0:
+            err = stderr.decode("utf-8", errors="replace").strip()
+            print(f"  Warning: World news fetch failed (exit {proc.returncode})")
+            if err:
+                print(f"  {err[:200]}")
+        else:
+            print(f"  World news fetched in {world_news_seconds}s")
+
     if os.path.isfile(index_script):
         print("\n=== Phase 5.5: RAG Indexing (post-finance) ===")
         t = time.monotonic()

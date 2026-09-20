@@ -6,6 +6,7 @@ import {
   mdFilesOnly,
   pickFinanceCategory,
   refetchAudioSteps,
+  refetchWorldNewsSteps,
   renderReportMarkdown,
   parseLearningGuideDeepDives,
 } from "./dailyFetch";
@@ -77,6 +78,14 @@ describe("refetchAudioSteps", () => {
       "finance_news_merge",
       "finance_news_translate",
       "fn_audio:gold",
+    ]);
+  });
+
+  it("prefixes world fetch before merge and translate", () => {
+    expect(refetchWorldNewsSteps()).toEqual([
+      "refetch_world",
+      "world_news_merge",
+      "world_news_translate",
     ]);
   });
 });

@@ -19,6 +19,8 @@ NEWS_ONLY_STEPS = (
     "ai_learning_knowledge",
     "finance_news_merge",
     "finance_news_translate",
+    "world_news_merge",
+    "world_news_translate",
     "ai_audio",
     "finance_audio",
 )
@@ -147,7 +149,7 @@ def scheduler_status() -> dict:
 
 
 def _auto_fetch_already_done(today: str, reports_root: str | None = None) -> bool:
-    """True when today's AI MP3 and finance merge JSON already exist."""
+    """True when today's AI MP3, finance merge JSON, and world-news JSON already exist."""
     root = reports_root
     if root is None:
         from config import REPORTS_ROOT
@@ -156,7 +158,8 @@ def _auto_fetch_already_done(today: str, reports_root: str | None = None) -> boo
     output_dir = os.path.join(root, today)
     ai_mp3 = os.path.join(output_dir, "ai-briefing.mp3")
     fn_json = os.path.join(output_dir, "finance-news", "finance-news-data.json")
-    return os.path.isfile(ai_mp3) and os.path.isfile(fn_json)
+    wn_json = os.path.join(output_dir, "world-news", "world-news-data.json")
+    return os.path.isfile(ai_mp3) and os.path.isfile(fn_json) and os.path.isfile(wn_json)
 
 
 def _daily_fetch_job_running(jobs: dict | None = None) -> bool:
@@ -174,7 +177,7 @@ def make_start_job(jobs: dict, run_daily_fetch, thread_cls=threading.Thread):
         job_id = str(uuid.uuid4())[:8]
         jobs[job_id] = {
             "status": "starting",
-            "step": "Scheduled AI+Finance fetch...",
+            "step": "Scheduled AI+Finance+World fetch...",
             "steps": [],
             "files": [],
             "scheduled": True,

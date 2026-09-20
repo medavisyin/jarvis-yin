@@ -48,9 +48,13 @@ def mount_spa(app: Any, dist_dir: str) -> None:
             return jsonify({"error": "SPA not built"}), 404
         return FileResponse(index, media_type="text/html")
 
-    @app.route("/<path:full_path>")
+    @app.route("/<path:full_path>", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"])
     def spa_fallback(full_path: str):
+        from web_api import request
+
         if _is_api_path(full_path) or _is_docs_path(full_path):
+            return jsonify({"error": "Not found"}), 404
+        if request.method not in ("GET", "HEAD"):
             return jsonify({"error": "Not found"}), 404
         direct = os.path.normpath(os.path.join(dist_dir, full_path))
         dist_abs = os.path.abspath(dist_dir)

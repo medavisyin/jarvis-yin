@@ -9,6 +9,7 @@ import {
   parseLearningGuideDeepDives,
   pickFinanceCategory,
   refetchAudioSteps,
+  refetchWorldNewsSteps,
   renderReportMarkdown,
   type DeepDiveItem,
   type FinanceItem,
@@ -30,6 +31,7 @@ type DailyHistory = {
     ai_items?: number;
     ai_by_source?: Record<string, number>;
     finance_news_items?: number;
+    world_news_items?: number;
     finance_by_source?: Record<string, number>;
     finance_by_category?: Record<string, number>;
     finance_by_region?: Record<string, number>;
@@ -56,6 +58,9 @@ const STEP_LABELS: Record<string, string> = {
   jira_daily: "Jira Report",
   wiki_fetch: "Wiki Fetch",
   finance_news_merge: "Finance News Merge",
+  world_news_merge: "World News Merge",
+  world_news_translate: "World News Translate",
+  refetch_world: "World News Fetch",
   refetch_finance: "Finance News Fetch",
   finance_news_translate: "Finance News Translate",
   ai_audio: "AI Audio",
@@ -337,7 +342,7 @@ export function DailyFetchPanel() {
 
       {showHistory ? (
         <>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
             <Stat label="AI News" value={stats.ai_items} suffix="items" breakdown={stats.ai_by_source} />
             <Stat
               label="Finance News"
@@ -346,6 +351,18 @@ export function DailyFetchPanel() {
               extra={regionLine(stats.finance_by_region)}
               breakdown={stats.finance_by_source}
             />
+            <Stat label="World News" value={stats.world_news_items} suffix="items">
+              <Button
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                disabled={running}
+                title="Re-fetch geopolitics world news"
+                onClick={() => void runContinue(refetchWorldNewsSteps(), "Refreshing world news")}
+              >
+                Refresh
+              </Button>
+            </Stat>
             <Stat label="Jira Tickets" value={stats.jira_tickets} />
             <Stat label="Confluence" value={stats.confluence_pages} suffix="pages" />
             <Stat label="Wiki Fetch" value={stats.wiki_pages} suffix="pages">

@@ -9,9 +9,9 @@ The pipeline orchestrator coordinates end-to-end briefing ingestion in multiple 
 | `scripts/pipeline/preflight-check.py` | Parallel URL reachability checks before heavy scraping |
 | `scripts/pipeline/run-all-sources.py` | Main orchestrator: subprocess fetchers, merge, RAG index, world news |
 | `scripts/pipeline/merge-sources.py` | Combines `{source}.json` files and deduplicates by title similarity |
-| `scripts/pipeline/run-world-news.py` | World news orchestrator: 6 fetchers + merge + Chinese translation |
+| `scripts/pipeline/run-world-news.py` | World news orchestrator: catalog fetchers + merge + Chinese translation |
 
-See also: [World News Pipeline](./world-news-impl.md) for detailed docs on `run-world-news.py`, `fetch-china-news.py`, translation, and merge logic.
+See also: [World News Pipeline](./world-news-impl.md) and [World Monitor](../personal/world-monitor-impl.md).
 
 ## Technologies
 
@@ -97,10 +97,10 @@ Preflight is optional in manual workflows but recommended for diagnosing proxies
 | `{source}.json` | Each `fetch-*.py` | `merge-sources.py` |
 | `briefing-data.json` | `merge-sources.py` | Output generators, `filter_topics.py`, RAG indexing |
 | `world-news/{source}.json` | World news fetchers | `merge_news()` in `run-world-news.py` |
-| `world-news/world-news-data.json` | `run-world-news.py` | World audio generation, UI display, black swan detector |
+| `world-news/world-news-data.json` | `run-world-news.py` | World monitor map, Casual English, black swan detector |
 | `world-news/world-news-timing.json` | `run-world-news.py` | Operators, CI logs |
 | Timing / log output | `run-all-sources.py`, `merge-sources.py` | Operators, CI logs |
 
-After merge (and optional `filter_topics.py`), the pipeline hands off to output generation scripts. The world news phase runs independently and produces its own merged output used for audio generation and stock-related analysis.
+After merge (and optional `filter_topics.py`), the pipeline hands off to output generation scripts. The world news phase writes JSON for the map UI; there is no world MP3 in this round.
 
-See [World News Pipeline](./world-news-impl.md) for full details on the 6-source world news pipeline, Chinese news fetching, and Ollama translation.
+See [World News Pipeline](./world-news-impl.md).

@@ -121,6 +121,9 @@ Methods are what the SPA actually calls. Job-style scans use start → poll stat
 | | GET | `/api/toolbar/audio-file/{date}/{file}` |
 | | POST | `/api/toolbar/deep-dive` |
 | | GET | `/api/toolbar/finance-sources` (read for refetch; save is Settings) |
+| | GET/POST | `/api/toolbar/world-sources` |
+| World monitor | GET | `/api/toolbar/world-monitor` (`date`, `variant`, `lookback`) |
+| | POST | `/api/toolbar/world-monitor/insight` |
 | AI news | GET/POST | `/api/toolbar/ai-news-kb`, `.../scan`, `.../article-audio` (poll `GET /api/toolbar/audio-knowledge/{job_id}`), `.../article-audios`, `.../send-telegram` |
 | Audio | GET/POST | `/api/toolbar/audio-knowledge`, `.../history`, `.../items`, `.../{job_id}` |
 | Trend | POST | `/api/toolbar/trend-analysis` (stream) |

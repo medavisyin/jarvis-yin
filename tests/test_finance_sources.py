@@ -494,7 +494,7 @@ def test_fetch_sources_timeout_covers_finance_900s():
     idx = src.find(marker)
     assert idx != -1
     chunk = src[idx:idx + 900]
-    assert "timeout=1500" in chunk
+    assert "timeout=2400" in chunk
 
 
 def test_refetch_finance_only_when_explicit_in_only_steps():

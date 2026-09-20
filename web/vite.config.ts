@@ -10,6 +10,9 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  optimizeDeps: {
+    include: ["globe.gl", "three", "@deck.gl/core", "@deck.gl/layers", "@deck.gl/react"],
+  },
   server: {
     port: 5173,
     proxy: {

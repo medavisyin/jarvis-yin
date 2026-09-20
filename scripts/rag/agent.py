@@ -1164,6 +1164,7 @@ _GLOBAL_SETTINGS_DEFAULTS = {
     "audio_voice_en": "female",
     "deepseek_api_key": "",
     "finance_sources_enabled": {},
+    "world_sources_enabled": {},
 }
 
 
@@ -1606,6 +1607,9 @@ from routes.daily_fetch import (
     _start_daily_fetch_scheduler,
 )
 app.register_blueprint(daily_fetch_bp)
+
+from routes.world_monitor import world_monitor_bp
+app.register_blueprint(world_monitor_bp)
 
 
 # Stock routes (Blueprint)

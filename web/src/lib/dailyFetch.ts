@@ -36,6 +36,10 @@ export function refetchAudioSteps(stepName: string): string[] {
   return [stepName];
 }
 
+export function refetchWorldNewsSteps(): string[] {
+  return ["refetch_world", "world_news_merge", "world_news_translate"];
+}
+
 export function enabledSourceIdsForCategory(
   sources: SourceLike[],
   enabled: Record<string, boolean>,

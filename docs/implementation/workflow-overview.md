@@ -278,6 +278,7 @@ last-updated: 2026-05-07
 | 3 | Topic Deduplication | [topic-dedup-impl.md](./briefing-pipeline/topic-dedup-impl.md) |
 | 4 | Output Generation | [output-generation-impl.md](./briefing-pipeline/output-generation-impl.md) |
 | 5 | World News Pipeline | [world-news-impl.md](./briefing-pipeline/world-news-impl.md) |
+| 5b | World Monitor UI | [world-monitor-impl.md](./personal/world-monitor-impl.md) |
 
 ---
 

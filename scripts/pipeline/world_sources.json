@@ -1,0 +1,127 @@
+{
+  "categories": [
+    {"id": "politics", "label": "Politics & World Affairs"},
+    {"id": "economics", "label": "Economics & Business"},
+    {"id": "technology", "label": "Technology"},
+    {"id": "science", "label": "Science & Environment"}
+  ],
+  "sources": [
+    {
+      "id": "bbc-news",
+      "display": "BBC World News",
+      "category": "politics",
+      "fetcher": "fetchers/news/fetch-bbc-news.py",
+      "output": "bbc-news.json",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 1
+    },
+    {
+      "id": "reuters",
+      "display": "Reuters",
+      "category": "politics",
+      "fetcher": "fetchers/news/fetch-reuters.py",
+      "output": "reuters.json",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 2
+    },
+    {
+      "id": "ap-news",
+      "display": "AP News",
+      "category": "politics",
+      "fetcher": "fetchers/news/fetch-ap-news.py",
+      "output": "ap-news.json",
+      "method": "scrape",
+      "default_enabled": true,
+      "priority": 3
+    },
+    {
+      "id": "dw-news",
+      "display": "Deutsche Welle",
+      "category": "politics",
+      "fetcher": "fetchers/news/fetch-dw-news.py",
+      "output": "dw-news.json",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 4
+    },
+    {
+      "id": "guardian",
+      "display": "The Guardian",
+      "category": "politics",
+      "fetcher": "fetchers/news/fetch-guardian.py",
+      "output": "guardian.json",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 5
+    },
+    {
+      "id": "peoples-daily",
+      "display": "人民日报",
+      "category": "politics",
+      "fetcher": "fetchers/news/fetch-world-rss.py",
+      "output": "peoples-daily.json",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 0,
+      "feeds": [
+        ["politics", "http://www.people.com.cn/rss/politics.xml"],
+        ["economics", "http://www.people.com.cn/rss/finance.xml"]
+      ]
+    },
+    {
+      "id": "xinhua",
+      "display": "新华社",
+      "category": "politics",
+      "fetcher": "fetchers/news/fetch-world-rss.py",
+      "output": "xinhua.json",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 0,
+      "feeds": [
+        ["politics", "http://www.news.cn/politics/news_politics.xml"],
+        ["politics", "https://english.news.cn/rss/worldrss.xml"]
+      ]
+    },
+    {
+      "id": "al-jazeera",
+      "display": "Al Jazeera",
+      "category": "politics",
+      "fetcher": "fetchers/news/fetch-world-rss.py",
+      "output": "al-jazeera.json",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 6,
+      "feeds": [
+        ["politics", "https://www.aljazeera.com/xml/rss/all.xml"]
+      ]
+    },
+    {
+      "id": "the-diplomat",
+      "display": "The Diplomat",
+      "category": "politics",
+      "fetcher": "fetchers/news/fetch-world-rss.py",
+      "output": "the-diplomat.json",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 7,
+      "feeds": [
+        ["politics", "https://thediplomat.com/feed/"]
+      ]
+    },
+    {
+      "id": "kyiv-independent",
+      "display": "Kyiv Independent",
+      "category": "politics",
+      "fetcher": "fetchers/news/fetch-world-rss.py",
+      "output": "kyiv-independent.json",
+      "method": "rss",
+      "default_enabled": true,
+      "priority": 8,
+      "feeds": [
+        ["politics", "https://kyivindependent.com/feed/"]
+      ]
+    }
+  ]
+}

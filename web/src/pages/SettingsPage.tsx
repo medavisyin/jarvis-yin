@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FinanceSourcesCard } from "@/features/news/FinanceSourcesCard";
+import { WorldSourcesCard } from "@/features/news/WorldSourcesCard";
 import { PageFrame } from "@/layouts/PageFrame";
 
 type Health = {
@@ -202,6 +203,7 @@ export function SettingsPage() {
         </CardContent>
       </Card>
       <FinanceSourcesCard />
+      <WorldSourcesCard />
       {status ? <p className="text-sm">{status}</p> : null}
       </div>
     </PageFrame>

@@ -1,4 +1,5 @@
 import { Navigate, Outlet, useParams } from "react-router-dom";
+import { WorldMonitorPage } from "@/features/news/worldMonitor/WorldMonitorPage";
 import { DailyFetchPanel } from "@/features/news/DailyFetchPanel";
 import { AiNewsPanel } from "@/features/news/AiNewsPanel";
 import { AudioKnowledgePanel } from "@/features/news/AudioKnowledgePanel";
@@ -23,6 +24,8 @@ export function NewsToolPage() {
   switch (match.id as NewsTabId) {
     case "daily":
       return <DailyFetchPanel />;
+    case "monitor":
+      return <WorldMonitorPage />;
     case "ai":
       return <AiNewsPanel />;
     case "audio":

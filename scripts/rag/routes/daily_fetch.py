@@ -29,6 +29,12 @@ from finance_sources import (
     load_catalog,
     resolve_enabled,
 )
+from world_sources import (
+    CATEGORIES as WORLD_CATEGORIES,
+    load_catalog as load_world_catalog,
+    resolve_enabled as resolve_world_enabled,
+    world_history_missing_steps,
+)
 from briefing_translate import (
     briefing_ready_for_zh_audio,
     pick_item_text,
@@ -45,7 +51,6 @@ from daily_fetch_schedule import (
     scheduler_status,
 )
 from tools import tool_commit_summary
-from learning.constants import LEARNING_SESSION_IDS as _LEARNING_SESSION_IDS
 from routes.ai_news import (
     _generate_segmented_narrations,
     _load_ai_kb,
@@ -398,6 +403,36 @@ def _check_finance_translated(output_dir: str) -> bool:
         return False
 
 
+def _world_news_json_path(date_dir: str) -> str | None:
+    path = os.path.join(date_dir, "world-news", "world-news-data.json")
+    return path if os.path.isfile(path) else None
+
+
+def _check_world_translated(output_dir: str) -> bool:
+    wn_path = _world_news_json_path(output_dir)
+    if not wn_path:
+        return False
+    try:
+        with open(wn_path, "r", encoding="utf-8") as f:
+            return json.load(f).get("translated", False)
+    except Exception:
+        return False
+
+
+def _count_world_news_items(date_dir: str) -> int:
+    wn_path = _world_news_json_path(date_dir)
+    if not wn_path:
+        return 0
+    try:
+        with open(wn_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return int(data.get("total_items") or 0) or sum(
+            len(c.get("items") or []) for c in (data.get("categories") or [])
+        )
+    except Exception:
+        return 0
+
+
 def _count_briefing_items(date_dir: str) -> int:
     """Count AI briefing items on disk (filtered file preferred)."""
     for fname in ("briefing-data-filtered.json", "briefing-data.json"):
@@ -485,6 +520,7 @@ def _run_daily_fetch(
     target_date: str | None = None,
     lang_overrides: dict | None = None,
     finance_sources: list | None = None,
+    world_sources: list | None = None,
 ):
     """Background worker: run full briefing pipeline, then commit report + Jira daily.
 
@@ -526,6 +562,7 @@ def _run_daily_fetch(
                 for f in os.listdir(output_dir)
             ) if os.path.isdir(output_dir) else False,
             "finance_news_translate": lambda: _check_finance_translated(output_dir),
+            "world_news_translate": lambda: _check_world_translated(output_dir),
         }
         check_fn = checks.get(step_name)
         if check_fn and check_fn():
@@ -546,7 +583,7 @@ def _run_daily_fetch(
                     cmd.extend(["--proxy", proxy_url])
                 r = sp.run(
                     cmd,
-                    capture_output=True, text=False, timeout=1500, cwd=scripts_dir
+                    capture_output=True, text=False, timeout=2400, cwd=scripts_dir
                 )
                 stdout = r.stdout.decode("utf-8", errors="replace") if r.stdout else ""
                 steps.append({"step": "fetch_sources", "exit_code": r.returncode, "output": stdout[-500:]})
@@ -1006,6 +1043,75 @@ def _run_daily_fetch(
                 steps.append({"step": "finance_news_translate", "exit_code": -1,
                               "output": "No finance-news-data.json to translate"})
 
+        if only_steps and "refetch_world" in only_steps:
+            job["step"] = "Re-fetching world news sources..."
+            try:
+                wn_dir = os.path.join(output_dir, "world-news")
+                os.makedirs(wn_dir, exist_ok=True)
+                wn_script = os.path.join(scripts_dir, "pipeline", "run-world-news.py")
+                r_wn_cmd = ["python", wn_script, "--output-dir", wn_dir, "--no-translate",
+                            "--report-date", today]
+                if world_sources:
+                    r_wn_cmd.extend(["--sources", ",".join(str(s) for s in world_sources)])
+                r_wn = sp.run(
+                    r_wn_cmd,
+                    capture_output=True, text=False, timeout=900, cwd=scripts_dir
+                )
+                stdout_wn = r_wn.stdout.decode("utf-8", errors="replace") if r_wn.stdout else ""
+                steps.append({"step": "refetch_world", "exit_code": r_wn.returncode, "output": stdout_wn[-500:]})
+            except Exception as e:
+                steps.append({"step": "refetch_world", "exit_code": 1, "output": str(e)[:300]})
+
+        if _should_run("world_news_merge"):
+            wn_dir = os.path.join(output_dir, "world-news")
+            wn_merged_path = os.path.join(wn_dir, "world-news-data.json")
+            os.makedirs(wn_dir, exist_ok=True)
+            if not os.path.isfile(wn_merged_path):
+                job["step"] = "Fetching and merging world news..."
+                try:
+                    wn_script = os.path.join(scripts_dir, "pipeline", "run-world-news.py")
+                    wn_cmd = [sys.executable, wn_script, "--output-dir", wn_dir,
+                              "--no-translate", "--report-date", today]
+                    if world_sources:
+                        wn_cmd.extend(["--sources", ",".join(str(s) for s in world_sources)])
+                    proc = sp.run(wn_cmd, capture_output=True, text=True, timeout=900,
+                                  cwd=os.path.dirname(wn_script))
+                    steps.append({"step": "world_news_merge", "exit_code": proc.returncode,
+                                  "output": (proc.stdout or proc.stderr or "")[-300:]})
+                except Exception as e:
+                    steps.append({"step": "world_news_merge", "exit_code": 1, "output": str(e)[:300]})
+            else:
+                steps.append({"step": "world_news_merge", "exit_code": 0, "output": "Already merged"})
+
+        if _should_run("world_news_translate") and not _already_done("world_news_translate"):
+            wn_merged_path = os.path.join(output_dir, "world-news", "world-news-data.json")
+            if os.path.isfile(wn_merged_path):
+                job["step"] = "Translating world news to Chinese..."
+                try:
+                    with open(wn_merged_path, "r", encoding="utf-8") as f:
+                        wn_data = json.load(f)
+                    if not wn_data.get("translated"):
+                        import importlib.util
+                        _wn_spec = importlib.util.spec_from_file_location(
+                            "run_world_news",
+                            os.path.join(scripts_dir, "pipeline", "run-world-news.py"))
+                        _wn_mod = importlib.util.module_from_spec(_wn_spec)
+                        _wn_spec.loader.exec_module(_wn_mod)
+                        wn_data = _wn_mod.translate_news_to_chinese(wn_data)
+                        with open(wn_merged_path, "w", encoding="utf-8") as f:
+                            json.dump(wn_data, f, ensure_ascii=False, indent=2)
+                        steps.append({"step": "world_news_translate", "exit_code": 0,
+                                      "output": "Translation complete"})
+                    else:
+                        steps.append({"step": "world_news_translate", "exit_code": 0,
+                                      "output": "Already translated"})
+                except Exception as e:
+                    steps.append({"step": "world_news_translate", "exit_code": 1,
+                                  "output": str(e)[:300]})
+            else:
+                steps.append({"step": "world_news_translate", "exit_code": -1,
+                              "output": "No world-news-data.json to translate"})
+
         # --- Audio generation: single Finance News briefing ---
         def _pick_fn_text(it, prefer_zh):
             if prefer_zh:
@@ -1171,6 +1277,7 @@ def api_daily_fetch_continue():
     target_date = data.get("date") or datetime.now().strftime("%Y-%m-%d")
     lang_overrides = data.get("lang_overrides") or {}
     finance_sources = data.get("finance_sources") or []
+    world_sources = data.get("world_sources") or []
     job_id = str(_uuid.uuid4())[:8]
     _daily_fetch_jobs[job_id] = {
         "status": "starting",
@@ -1187,6 +1294,7 @@ def api_daily_fetch_continue():
             "target_date": target_date,
             "lang_overrides": lang_overrides,
             "finance_sources": finance_sources or None,
+            "world_sources": world_sources or None,
         },
         daemon=True,
     )
@@ -1364,6 +1472,7 @@ def api_daily_fetch_history():
                 missing_steps.append("finance_news_translate")
         except Exception:
             pass
+    missing_steps.extend(world_history_missing_steps(date_dir, target_date))
     if has_briefing_items:
         _ai_lang = _resolve_audio_lang("ai_audio", gs, None)
         _ai_done = _audio_already_done(date_dir, "ai_audio", _ai_lang)
@@ -1417,6 +1526,7 @@ def api_daily_fetch_history():
             "ai_items": ai_count,
             "ai_by_source": ai_by_source,
             "finance_news_items": fn_counts.get("total", 0),
+            "world_news_items": _count_world_news_items(date_dir),
             "finance_by_region": {
                 "us": fn_counts.get("us", 0),
                 "apac": fn_counts.get("apac", 0),
@@ -1479,6 +1589,34 @@ def api_finance_sources():
         "categories": CATEGORIES,
         "sources": catalog,
         "enabled": resolve_enabled(catalog, settings=gs),
+    })
+
+
+@daily_fetch_bp.route("/api/toolbar/world-sources", methods=["GET", "POST"])
+def api_world_sources():
+    """List geopolitics catalog + enabled ids; POST saves world_sources_enabled."""
+    catalog = load_world_catalog()
+    a = _resolve_agent()
+    gs = getattr(a, "_GLOBAL_SETTINGS", None)
+    if not isinstance(gs, dict):
+        gs = _get_global_settings()
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        enabled_map = data.get("enabled") or {}
+        if not isinstance(enabled_map, dict):
+            return jsonify({"error": "enabled must be an object"}), 400
+        gs["world_sources_enabled"] = {
+            str(k): bool(v) for k, v in enabled_map.items()
+        }
+        if hasattr(a, "_save_settings"):
+            a._save_settings(gs)
+        elif hasattr(a, "_GLOBAL_SETTINGS"):
+            a._GLOBAL_SETTINGS = gs
+        return jsonify({"ok": True, "enabled": resolve_world_enabled(catalog, settings=gs)})
+    return jsonify({
+        "categories": WORLD_CATEGORIES,
+        "sources": catalog,
+        "enabled": resolve_world_enabled(catalog, settings=gs),
     })
 
 
@@ -1574,6 +1712,8 @@ def api_finance_news_summary():
 
 def _get_or_create_learning_session(session_type: str) -> dict:
     """Get or create a special persistent learning session."""
+    from learning.constants import LEARNING_SESSION_IDS as _LEARNING_SESSION_IDS
+
     a = _resolve_agent()
     sid = _LEARNING_SESSION_IDS.get(session_type)
     if not sid:
@@ -1849,6 +1989,8 @@ def _load_recent_world_news_titles() -> list[dict]:
 def api_learning_session():
     """Get or create a special learning session."""
     body = request.get_json(silent=True) or {}
+    from learning.constants import LEARNING_SESSION_IDS as _LEARNING_SESSION_IDS
+
     session_type = body.get("type", "ai_learning")
     if session_type not in _LEARNING_SESSION_IDS:
         return jsonify({"error": "Invalid learning type"}), 400

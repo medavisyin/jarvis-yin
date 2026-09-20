@@ -25,6 +25,7 @@ describe("NAV", () => {
     expect(isNavGroup(news!) ? news.children.map((c) => c.label) : []).toEqual(NEWS_TABS.map((t) => t.label));
     expect(isNavGroup(news!) ? news.children.map((c) => c.to) : []).toEqual([
       "/news/daily",
+      "/news/monitor",
       "/news/ai",
       "/news/audio",
       "/news/explain",

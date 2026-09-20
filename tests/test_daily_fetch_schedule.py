@@ -1,4 +1,4 @@
-"""Unit tests for 09:00 auto Daily Fetch (AI News + Finance News only)."""
+"""Unit tests for 08:00 auto Daily Fetch (AI + Finance + World news)."""
 
 from __future__ import annotations
 
@@ -48,6 +48,8 @@ REQUIRED_AUTO_STEPS = {
     "ai_learning_knowledge",
     "finance_news_merge",
     "finance_news_translate",
+    "world_news_merge",
+    "world_news_translate",
     "ai_audio",
     "finance_audio",
 }
@@ -191,15 +193,19 @@ def test_fire_or_skip_misfire_skips_when_too_late():
     job.assert_not_called()
 
 
-def test_already_done_requires_ai_mp3_and_finance_json(tmp_path):
+def test_already_done_requires_ai_mp3_finance_and_world_json(tmp_path):
     today = "2026-08-28"
     day = tmp_path / today
     fn = day / "finance-news"
+    wn = day / "world-news"
     fn.mkdir(parents=True)
+    wn.mkdir(parents=True)
     assert _auto_fetch_already_done(today, reports_root=str(tmp_path)) is False
     (day / "ai-briefing.mp3").write_bytes(b"x")
     assert _auto_fetch_already_done(today, reports_root=str(tmp_path)) is False
     (fn / "finance-news-data.json").write_text("{}", encoding="utf-8")
+    assert _auto_fetch_already_done(today, reports_root=str(tmp_path)) is False
+    (wn / "world-news-data.json").write_text("{}", encoding="utf-8")
     assert _auto_fetch_already_done(today, reports_root=str(tmp_path)) is True
 
 
@@ -228,8 +234,10 @@ def test_scheduled_run_skips_when_already_done(tmp_path):
     today = "2026-08-28"
     day = tmp_path / today
     (day / "finance-news").mkdir(parents=True)
+    (day / "world-news").mkdir(parents=True)
     (day / "ai-briefing.mp3").write_bytes(b"x")
     (day / "finance-news" / "finance-news-data.json").write_text("{}", encoding="utf-8")
+    (day / "world-news" / "world-news-data.json").write_text("{}", encoding="utf-8")
     start_job = MagicMock()
     result = _run_scheduled_daily_fetch(
         {},
@@ -326,6 +334,20 @@ def test_scheduler_status_includes_running_and_log_path(tmp_path):
     assert status["log_path"] == str(log_path)
     dfs._scheduler_thread = None
     dfs._next_run_at = None
+
+
+def test_schedule_module_docstring_is_0800():
+    import daily_fetch_schedule as dfs
+
+    doc = dfs.__doc__ or ""
+    assert "08:00" in doc
+    assert "09:00" not in doc
+
+
+def test_scheduled_job_step_mentions_world():
+    path = os.path.join(_RAG, "daily_fetch_schedule.py")
+    src = open(path, encoding="utf-8").read()
+    assert "Scheduled AI+Finance+World fetch" in src
 
 
 def test_daily_fetch_route_exposes_scheduler_status():

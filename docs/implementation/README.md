@@ -5,7 +5,7 @@ tags:
   - navigation
 category: hub
 status: current
-last-updated: 2026-09-15
+last-updated: 2026-09-20
 ---
 
 # Jarvis Implementation Documentation
@@ -53,6 +53,7 @@ docs/implementation/
 │
 ├── personal/                        # PERSONAL — Daily briefing & content
 │   ├── daily-fetch-impl.md          # Daily fetch pipeline
+│   ├── world-monitor-impl.md        # Native map + Headlines dashboard
 │   ├── ai-news-kb-impl.md           # AI news knowledge base
 │   ├── audio-knowledge-impl.md      # Audio knowledge (podcast from RAG)
 │   ├── trend-analysis-impl.md       # Trend analysis
@@ -82,7 +83,7 @@ docs/implementation/
 │   ├── pipeline-orchestration-impl.md # run-all-sources, merge, preflight, world news
 │   ├── output-generation-impl.md    # briefing-template, audio, video
 │   ├── topic-dedup-impl.md          # topic_index, filter_topics, raw_saver
-│   └── world-news-impl.md          # World news pipeline, China fetcher, translation
+│   └── world-news-impl.md          # World news catalog + merge + translation
 └── stock/                           # (Subsystem view) Stock prediction
     ├── README.md                    # Stock module index (20 modules)
     ├── stock-prediction-impl.md     # Architecture overview + anti-overfitting
@@ -148,11 +149,12 @@ The live UI at **http://127.0.0.1:18889/**. Search UI **:18888** is Flask and st
 | 13 | [market-scanner-impl.md](./data-analysis/market-scanner-impl.md) | Market scanner — 3-layer short-term AI scanner + long-horizon theme scanner with RAG indexing. |
 | 14 | [market-sentiment-risk-impl.md](./data-analysis/market-sentiment-risk-impl.md) | Market sentiment & risk — Fear/Greed, VIX, black swan detection, China A-share flows, national team monitoring. |
 
-### PERSONAL — Daily Briefing & Content (5 functions)
+### PERSONAL — Daily Briefing & Content (6 functions)
 
 | # | Document | Description |
 |---|----------|-------------|
 | 16 | [daily-fetch-impl.md](./personal/daily-fetch-impl.md) | Daily fetch pipeline — full orchestration: news fetch, topic dedup, commit/jira/wiki reports, audio generation. |
+| 16b | [world-monitor-impl.md](./personal/world-monitor-impl.md) | Jarvis-native World monitor map + Headlines from Daily Fetch JSON (not AGPL World Monitor). |
 | 17 | [ai-news-kb-impl.md](./personal/ai-news-kb-impl.md) | AI news knowledge base — scan/categorize/summarize briefing items with LLM-driven learning paths. |
 | 18 | [audio-knowledge-impl.md](./personal/audio-knowledge-impl.md) | Audio knowledge — podcast MP3 generation from RAG chunks using Edge TTS, multi-language support. |
 | 19 | [trend-analysis-impl.md](./personal/trend-analysis-impl.md) | Trend analysis — multi-category RAG-based predictions (ai_news, world_news, wiki, jira, commits). |
@@ -205,7 +207,7 @@ The live UI at **http://127.0.0.1:18889/**. Search UI **:18888** is Flask and st
 |----------|-------------|
 | [fetcher-pattern-impl.md](./briefing-pipeline/fetcher-pattern-impl.md) | Shared pattern used by all `fetch-*.py` scraping scripts. |
 | [pipeline-orchestration-impl.md](./briefing-pipeline/pipeline-orchestration-impl.md) | `run-all-sources`, merge steps, preflight checks, and world news phase. |
-| [world-news-impl.md](./briefing-pipeline/world-news-impl.md) | World news pipeline: 6 fetchers (incl. China), merge, Ollama translation. |
+| [world-news-impl.md](./briefing-pipeline/world-news-impl.md) | World news catalog (wires + 人民日报/新华 + regional RSS), merge, Ollama translation. |
 | [output-generation-impl.md](./briefing-pipeline/output-generation-impl.md) | `briefing-template`, audio, and video output generation. |
 | [topic-dedup-impl.md](./briefing-pipeline/topic-dedup-impl.md) | `topic_index`, `filter_topics`, and `raw_saver` for topic handling and deduplication. |
 

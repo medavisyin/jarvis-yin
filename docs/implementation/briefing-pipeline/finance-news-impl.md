@@ -20,7 +20,7 @@ Six topic categories with a source catalog, per-category audio, RAG ingest, and 
 
 Daily Fetch generates **six** MP3s (`finance-markets.mp3`, `finance-china-policy.mp3`, `finance-us-political.mp3`, `finance-crypto.mp3`, `finance-gold.mp3`, `finance-oil.mp3`). No combined `finance-news.mp3`.
 
-Legacy `run-world-news.py` remains on disk unused. Readers prefer finance paths and fall back to `world-news/` for historical dates (`finance_news_paths.finance_news_data_path`).
+World geopolitics is a **separate** catalog (`run-world-news.py` → `world-news-data.json`) for the map UI; it is not a substitute for finance audio. Finance readers still prefer `finance-news/` and fall back to `world-news/` only for historical dates (`finance_news_paths.finance_news_data_path`).
 
 ## Catalog
 
@@ -62,5 +62,6 @@ APIs: `GET/POST /api/toolbar/finance-sources`, `POST /api/toolbar/finance-news-s
 
 ## Related docs
 
-- Former world pipeline: [world-news-impl.md](./world-news-impl.md) (historical)
+- World geopolitics catalog: [world-news-impl.md](./world-news-impl.md)
+- Map UI: [../personal/world-monitor-impl.md](../personal/world-monitor-impl.md)
 - Daily Fetch: [../personal/daily-fetch-impl.md](../personal/daily-fetch-impl.md)

@@ -5,7 +5,7 @@ tags:
   - daily-fetch
 category: personal
 status: current
-last-updated: 2026-08-29
+last-updated: 2026-09-20
 ---
 
 # Daily Fetch Pipeline
@@ -16,7 +16,7 @@ last-updated: 2026-08-29
 
 Daily Fetch is a background job started from the RAG agent UI that runs the day’s AI briefing fetch (including preflight, parallel source scripts, merge, learning guide, optional RAG/Confluence indexing, and **finance news**), then applies topic deduplication, commit and Jira reports, per-user Confluence wiki fetch, builds a text summary, and generates **AI** audio plus **six** Finance News MP3s (one per category) using segmented Ollama narration plus Edge TTS. It supports resuming incomplete runs via a “continue” API that replays only missing logical steps.
 
-Finance news details: [../briefing-pipeline/finance-news-impl.md](../briefing-pipeline/finance-news-impl.md).
+Finance news details: [../briefing-pipeline/finance-news-impl.md](../briefing-pipeline/finance-news-impl.md). World geopolitics catalog: [../briefing-pipeline/world-news-impl.md](../briefing-pipeline/world-news-impl.md). Map UI: [world-monitor-impl.md](./world-monitor-impl.md).
 
 ## Architecture & Design
 
@@ -51,14 +51,15 @@ flowchart TD
 ### Data Flow
 
 1. **Start job**: `api_daily_fetch` allocates `job_id`, initializes `_daily_fetch_jobs[job_id]`, starts `_run_daily_fetch` in a thread.
-2. **Fetch phase**: `python pipeline/run-all-sources.py --output-dir <REPORTS_ROOT/YYYY-MM-DD>`. Individual fetchers use `proxy_strategy.py` for per-domain direct vs. SOCKS5 proxy selection with persistent caching. Per-script timeout: 180s. That script runs preflight, parallel AI fetches, merge, learning guide, optional briefing RAG + Confluence indexing, then **finance news** under `finance-news/` via `run-finance-news.py --report-date <YYYY-MM-DD>`.
+2. **Fetch phase**: `python pipeline/run-all-sources.py --output-dir <REPORTS_ROOT/YYYY-MM-DD>`. Individual fetchers use `proxy_strategy.py` for per-domain direct vs. SOCKS5 proxy selection with persistent caching. Per-script timeout: 180s. That script runs preflight, parallel AI fetches, merge, learning guide, optional briefing RAG + Confluence indexing, **finance news** under `finance-news/`, then **world news** under `world-news/` via `run-world-news.py`. Orchestrator timeout is 2400s.
 3. **Topic dedup**: If `briefing-data.json` exists, `filter_topics.py` writes `briefing-data-filtered.json` in aggressive mode.
 4. **Commit report**: PowerShell `tools/commit-report.ps1` or `tool_commit_summary` fallback; timeout 600s (increased from 300s to accommodate slow `git fetch --all` over VPN).
 5. **Jira daily**: PowerShell script from `JIRA_SCRIPT`; may read back `atlassian-daily-report-*.md`.
 6. **Wiki fetch**: Sequential `index_confluence_user.py` per hard-coded team user with `--date-from yesterday --report-json`; optional Ollama summaries; writes `wiki-fetch-<date>.md`.
 7. **Summary**: Reads filtered or raw briefing JSON and finance/legacy world news JSON for key bullets; concatenates commit/Jira excerpts into `job["daily_summary"]`.
 8. **Refetch finance news** (optional, Refetch & Recreate): Runs `run-finance-news.py --no-translate --report-date <date>` with 900s timeout (fetch + market-impact merge only; translation decoupled).
-9. **Finance news translation** (separate step): Loads `finance-news/finance-news-data.json` only (not legacy world-news), calls `translate_news_to_chinese()` in-process. Skips if already translated or if only legacy paths exist. Runs independently so slow fetchers do not consume the translation time budget.
+9. **Finance news translation** (separate step): Loads `finance-news/finance-news-data.json` only, calls `translate_news_to_chinese()` in-process. Skips if already translated. Runs independently so slow fetchers do not consume the translation time budget.
+9b. **World news merge + translation**: `world_news_merge` / `world_news_translate` (and optional `refetch_world`). Catalog in Settings (`world_sources_enabled`). No world MP3.
 10. **Audio**: Per-source segments from briefing JSON → `_generate_segmented_narrations` → English segments get `_enrich_vocabulary` → `_tts_segments_to_mp3` → `ai-briefing.mp3` (`audio_lang_ai`) and **six** finance MP3s (`finance-markets.mp3`, `finance-china-policy.mp3`, `finance-us-political.mp3`, `finance-crypto.mp3`, `finance-gold.mp3`, `finance-oil.mp3`). Finance segments are built per category. Path helper prefers `finance-news/finance-news-data.json`, falls back to legacy `world-news/`.
 11. **AI Learning Knowledge**: `_ingest_ai_news_to_learning` extracts today's AI news from `briefing-data.json`, categorizes each item by topic, deduplicates by MD5 hash of lowercase title, and appends to `C:\reports\ai\knowledge\notes\ai_learning\08-ai-news-digest.md`.
 12. **Completion**: `job["status"] = "done"`, `steps` and `files` populated. Errors set `status: "error"`.
@@ -89,6 +90,7 @@ flowchart TD
 | `merge-sources` | Builds `briefing-data.json` + timing metadata for template/PDF schema (`93–120`) |
 | `filter_topics` + `TopicIndex` | Dedup using persistent topic index from `config.TOPIC_INDEX_PATH` (`27–80` in filter, `64–80` in topic_index) |
 | `run-finance-news` | Fetches/merges market sources; market-impact filter; `merge_news()` for recovery |
+| `run-world-news` | Catalog-driven geopolitics fetch + merge + translate → `world-news-data.json` |
 | `_generate_segmented_narrations`, `_tts_segments_to_mp3` | Narration + Edge TTS with ffmpeg concat fallback |
 | `proxy_strategy.py` | Smart per-domain proxy selection with persistent cache; provides helpers for Playwright, httpx, requests |
 | `_enrich_vocabulary` | Post-process English narration to inject vocabulary annotations via 2nd LLM call (in `ai_news.py`) |

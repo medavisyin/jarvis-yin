@@ -90,6 +90,18 @@ def test_spa_does_not_steal_docs_or_openapi(dist_dir):
     assert "SPA" not in redoc.text
 
 
+def test_missing_api_post_is_404_not_405(dist_dir):
+    from fastapi.testclient import TestClient
+    from spa_static import mount_spa
+    from web_api import Flask
+
+    app = Flask("test")
+    mount_spa(app, str(dist_dir))
+    r = TestClient(app).post("/api/toolbar/world-monitor/insight", json={"hub_id": "beijing"})
+    assert r.status_code == 404
+    assert r.json().get("error") == "Not found"
+
+
 def test_missing_dist_returns_none_index_path(tmp_path):
     from spa_static import resolve_index_html
 
