@@ -53,7 +53,8 @@ Flow:
 run-world-news.py
   ├── Parallel fetch (enabled catalog rows)
   ├── Merge (world_sources.merge_source_jsons)
-  │     dedupe title key; drop yesterday’s titles; group politics/economics/technology/science
+  │     cluster same-event titles (hash / Jaccard); drop dated items older than 96h;
+  │     source-tier canonical row; drop yesterday’s titles; group by category
   ├── Translate English → Chinese via Ollama (optional --no-translate)
   └── world-news-data.json + world-news-timing.json
 ```
@@ -64,7 +65,7 @@ Partial fetcher failure still writes merge JSON (`sources_unavailable` listed).
 
 `{REPORTS_ROOT}/{YYYY-MM-DD}/world-news/world-news-data.json`
 
-Categories: `politics` | `economics` | `technology` | `science`. Items keep `title`, `title_zh`, `summary`, `source`, `url`.
+Categories: `politics` | `economics` | `technology` | `science`. Items keep `title`, `title_zh`, `summary`, `source`, `url`, plus `sources` / `source_count` / `source_tier` / `story_hash` after clustering.
 
 ## Daily Fetch UI
 

@@ -97,6 +97,9 @@ All data cached in `{STOCK_REPORTS_ROOT}/market_sentiment/`:
 - `fear_greed.json`
 - `vix.json`
 - `combined.json` (both + market mood)
+- `radar_quotes.json` (Gold / WTI / S&P 500 / Bitcoin snapshots for World monitor Finance radar)
+
+World monitor `GET /api/toolbar/world-monitor` reads this cache (30 min TTL) and may refresh via `load_radar_signals(allow_fetch=True)`. Same Yahoo chart parser as VIX (`parse_yahoo_quote`). Import `STOCK_REPORTS_ROOT` only — agent `config` is `scripts/config.py`, which has no `STOCK_DATA_DIR`. Live fetch tries proxy then direct; empty upstream results do not overwrite a filled cache.
 
 ### API
 

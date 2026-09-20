@@ -24,6 +24,9 @@ export type HubCluster = {
 export type MonitorHeadline = {
   title?: string;
   source?: string;
+  sources?: string[];
+  source_count?: number;
+  source_tier?: number;
   url?: string;
   streams?: string[];
   layers?: string[];
@@ -32,6 +35,23 @@ export type MonitorHeadline = {
   hub_ids?: string[];
   country_ids?: string[];
   report_date?: string;
+};
+
+export type RadarQuote = {
+  id: string;
+  symbol?: string;
+  label: string;
+  value: number | null;
+  change_pct?: number | null;
+  source?: string;
+};
+
+export type FinanceRadarSignals = {
+  fear_greed: { value: number | null; label?: string; source?: string };
+  vix: { value: number | null; change_pct?: number | null; source?: string };
+  quotes: RadarQuote[];
+  mood?: { risk_level?: string; signals?: string[]; recommendation?: string };
+  fetched_at?: string;
 };
 
 export type MonitorDashboard = {
@@ -51,6 +71,7 @@ export type MonitorDashboard = {
     commodities: { count: number; titles: string[] };
     crypto: { count: number; titles: string[] };
     composite: { count: number; titles: string[] };
+    signals?: FinanceRadarSignals;
   };
   panels: { id: string; label: string }[];
 };
@@ -179,6 +200,20 @@ export function headlinesForHub(
     if ((h.country_ids || []).includes(hubId)) return true;
     return (h.hubs || []).some((x) => labels.has(x.toLowerCase()));
   });
+}
+
+export function formatHeadlineSources(h: {
+  source?: string;
+  sources?: string[];
+}): string {
+  if (h.sources?.length) return h.sources.join(" · ");
+  return h.source || "";
+}
+
+export function formatSignedPct(n: number | null | undefined): string {
+  if (n == null || Number.isNaN(n)) return "—";
+  const sign = n > 0 ? "+" : "";
+  return `${sign}${n.toFixed(1)}%`;
 }
 
 export function hubLabelOf(dash: MonitorDashboard | null, hubId: string | null | undefined): string {

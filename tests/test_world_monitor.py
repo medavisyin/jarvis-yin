@@ -77,6 +77,67 @@ def test_finance_radar_buckets():
     assert radar["composite"]["count"] == 4
 
 
+def test_finance_radar_default_signals_are_empty():
+    radar = finance_radar({"categories": []})
+    assert radar["signals"]["fear_greed"]["value"] is None
+    assert radar["signals"]["vix"]["value"] is None
+    assert radar["signals"]["quotes"] == []
+    assert radar["signals"]["mood"]["risk_level"] == ""
+
+
+def test_finance_radar_attaches_numeric_signals():
+    data = {
+        "categories": [
+            {"category": "markets", "items": [{"title": "S&P futures"}]},
+        ]
+    }
+    signals = {
+        "fear_greed": {"value": 28, "label": "Fear", "source": "alternative.me"},
+        "vix": {"value": 22.4, "change_pct": 1.2, "source": "Yahoo Finance"},
+        "quotes": [
+            {"id": "gold", "symbol": "GC=F", "label": "Gold", "value": 2650.1, "change_pct": 0.4},
+            {"id": "oil", "symbol": "CL=F", "label": "WTI", "value": 71.2, "change_pct": -0.8},
+            {"id": "spx", "symbol": "^GSPC", "label": "S&P 500", "value": 5630.0, "change_pct": 0.2},
+            {"id": "btc", "symbol": "BTC-USD", "label": "Bitcoin", "value": 64000.0, "change_pct": 1.1},
+        ],
+        "mood": {"risk_level": "fear", "signals": ["恐惧 (Fear)"], "recommendation": "观望"},
+        "fetched_at": "2026-09-20T10:00:00",
+    }
+    radar = finance_radar(data, signals=signals)
+    assert radar["exchanges"]["count"] == 1
+    assert radar["signals"]["fear_greed"]["value"] == 28
+    assert radar["signals"]["vix"]["value"] == 22.4
+    ids = {q["id"] for q in radar["signals"]["quotes"]}
+    assert ids == {"gold", "oil", "spx", "btc"}
+    assert radar["signals"]["mood"]["risk_level"] == "fear"
+
+
+def test_build_dashboard_uses_injected_radar_signals(tmp_path):
+    day = tmp_path / "2026-09-20"
+    wn = day / "world-news"
+    fn = day / "finance-news"
+    wn.mkdir(parents=True)
+    fn.mkdir()
+    (wn / "world-news-data.json").write_text(
+        json.dumps({"categories": [{"category": "politics", "items": [{"title": "Talks in London", "source": "BBC"}]}]}),
+        encoding="utf-8",
+    )
+    (fn / "finance-news-data.json").write_text(
+        json.dumps({"categories": [{"category": "markets", "items": [{"title": "Dow"}]}]}),
+        encoding="utf-8",
+    )
+    signals = {
+        "fear_greed": {"value": 64, "label": "Greed", "source": "alternative.me"},
+        "vix": {"value": 14.1, "change_pct": -0.5, "source": "Yahoo Finance"},
+        "quotes": [{"id": "gold", "symbol": "GC=F", "label": "Gold", "value": 2650.1, "change_pct": 0.4}],
+        "mood": {"risk_level": "greed", "signals": ["贪婪"], "recommendation": "注意风险"},
+        "fetched_at": "2026-09-20T10:00:00",
+    }
+    dash = build_dashboard(str(tmp_path), "2026-09-20", variant="finance", radar_signals=signals)
+    assert dash["finance_radar"]["signals"]["fear_greed"]["value"] == 64
+    assert dash["finance_radar"]["signals"]["quotes"][0]["id"] == "gold"
+
+
 def test_build_dashboard_from_reports(tmp_path):
     day = tmp_path / "2026-09-20"
     wn = day / "world-news"

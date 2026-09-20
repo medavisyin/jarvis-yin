@@ -4,6 +4,8 @@ import {
   EARTH_BITMAP_BOUNDS,
   classifyInsight,
   equirectangularProject,
+  formatSignedPct,
+  formatHeadlineSources,
   headlineHubIds,
   headlinesForHub,
   headlinesForLayers,
@@ -121,5 +123,23 @@ describe("classifyInsight", () => {
     expect(classifyInsight("Method Not Allowed")).toBe("error");
     expect(classifyInsight("Ollama…")).toBe("pending");
     expect(classifyInsight("北京近期以政治报道为主。")).toBe("ok");
+  });
+});
+
+describe("formatHeadlineSources", () => {
+  it("joins corroborating wires", () => {
+    expect(formatHeadlineSources({ source: "Reuters", sources: ["Reuters", "BBC World News"] })).toBe(
+      "Reuters · BBC World News",
+    );
+    expect(formatHeadlineSources({ source: "DW" })).toBe("DW");
+  });
+});
+
+describe("formatSignedPct", () => {
+  it("shows a plus for gains and a dash for missing", () => {
+    expect(formatSignedPct(0.4)).toBe("+0.4%");
+    expect(formatSignedPct(-0.8)).toBe("-0.8%");
+    expect(formatSignedPct(0)).toBe("0.0%");
+    expect(formatSignedPct(null)).toBe("—");
   });
 });

@@ -40,7 +40,7 @@ GET /api/toolbar/world-monitor?date=&variant=&lookback=
         │  geo_hubs.infer_hubs(title+summary) → lat/lon
         │  classify_streams / news_category / finance_category → layer ids
         ▼
-JSON: points, headlines (with layers[]), correlation, finance_radar, panels
+JSON: points, headlines (with layers[]), correlation, finance_radar (news buckets + numeric signals), panels
         │
         ▼
 WorldMonitorPage.tsx
@@ -66,9 +66,32 @@ Chinese insight shown only if classifyInsight === "ok"
 
 An item is dropped if it has **no layer in that variant’s catalog**. That is why World vs Tech Headlines differ.
 
+## Story clustering (Headlines)
+
+World merge (`cluster_world_items` in `world_sources.py`) is a small Jarvis rewrite of the digest idea, not WM source:
+
+- Normalize title (strip “ - BBC News” / `| Reuters`, lowercase, punctuation).
+- Same `story_hash` **or** Jaccard ≥ 0.55 with ≥ 3 shared tokens → one cluster.
+- Canonical row is the best **source tier** (Reuters/AP/BBC = 1 … 人民日报/新华 = 4).
+- Dated items older than **96 hours** (or >1h in the future) are dropped. Scrapers with empty `date` (e.g. AP) are kept as same-day.
+- Headlines show `sources` joined (`Reuters · BBC World News`). Lookback re-clusters so the same event across folders stays one row.
+
+## Finance radar
+
+Finance / commodity / energy variants show a radar card. It is **not** World Monitor’s 7-signal BUY/CASH product and does not call `api.worldmonitor.app`.
+
+| Piece | Source | Cache |
+|-------|--------|--------|
+| Fear & Greed | `alternative.me` (CNN fallback) via `market_sentiment.py` | `STOCK_REPORTS_ROOT/market_sentiment/combined.json` |
+| VIX | Yahoo chart `^VIX` | same |
+| Gold / WTI / S&P 500 / Bitcoin | Yahoo chart `GC=F`, `CL=F`, `^GSPC`, `BTC-USD` | `radar_quotes.json`, 30 min TTL |
+| Headline buckets | Daily Fetch `finance-news-data.json` | report folder |
+
+`GET /api/toolbar/world-monitor` may refresh stale/missing numbers (`allow_fetch_signals=True`). `market_sentiment` must import `STOCK_REPORTS_ROOT` from `scripts/config.py` (the agent already loaded that module; it has **no** `STOCK_DATA_DIR`). Failed live fetches keep the last good cache instead of wiping Fear & Greed / VIX to blank. Proxy: try `STOCK_PROXY` / `BRIEFING_PROXY`, then direct. Unit tests inject `radar_signals` and do not hit the network.
+
 ## Lookback
 
-`recent_report_days(root, end, n)` lists dated folders `≤ end` that contain world-news JSON, newest first, take `n`. Merge dedupes by URL then title. CII was removed; lookback does **not** recompute a country index.
+`recent_report_days(root, end, n)` lists dated folders `≤ end` that contain world-news JSON, newest first, take `n`. Merge dedupes by URL then title, then `cluster_world_items` again. CII was removed; lookback does **not** recompute a country index.
 
 Empty calendar days (e.g. 9/19–9/14 with no world-news file) are skipped, so 7d is not “the last 7 calendar days”.
 
@@ -112,8 +135,9 @@ After UI changes: `cd web && npm run build`, then **Ctrl+F5**. Python route chan
 
 ## Tests
 
-- `tests/test_world_monitor.py` — variants, lookback, no CII
+- `tests/test_world_monitor.py` — variants, lookback, no CII, finance radar signals
 - `tests/test_world_monitor_routes.py` — GET payload, lookback, insight POST
+- `tests/test_market_sentiment.py` — Yahoo quote parse + radar assemble
 - `tests/test_world_sources.py` / `test_world_source_routes.py` / `test_fetch_world_rss.py`
 - `tests/test_geo_hubs.py`
 - `tests/test_agent_spa.py` — POST `/api/*` is not 405 HTML

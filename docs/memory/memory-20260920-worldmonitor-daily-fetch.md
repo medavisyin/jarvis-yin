@@ -38,6 +38,9 @@ Daily Fetch world-news on a Jarvis-native map (globe.gl 3D + HTML 2D). Click a h
 21. **Do not wire Jarvis to `api.worldmonitor.app`** unless the user buys an API key. Hosted REST is a paid product (API Starter $99.99/mo, 1000 req/day), not a drop-in replacement for Daily Fetch RSS. More OSINT data yes; our 人民日报/新华 and local lookback would not get faster.
 22. **World RSS expand (2026-09-20)**: add Al Jazeera / The Diplomat / Kyiv Independent via publisher RSS (not WM `_feeds.ts`). USGS/EONET and YouTube Live deferred.
 23. **Headlines follow variant + map layers (2026-09-20)**: variants were requesting but still returning all world items; layer checkboxes only hid map dots. Headlines now use the same layer membership as points.
+24. **Finance radar numbers (2026-09-20)**: do not clone WM 7-signal BUY/CASH or call their API. Wire existing Fear & Greed + VIX + Yahoo Gold/WTI/SPX/BTC onto the Finance variant radar (was title counts only).
+25. **Digest clustering (2026-09-20)**: do not copy WM `_feeds.ts` / Redis story-track. Jarvis merge clusters by normalized title hash + Jaccard, drops dated items older than 96h, canonical row by source tier. Skip NBS/SAFE nowcast / corridors / SSE metadata.
+26. **Finance radar empty FG/VIX (2026-09-20)**: `market_sentiment` imported `STOCK_DATA_DIR` from already-loaded `scripts/config.py` → ImportError swallowed → blank panel despite `combined.json` Fear & Greed=56. Fix: import `STOCK_REPORTS_ROOT` only; keep cache if live Yahoo/alternative.me fails; try proxy then direct.
 
 ---
 
@@ -84,9 +87,9 @@ Daily Fetch world-news on a Jarvis-native map (globe.gl 3D + HTML 2D). Click a h
 
 ## Current State (required)
 
-- **Working**: Native `/news/monitor`; lookback = N folders with world-news JSON; Headlines follow variant + map layers; insight POST; 10 default world RSS sources; CII-J1 removed; SPA POST `/api/*` is 404 not 405.
+- **Working**: Native `/news/monitor`; lookback = N folders with world-news JSON; Headlines follow variant + map layers; insight POST; 10 default world RSS sources; CII-J1 removed; SPA POST `/api/*` is 404 not 405; Finance radar Fear & Greed / VIX / quotes (import `STOCK_REPORTS_ROOT` only so agent config does not blank the panel).
 - **Docs**: `docs/implementation/personal/world-monitor-impl.md` and updated `world-news-impl.md`.
-- **Pending**: USGS/EONET layers and YouTube Live News (user deferred). Next Daily Fetch picks up Al Jazeera / Diplomat / Kyiv Independent.
+- **Pending**: USGS/EONET layers and YouTube Live News (user deferred). Oil/gold series panel and CoinGecko peg were not chosen.
 - **Do not mix**: living-book / stock scanner dirty files.
 
 ---
@@ -97,7 +100,9 @@ Daily Fetch world-news on a Jarvis-native map (globe.gl 3D + HTML 2D). Click a h
 2. [x] Native map UI (3D globe.gl, 2D HTML).
 3. [x] Hub Headlines + lookback + insight.
 4. [x] Variant + layer Headlines.
-5. [ ] USGS/EONET or Live News if requested.
+5. [x] Finance radar numeric signals (FG / VIX / quotes).
+6. [x] World-news story clustering + freshness + source tier.
+7. [ ] USGS/EONET or Live News if requested.
 
 ---
 

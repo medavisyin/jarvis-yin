@@ -16,10 +16,15 @@ import importlib.util
 
 from world_sources import (  # noqa: E402
     CATEGORIES,
+    cluster_world_items,
     load_catalog,
     load_previous_day_title_keys,
     merge_source_jsons,
+    normalize_story_title,
+    parse_news_date,
     resolve_enabled,
+    source_tier,
+    story_hash,
     world_history_missing_steps,
     world_title_key,
 )
@@ -96,6 +101,110 @@ def test_merge_dedupes_title_keeps_unavailable(tmp_path):
     assert "BBC World News" in merged["sources_used"]
     assert "Reuters" in merged["sources_unavailable"]
     assert merged["categories"][0]["category"] == "politics"
+
+
+def test_normalize_story_title_strips_publisher_suffix():
+    a = normalize_story_title("Missile strike in Kyiv - BBC News")
+    b = normalize_story_title("Missile strike in Kyiv | Reuters")
+    assert a == b
+    assert story_hash("Missile strike in Kyiv - BBC News") == story_hash("Missile strike in Kyiv | Reuters")
+    assert "bbc" not in a
+    assert "reuters" not in a
+
+
+def test_source_tier_wires_outrank_state_media():
+    assert source_tier("reuters") == 1
+    assert source_tier("bbc-news") == 1
+    assert source_tier("guardian") == 2
+    assert source_tier("peoples-daily") > source_tier("reuters")
+
+
+def test_parse_news_date_rss_and_iso():
+    rss = parse_news_date("Fri, 19 Sep 2026 12:00:00 GMT")
+    iso = parse_news_date("2026-09-19T12:00:00+00:00")
+    assert rss is not None and iso is not None
+    assert rss.date().isoformat() == "2026-09-19"
+    assert parse_news_date("") is None
+
+
+def test_cluster_merges_near_duplicate_wire_titles():
+    items = [
+        {
+            "title": "Missile strike near Kyiv after night attacks",
+            "url": "https://reuters.example/a",
+            "_source": "reuters",
+            "_source_display": "Reuters",
+            "category": "politics",
+            "date": "2026-09-20T08:00:00",
+        },
+        {
+            "title": "Missile strike near Kyiv",
+            "url": "https://bbc.example/b",
+            "_source": "bbc-news",
+            "_source_display": "BBC World News",
+            "category": "politics",
+            "date": "2026-09-20T07:00:00",
+        },
+        {
+            "title": "Garden show opens in Lyon",
+            "url": "https://dw.example/c",
+            "_source": "dw-news",
+            "_source_display": "Deutsche Welle",
+            "category": "politics",
+            "date": "2026-09-20T09:00:00",
+        },
+    ]
+    clustered = cluster_world_items(items, "2026-09-20")
+    titles = [it["title"] for it in clustered]
+    assert len(clustered) == 2
+    kyiv = next(it for it in clustered if "Kyiv" in it["title"])
+    assert kyiv["_source"] == "reuters"
+    assert kyiv["source_count"] == 2
+    assert "Reuters" in kyiv["sources"]
+    assert "BBC World News" in kyiv["sources"]
+    assert "Garden show opens in Lyon" in titles
+
+
+def test_merge_clusters_across_wires_and_drops_stale(tmp_path):
+    (tmp_path / "bbc-news.json").write_text(
+        json.dumps({
+            "items": [
+                {
+                    "title": "Missile strike near Kyiv",
+                    "category": "politics",
+                    "date": "2026-09-20T07:00:00",
+                    "url": "https://bbc.example/k",
+                },
+                {
+                    "title": "Old Brussels summit from last week",
+                    "category": "politics",
+                    "date": "2026-09-10T12:00:00",
+                    "url": "https://bbc.example/old",
+                },
+            ]
+        }),
+        encoding="utf-8",
+    )
+    (tmp_path / "reuters.json").write_text(
+        json.dumps({
+            "items": [{
+                "title": "Missile strike near Kyiv after night attacks",
+                "category": "politics",
+                "date": "2026-09-20T08:00:00",
+                "url": "https://reuters.example/k",
+            }]
+        }),
+        encoding="utf-8",
+    )
+    merged = merge_source_jsons(str(tmp_path), "2026-09-20", enabled_ids=["bbc-news", "reuters"])
+    titles = [it["title"] for cat in merged["categories"] for it in cat["items"]]
+    assert merged["total_items"] == 1
+    assert "Old Brussels summit from last week" not in titles
+    item = merged["categories"][0]["items"][0]
+    assert item["source"] == "Reuters"
+    assert item["source_count"] == 2
+    assert set(item["sources"]) >= {"Reuters", "BBC World News"}
+    assert item["source_tier"] == 1
 
 
 def test_merge_drops_yesterday_titles(tmp_path):

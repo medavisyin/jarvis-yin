@@ -8,11 +8,14 @@ to load globe.gl / deck.gl as npm libraries.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import sys
 from datetime import datetime, timedelta
 from typing import Any
 
 from geo_hubs import infer_hubs
+from world_sources import cluster_world_items
 
 VARIANTS = ["world", "tech", "finance", "commodity", "happy", "energy"]
 
@@ -162,7 +165,32 @@ _FINANCE_BUCKETS = {
 }
 
 
-def finance_radar(data: dict[str, Any] | None) -> dict[str, Any]:
+def empty_radar_signals() -> dict[str, Any]:
+    return {
+        "fear_greed": {"value": None, "label": "", "source": ""},
+        "vix": {"value": None, "change_pct": None, "source": ""},
+        "quotes": [],
+        "mood": {"risk_level": "", "signals": [], "recommendation": ""},
+        "fetched_at": "",
+    }
+
+
+def load_radar_signals(*, allow_fetch: bool = False) -> dict[str, Any]:
+    """Fear & Greed / VIX / Yahoo quotes. Tests keep allow_fetch=False (cache only)."""
+    try:
+        scripts_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+        stock_dir = os.path.join(scripts_dir, "stock")
+        for p in (scripts_dir, stock_dir):
+            if p not in sys.path:
+                sys.path.insert(0, p)
+        from market_sentiment import load_radar_signals as _load
+        return _load(allow_fetch=allow_fetch)
+    except Exception:
+        logging.getLogger(__name__).warning("load_radar_signals failed", exc_info=True)
+        return empty_radar_signals()
+
+
+def finance_radar(data: dict[str, Any] | None, signals: dict[str, Any] | None = None) -> dict[str, Any]:
     items = flatten_finance_items(data)
     buckets: dict[str, list[str]] = {k: [] for k in _FINANCE_BUCKETS}
     for it in items:
@@ -177,6 +205,7 @@ def finance_radar(data: dict[str, Any] | None) -> dict[str, Any]:
         "commodities": {"count": len(buckets["commodities"]), "titles": buckets["commodities"][:8]},
         "crypto": {"count": len(buckets["crypto"]), "titles": buckets["crypto"][:8]},
         "composite": {"count": len(composite), "titles": composite[:12]},
+        "signals": signals if signals is not None else empty_radar_signals(),
     }
 
 
@@ -333,6 +362,9 @@ def _headline_row(it: dict[str, Any], report_date: str, layers: list[str]) -> di
         "hub_ids": [h["id"] for h in it.get("hubs") or []],
         "country_ids": list(it.get("country_ids") or []),
         "report_date": it.get("report_date") or report_date,
+        "sources": list(it.get("sources") or ([it.get("source")] if it.get("source") else [])),
+        "source_count": it.get("source_count") or 1,
+        "source_tier": it.get("source_tier"),
     }
 
 
@@ -367,11 +399,16 @@ def build_dashboard(
     report_date: str,
     variant: str = "world",
     lookback_days: int = 1,
+    radar_signals: dict[str, Any] | None = None,
+    allow_fetch_signals: bool = False,
 ) -> dict[str, Any]:
     variant = variant if variant in VARIANTS else "world"
     lookback = clamp_lookback(lookback_days)
     days = recent_report_days(reports_root, report_date, lookback)
-    world_raw = _merge_days(reports_root, days, _world_path, flatten_world_items)
+    world_raw = cluster_world_items(
+        _merge_days(reports_root, days, _world_path, flatten_world_items),
+        report_date,
+    )
     finance = _merge_days(reports_root, days, _finance_path, flatten_finance_items)
     ai_raw = _merge_days(reports_root, days, _briefing_path, _flatten_ai)
 
@@ -410,7 +447,12 @@ def build_dashboard(
         "points": points[:800],
         "headlines": headlines[:200],
         "correlation": compute_correlation(world_items),
-        "finance_radar": finance_radar(finance_payload),
+        "finance_radar": finance_radar(
+            finance_payload,
+            signals=radar_signals if radar_signals is not None else load_radar_signals(
+                allow_fetch=allow_fetch_signals
+            ),
+        ),
         "panels": _panels_for(variant),
     }
 

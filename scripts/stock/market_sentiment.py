@@ -5,28 +5,50 @@
   - 作为模型特征 (市场整体恐慌/贪婪程度)
   - UI 展示参考信号
   - 极端值时发出警告
+  - World monitor Finance radar (Fear & Greed + VIX + gold/oil/SPX/BTC)
 
 数据源:
-  - VIX: Yahoo Finance CSV (CBOE Volatility Index)
-  - Fear & Greed: CNN Business API / alternative-me crypto fear index as proxy
+  - VIX / quotes: Yahoo Finance chart API
+  - Fear & Greed: alternative.me / CNN
 """
+from __future__ import annotations
+
 import json
 import logging
 import os
-import re
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from urllib.parse import quote
 
 import requests
 
-from config import STOCK_DATA_DIR, STOCK_REPORTS_ROOT
+from config import STOCK_REPORTS_ROOT
 
 log = logging.getLogger(__name__)
 
 _CACHE_DIR = os.path.join(STOCK_REPORTS_ROOT, "market_sentiment")
-_PROXIES = {}
-_proxy = os.environ.get("STOCK_PROXY")
-if _proxy:
-    _PROXIES = {"http": _proxy, "https": _proxy}
+SIGNAL_TTL_SEC = 30 * 60
+RADAR_QUOTE_SPECS = (
+    {"id": "gold", "symbol": "GC=F", "label": "Gold"},
+    {"id": "oil", "symbol": "CL=F", "label": "WTI"},
+    {"id": "spx", "symbol": "^GSPC", "label": "S&P 500"},
+    {"id": "btc", "symbol": "BTC-USD", "label": "Bitcoin"},
+)
+_YAHOO_HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+
+def _proxy_candidates() -> list[dict]:
+    """Try STOCK_PROXY / BRIEFING_PROXY first, then direct (socks may be down)."""
+    proxy = os.environ.get("STOCK_PROXY") or os.environ.get("BRIEFING_PROXY") or ""
+    opts: list[dict] = []
+    if proxy:
+        opts.append({"http": proxy, "https": proxy})
+    opts.append({})
+    return opts
+
+
+def _request_proxies() -> dict:
+    return _proxy_candidates()[0]
 
 
 def fetch_fear_greed() -> dict:
@@ -38,47 +60,52 @@ def fetch_fear_greed() -> dict:
     result = {"value": None, "label": "", "timestamp": "", "source": ""}
 
     # Source 1: alternative.me Fear & Greed (crypto-derived, but tracks market sentiment)
-    try:
-        resp = requests.get(
-            "https://api.alternative.me/fng/?limit=1&format=json",
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=10, proxies=_PROXIES,
-        )
-        resp.raise_for_status()
-        data = resp.json().get("data", [{}])[0]
-        result["value"] = int(data.get("value", 0))
-        result["label"] = data.get("value_classification", "")
-        result["timestamp"] = data.get("timestamp", "")
-        result["source"] = "alternative.me"
-        log.info("Fear & Greed: %d (%s)", result["value"], result["label"])
-    except Exception as e:
-        log.warning("alternative.me Fear & Greed 获取失败: %s", e)
+    for proxies in _proxy_candidates():
+        try:
+            resp = requests.get(
+                "https://api.alternative.me/fng/?limit=1&format=json",
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=10, proxies=proxies or None,
+            )
+            resp.raise_for_status()
+            data = resp.json().get("data", [{}])[0]
+            result["value"] = int(data.get("value", 0))
+            result["label"] = data.get("value_classification", "")
+            result["timestamp"] = data.get("timestamp", "")
+            result["source"] = "alternative.me"
+            log.info("Fear & Greed: %d (%s)", result["value"], result["label"])
+            break
+        except Exception as e:
+            log.warning("alternative.me Fear & Greed 获取失败: %s", e)
 
     # Source 2: Try CNN Fear & Greed via web scrape
     if result["value"] is None:
-        try:
-            resp = requests.get(
-                "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
-                headers={
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-                    "Accept": "application/json",
-                },
-                timeout=10, proxies=_PROXIES,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            score = data.get("fear_and_greed", {}).get("score")
-            rating = data.get("fear_and_greed", {}).get("rating")
-            if score is not None:
-                result["value"] = round(float(score))
-                result["label"] = rating or ""
-                result["timestamp"] = datetime.now().isoformat()
-                result["source"] = "CNN"
-                log.info("CNN Fear & Greed: %d (%s)", result["value"], result["label"])
-        except Exception as e:
-            log.warning("CNN Fear & Greed 获取失败: %s", e)
+        for proxies in _proxy_candidates():
+            try:
+                resp = requests.get(
+                    "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                        "Accept": "application/json",
+                    },
+                    timeout=10, proxies=proxies or None,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                score = data.get("fear_and_greed", {}).get("score")
+                rating = data.get("fear_and_greed", {}).get("rating")
+                if score is not None:
+                    result["value"] = round(float(score))
+                    result["label"] = rating or ""
+                    result["timestamp"] = datetime.now().isoformat()
+                    result["source"] = "CNN"
+                    log.info("CNN Fear & Greed: %d (%s)", result["value"], result["label"])
+                    break
+            except Exception as e:
+                log.warning("CNN Fear & Greed 获取失败: %s", e)
 
-    _save_cache("fear_greed", result)
+    if result["value"] is not None:
+        _save_cache("fear_greed", result)
     return result
 
 
@@ -88,35 +115,21 @@ def fetch_vix() -> dict:
     Returns: { value: float, change_pct: float, timestamp: str }
     """
     result = {"value": None, "change_pct": None, "timestamp": "", "source": ""}
-
-    for vix_url, vix_parser in [
-        ("https://query2.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d", _parse_yahoo_vix),
-        ("https://query1.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d", _parse_yahoo_vix),
-    ]:
-        try:
-            resp = requests.get(
-                vix_url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
-                timeout=10, proxies=_PROXIES,
-            )
-            resp.raise_for_status()
-            parsed = vix_parser(resp.json())
-            if parsed:
-                result.update(parsed)
-                log.info("VIX: %.2f (%.2f%%)", result["value"], result.get("change_pct") or 0)
-                break
-        except Exception as e:
-            log.debug("VIX source %s failed: %s", vix_url[:50], e)
-
-    if result["value"] is None:
+    parsed = _fetch_yahoo_symbol("^VIX")
+    if parsed:
+        result.update(parsed)
+        log.info("VIX: %.2f (%.2f%%)", result["value"], result.get("change_pct") or 0)
+    else:
         log.warning("所有 VIX 数据源均失败")
 
-    _save_cache("vix", result)
+    if result["value"] is not None:
+        _save_cache("vix", result)
     return result
 
 
-def _parse_yahoo_vix(data: dict) -> dict | None:
-    meta = data.get("chart", {}).get("result", [{}])[0].get("meta", {})
+def parse_yahoo_quote(data: dict) -> dict | None:
+    results = data.get("chart", {}).get("result") or [{}]
+    meta = results[0].get("meta", {}) if results else {}
     price = meta.get("regularMarketPrice")
     prev = meta.get("previousClose")
     if price is None:
@@ -129,6 +142,68 @@ def _parse_yahoo_vix(data: dict) -> dict | None:
     if prev and float(prev) > 0:
         result["change_pct"] = round((float(price) - float(prev)) / float(prev) * 100, 2)
     return result
+
+
+def _parse_yahoo_vix(data: dict) -> dict | None:
+    return parse_yahoo_quote(data)
+
+
+def _fetch_yahoo_symbol(symbol: str) -> dict | None:
+    encoded = quote(symbol, safe="")
+    for proxies in _proxy_candidates():
+        for host in ("query2", "query1"):
+            url = f"https://{host}.finance.yahoo.com/v8/finance/chart/{encoded}?interval=1d&range=5d"
+            try:
+                resp = requests.get(
+                    url,
+                    headers=_YAHOO_HEADERS,
+                    timeout=8,
+                    proxies=proxies or None,
+                )
+                resp.raise_for_status()
+                parsed = parse_yahoo_quote(resp.json())
+                if parsed:
+                    return parsed
+            except Exception as e:
+                log.debug("Yahoo %s %s failed: %s", host, symbol, e)
+    return None
+
+
+def fetch_radar_quotes() -> list[dict]:
+    """Latest Gold / WTI / S&P 500 / Bitcoin snapshots from Yahoo chart API."""
+    rows: list[dict] = []
+
+    def one(spec: dict) -> dict:
+        parsed = _fetch_yahoo_symbol(spec["symbol"]) or {}
+        return {
+            "id": spec["id"],
+            "symbol": spec["symbol"],
+            "label": spec["label"],
+            "value": parsed.get("value"),
+            "change_pct": parsed.get("change_pct"),
+            "source": parsed.get("source") or "",
+        }
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futs = {pool.submit(one, spec): spec for spec in RADAR_QUOTE_SPECS}
+        by_id = {}
+        for fut in as_completed(futs):
+            spec = futs[fut]
+            try:
+                by_id[spec["id"]] = fut.result()
+            except Exception as e:
+                log.debug("radar quote %s failed: %s", spec["id"], e)
+                by_id[spec["id"]] = {
+                    "id": spec["id"],
+                    "symbol": spec["symbol"],
+                    "label": spec["label"],
+                    "value": None,
+                    "change_pct": None,
+                    "source": "",
+                }
+    rows = [by_id[spec["id"]] for spec in RADAR_QUOTE_SPECS if spec["id"] in by_id]
+    _save_cache("radar_quotes", {"quotes": rows, "fetched_at": datetime.now().isoformat()})
+    return rows
 
 
 def fetch_all_sentiment() -> dict:
@@ -195,11 +270,99 @@ def _mood_recommendation(risk_level: str) -> str:
 
 
 def load_cached_sentiment() -> dict | None:
-    path = os.path.join(_CACHE_DIR, "combined.json")
+    return _load_cache("combined")
+
+
+def load_cached_quotes() -> dict | None:
+    return _load_cache("radar_quotes")
+
+
+def assemble_radar_signals(combined: dict | None, quotes: list | None) -> dict:
+    combined = combined or {}
+    fg = combined.get("fear_greed") or {}
+    vix = combined.get("vix") or {}
+    mood = combined.get("market_mood") or {}
+    return {
+        "fear_greed": {
+            "value": fg.get("value"),
+            "label": fg.get("label") or "",
+            "source": fg.get("source") or "",
+        },
+        "vix": {
+            "value": vix.get("value"),
+            "change_pct": vix.get("change_pct"),
+            "source": vix.get("source") or "",
+        },
+        "quotes": list(quotes or []),
+        "mood": {
+            "risk_level": mood.get("risk_level") or "",
+            "signals": list(mood.get("signals") or []),
+            "recommendation": mood.get("recommendation") or "",
+        },
+        "fetched_at": combined.get("fetched_at") or "",
+    }
+
+
+def _signals_stale(fetched_at: str) -> bool:
+    if not fetched_at:
+        return True
+    try:
+        ts = datetime.fromisoformat(fetched_at.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if ts.tzinfo is not None:
+        ts = ts.replace(tzinfo=None)
+    return (datetime.now() - ts).total_seconds() > SIGNAL_TTL_SEC
+
+
+def _filled_field(old: dict, new: dict, key: str) -> dict:
+    incoming = new.get(key) or {}
+    if incoming.get("value") is not None:
+        return incoming
+    return old.get(key) or incoming
+
+
+def load_radar_signals(*, allow_fetch: bool = False) -> dict:
+    """Cache-first snapshot for the World monitor Finance radar. Live GET may fetch."""
+    combined = load_cached_sentiment() or {}
+    quotes_wrap = load_cached_quotes() or {}
+    quotes = list(quotes_wrap.get("quotes") or [])
+    fetched_at = quotes_wrap.get("fetched_at") or combined.get("fetched_at") or ""
+    have_fg = combined.get("fear_greed", {}).get("value") is not None
+    have_quotes = any(q.get("value") is not None for q in quotes)
+    stale = _signals_stale(fetched_at)
+    if allow_fetch and (stale or not have_fg or not have_quotes):
+        if stale or not have_fg:
+            try:
+                fresh = fetch_all_sentiment()
+                fg = _filled_field(combined, fresh, "fear_greed")
+                vix = _filled_field(combined, fresh, "vix")
+                combined = {
+                    "fear_greed": fg,
+                    "vix": vix,
+                    "fetched_at": fresh.get("fetched_at") or combined.get("fetched_at") or "",
+                    "market_mood": _classify_mood(fg.get("value"), vix.get("value")),
+                }
+                _save_cache("combined", combined)
+            except Exception as e:
+                log.warning("radar sentiment fetch failed: %s", e)
+        if stale or not have_quotes:
+            try:
+                fresh_quotes = fetch_radar_quotes()
+                if any(q.get("value") is not None for q in fresh_quotes):
+                    quotes = fresh_quotes
+            except Exception as e:
+                log.warning("radar quotes fetch failed: %s", e)
+    return assemble_radar_signals(combined, quotes)
+
+
+def _load_cache(name: str) -> dict | None:
+    path = os.path.join(_CACHE_DIR, f"{name}.json")
     if os.path.isfile(path):
         try:
             with open(path, encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+            return data if isinstance(data, dict) else None
         except Exception:
             pass
     return None
@@ -217,4 +380,5 @@ if __name__ == "__main__":
     import sys
     sys.stdout.reconfigure(encoding="utf-8")
     result = fetch_all_sentiment()
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    quotes = fetch_radar_quotes()
+    print(json.dumps(assemble_radar_signals(result, quotes), ensure_ascii=False, indent=2))

@@ -4,6 +4,8 @@ import { DualMap } from "@/features/news/worldMonitor/DualMap";
 import {
   LOOKBACK_DAYS,
   classifyInsight,
+  formatHeadlineSources,
+  formatSignedPct,
   headlinesForHub,
   headlinesForLayers,
   hubLabelOf,
@@ -213,7 +215,7 @@ export function WorldMonitorPage() {
                       {h.title}
                     </a>
                     <div className="text-muted-foreground text-xs">
-                      {h.source} {(h.hubs || []).join(", ")} {(h.streams || []).join(" · ")}
+                      {formatHeadlineSources(h)} {(h.hubs || []).join(", ")} {(h.streams || []).join(" · ")}
                       {h.report_date ? ` · ${h.report_date}` : ""}
                     </div>
                   </div>
@@ -253,7 +255,42 @@ export function WorldMonitorPage() {
             <CardHeader>
               <CardTitle>Finance radar</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2 text-sm">
+            <CardContent className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <div className="text-muted-foreground text-xs">Fear & Greed</div>
+                  <div className="font-medium">
+                    {dash?.finance_radar?.signals?.fear_greed?.value ?? "—"}{" "}
+                    <span className="text-muted-foreground text-xs">
+                      {dash?.finance_radar?.signals?.fear_greed?.label || ""}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground text-xs">VIX</div>
+                  <div className="font-medium">
+                    {dash?.finance_radar?.signals?.vix?.value ?? "—"}{" "}
+                    <span className="text-muted-foreground text-xs">
+                      {formatSignedPct(dash?.finance_radar?.signals?.vix?.change_pct)}
+                    </span>
+                  </div>
+                </div>
+                {(dash?.finance_radar?.signals?.quotes || []).map((q) => (
+                  <div key={q.id}>
+                    <div className="text-muted-foreground text-xs">{q.label}</div>
+                    <div className="font-medium">
+                      {q.value ?? "—"}{" "}
+                      <span className="text-muted-foreground text-xs">{formatSignedPct(q.change_pct)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {dash?.finance_radar?.signals?.mood?.recommendation ? (
+                <div className="text-muted-foreground text-xs">
+                  {(dash.finance_radar.signals.mood.signals || []).join(" · ")}
+                  <div>{dash.finance_radar.signals.mood.recommendation}</div>
+                </div>
+              ) : null}
               {(["exchanges", "commodities", "crypto", "composite"] as const).map((k) => (
                 <div key={k}>
                   <div className="font-medium">

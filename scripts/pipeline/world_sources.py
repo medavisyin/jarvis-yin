@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 from typing import Any
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
@@ -73,6 +76,161 @@ def world_title_key(title: str) -> str:
     return (title or "").lower().strip()[:80]
 
 
+NEWS_MAX_AGE_HOURS = 96
+SOURCE_TIERS = {
+    "reuters": 1,
+    "ap-news": 1,
+    "bbc-news": 1,
+    "dw-news": 2,
+    "guardian": 2,
+    "al-jazeera": 2,
+    "the-diplomat": 3,
+    "kyiv-independent": 3,
+    "peoples-daily": 4,
+    "xinhua": 4,
+}
+_WIRE_RANK = {"reuters": 0, "ap-news": 1, "bbc-news": 2}
+_SUFFIX_RE = re.compile(
+    r"\s*[-|–—:]\s*(bbc news|bbc|reuters|ap news|associated press|"
+    r"the guardian|guardian|deutsche welle|dw news|al jazeera|"
+    r"xinhua|people.?s daily|the diplomat|kyiv independent)\s*$",
+    re.I,
+)
+
+
+def source_tier(source_id: str) -> int:
+    return SOURCE_TIERS.get(source_id or "", 4)
+
+
+def normalize_story_title(title: str) -> str:
+    t = _SUFFIX_RE.sub("", (title or "").strip())
+    t = t.lower()
+    t = re.sub(r"[^\w\s]", " ", t, flags=re.UNICODE)
+    t = re.sub(r"\s+", " ", t).strip()
+    return t[:120]
+
+
+def story_hash(title: str) -> str:
+    return hashlib.sha256(normalize_story_title(title).encode("utf-8")).hexdigest()[:16]
+
+
+def parse_news_date(raw: str) -> datetime | None:
+    text = (raw or "").strip()
+    if not text:
+        return None
+    try:
+        dt = parsedate_to_datetime(text)
+        if dt is not None:
+            return dt.replace(tzinfo=None) if dt.tzinfo else dt
+    except (TypeError, ValueError, OverflowError, IndexError):
+        pass
+    cleaned = text.replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(cleaned)
+        return dt.replace(tzinfo=None) if dt.tzinfo else dt
+    except ValueError:
+        pass
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text[:19], fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def item_is_stale(
+    raw_date: str,
+    report_date: str,
+    max_age_hours: int = NEWS_MAX_AGE_HOURS,
+) -> bool:
+    dt = parse_news_date(raw_date)
+    if dt is None:
+        return False
+    try:
+        ref = datetime.strptime(report_date, "%Y-%m-%d") + timedelta(hours=23, minutes=59)
+    except ValueError:
+        return False
+    if dt > ref + timedelta(hours=1):
+        return True
+    return (ref - dt).total_seconds() > max_age_hours * 3600
+
+
+def _story_tokens(title: str) -> set[str]:
+    return {w for w in normalize_story_title(title).split() if len(w) > 2}
+
+
+def stories_match(a: str, b: str) -> bool:
+    if not a or not b:
+        return False
+    if story_hash(a) == story_hash(b):
+        return True
+    ta, tb = _story_tokens(a), _story_tokens(b)
+    if not ta or not tb:
+        return False
+    inter = ta & tb
+    if len(inter) < 3:
+        return False
+    return len(inter) / len(ta | tb) >= 0.55
+
+
+def cluster_world_items(items: list[dict[str, Any]], report_date: str) -> list[dict[str, Any]]:
+    """Collapse same-event wire copies. Undated scraper rows are kept; dated stale rows drop."""
+    fresh: list[dict[str, Any]] = []
+    for it in items:
+        title = (it.get("title") or "").strip()
+        if not title:
+            continue
+        if item_is_stale(it.get("date") or "", report_date):
+            continue
+        row = dict(it)
+        row["_source"] = row.get("_source") or row.get("source_id") or ""
+        row["_source_display"] = row.get("_source_display") or row.get("source") or ""
+        row["_tier"] = source_tier(row["_source"])
+        fresh.append(row)
+    fresh.sort(
+        key=lambda x: (
+            x["_tier"],
+            _WIRE_RANK.get(x["_source"], 50),
+            x.get("_priority", 99),
+            x.get("title") or "",
+        )
+    )
+    clusters: list[list[dict[str, Any]]] = []
+    for it in fresh:
+        cat = it.get("category") or it.get("news_category") or ""
+        placed = False
+        for group in clusters:
+            seed = group[0]
+            seed_cat = seed.get("category") or seed.get("news_category") or ""
+            if cat and seed_cat and cat != seed_cat:
+                continue
+            if stories_match(it.get("title") or "", seed.get("title") or ""):
+                group.append(it)
+                placed = True
+                break
+        if not placed:
+            clusters.append([it])
+    out: list[dict[str, Any]] = []
+    for group in clusters:
+        canonical = dict(group[0])
+        displays: list[str] = []
+        seen: set[str] = set()
+        for g in group:
+            for disp in g.get("sources") or [g.get("_source_display") or g.get("source") or ""]:
+                if disp and disp not in seen:
+                    seen.add(disp)
+                    displays.append(disp)
+        canonical["sources"] = displays
+        canonical["source_count"] = len(displays) or 1
+        canonical["source_tier"] = canonical["_tier"]
+        canonical["story_hash"] = story_hash(canonical.get("title") or "")
+        if not canonical.get("source"):
+            canonical["source"] = canonical.get("_source_display") or (displays[0] if displays else "")
+        out.append(canonical)
+    out.sort(key=lambda x: (-x.get("source_count", 1), x.get("source_tier", 9)))
+    return out
+
+
 def load_previous_day_title_keys(output_dir: str, report_date: str) -> set[str]:
     try:
         day = datetime.strptime(report_date, "%Y-%m-%d")
@@ -99,6 +257,9 @@ def load_previous_day_title_keys(output_dir: str, report_date: str) -> set[str]:
             key = world_title_key(it.get("title") or "")
             if key:
                 keys.add(key)
+            hashed = story_hash(it.get("title") or "")
+            if hashed:
+                keys.add(hashed)
     return keys
 
 
@@ -125,6 +286,14 @@ def _build_merged_item(it: dict[str, Any]) -> dict[str, Any]:
         out["title_zh"] = it["title_zh"]
     if it.get("summary_zh"):
         out["summary_zh"] = it["summary_zh"]
+    if it.get("sources"):
+        out["sources"] = list(it["sources"])
+    if it.get("source_count"):
+        out["source_count"] = it["source_count"]
+    if it.get("source_tier") is not None:
+        out["source_tier"] = it["source_tier"]
+    if it.get("story_hash"):
+        out["story_hash"] = it["story_hash"]
     return out
 
 
@@ -166,27 +335,18 @@ def merge_source_jsons(
                 item["source"] = src["display"]
             all_items.append(item)
 
-    seen_titles: set[str] = set()
-    deduped: list[dict[str, Any]] = []
-    for item in sorted(all_items, key=lambda x: x.get("_priority", 99)):
-        title = item.get("title") or ""
-        if not title:
-            continue
-        title_key = world_title_key(title)
-        if title_key in seen_titles:
-            continue
-        seen_titles.add(title_key)
-        deduped.append(item)
+    clustered = cluster_world_items(all_items, report_date)
 
     prev_keys = load_previous_day_title_keys(output_dir, report_date)
     if prev_keys:
-        deduped = [
-            it for it in deduped
+        clustered = [
+            it for it in clustered
             if world_title_key(it.get("title") or "") not in prev_keys
+            and story_hash(it.get("title") or "") not in prev_keys
         ]
 
     by_category: dict[str, list] = defaultdict(list)
-    for item in deduped:
+    for item in clustered:
         by_category[item.get("category") or "politics"].append(item)
 
     categories = []

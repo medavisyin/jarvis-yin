@@ -29,7 +29,9 @@ def api_world_monitor():
     if variant not in VARIANTS:
         variant = "world"
     lookback = clamp_lookback(request.args.get("lookback") or 1)
-    return jsonify(build_dashboard(REPORTS_ROOT, target, variant, lookback_days=lookback))
+    return jsonify(build_dashboard(
+        REPORTS_ROOT, target, variant, lookback_days=lookback, allow_fetch_signals=True,
+    ))
 
 
 @world_monitor_bp.route("/api/toolbar/world-monitor/brief", methods=["POST"])
