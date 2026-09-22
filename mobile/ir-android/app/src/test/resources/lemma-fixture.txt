@@ -1,0 +1,2 @@
+run -> running, ran, runs
+bank -> banks, banking, banked

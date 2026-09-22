@@ -42,3 +42,11 @@ scripts/bot_telegram.pid
 Thumbs.db
 .DS_Store
 jarvis-start.log
+
+# Android IR: engines, weights, dictionary, and native build output
+mobile/ir-android/app/src/main/assets/needle3.cact
+mobile/ir-android/app/src/main/assets/ecdict.db
+mobile/ir-android/app/src/main/jniLibs/
+mobile/ir-android/app/.cxx/
+mobile/ir-guide/.obsidian/
+node_modules/

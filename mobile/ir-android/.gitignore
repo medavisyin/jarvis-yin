@@ -1,0 +1,9 @@
+.gradle/
+.idea/
+build/
+app/build/
+app/.cxx/
+local.properties
+app/src/main/assets/ecdict.db
+app/src/main/assets/lemma.en.txt
+app/src/main/jniLibs/
