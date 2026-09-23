@@ -5,10 +5,8 @@ import { formatScannerStatus, qvEmptyCopy, qvHorizonLabel, scannerResultMode, sc
 describe("scannerResultMode", () => {
   it("maps each scanner to its own layout, never generic four-column", () => {
     expect(scannerResultMode("qv")).toBe("qv");
-    expect(scannerResultMode("scan")).toBe("scan");
     expect(scannerResultMode("long-term")).toBe("long-term");
     expect(scannerResultMode("midday")).toBe("midday");
-    expect(scannerResultMode("right")).toBe("right");
     expect(scannerResultMode("unified")).toBe("unified");
     expect(scannerResultMode("qv")).not.toBe("generic");
   });

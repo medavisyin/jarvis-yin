@@ -30,7 +30,6 @@ const LT_PHASES: Record<string, string> = {
 const UNIFIED_PHASES: Record<string, string> = {
   left: "左侧短期扫描...",
   right: "右侧扫描...",
-  ath: "近5年高二次突破扫描...",
 };
 
 function localizeDetail(detail: string, kind?: string): string {

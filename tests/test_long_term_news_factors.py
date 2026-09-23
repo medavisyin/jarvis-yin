@@ -400,3 +400,14 @@ def test_lt_ui_has_factor_cards_and_phase():
     assert "analyzing_factors" in poll
     hist = text[text.find("async function loadLtHistory"): text.find("async function loadLtDate")]
     assert "oil_trend" in hist
+
+
+def test_lt_marks_done_after_saving_results():
+    src = Path(__file__).resolve().parents[1] / "scripts" / "stock" / "long_term_scanner.py"
+    text = src.read_text(encoding="utf-8")
+    inner = text[text.find("def _run_lt_scan_inner"):]
+    save_idx = inner.rfind("_save_results(")
+    done_idx = inner.rfind('progress["status"] = "done"')
+    assert save_idx != -1
+    assert done_idx != -1
+    assert save_idx < done_idx

@@ -1811,21 +1811,20 @@ def _run_lt_scan_inner():
 
     picks = _llm_final_selection(viable, themes, metals, signal_summary) if viable else []
 
-    # Save
-    progress["status"] = "done"
-    progress["picks"] = picks
-    progress["finished_at"] = datetime.now().isoformat()
-    _save_progress(progress)
-
     scan_meta = {
         "started_at": progress.get("started_at"),
-        "finished_at": progress.get("finished_at"),
+        "finished_at": datetime.now().isoformat(),
         "world_news_count": progress.get("world_news_count", 0),
         "ai_news_count": progress.get("ai_news_count", 0),
         "finance_news_count": progress.get("finance_news_count", 0),
         "signal_window_days": SIGNAL_WINDOW_DAYS,
     }
     _save_results(picks, metals, themes, scan_meta, factors=factors)
+
+    progress["status"] = "done"
+    progress["picks"] = picks
+    progress["finished_at"] = scan_meta["finished_at"]
+    _save_progress(progress)
 
     log.info("=== AI 长期推荐分析完成 ===")
 

@@ -156,46 +156,20 @@ export function RightPickCards({ picks, onAnalyze }: { picks: ScanPick[]; onAnal
   );
 }
 
-export function AthPickCards({ result, onAnalyze }: { result: Obj; onAnalyze?: AnalyzeFn }) {
-  const picks = asPickList(result.picks || result.top_picks);
-  const watch = Array.isArray(result.watch) ? (result.watch as Obj[]) : [];
-  return (
-    <div className="space-y-2">
-      {!picks.length ? (
-        <p className="text-muted-foreground text-xs">
-          暂无近5年高二次突破可买标的。第一次站上只是标杆，回踩后再突破才是买点。
-        </p>
-      ) : (
-        <>
-          {result.ai_reviewed ? null : <p className="text-xs text-amber-600">未经 AI 终审</p>}
-          {picks.map((p, i) => {
-            const row = p as ScanPick & Obj;
-            const tags = Array.isArray(row.pullback_tags) ? (row.pullback_tags as string[]) : [];
-            return (
-              <CardShell key={`${row.symbol || "a"}-${i}`}>
-                <SymButton symbol={row.symbol} name={row.name} onAnalyze={onAnalyze} />
-                {row.price != null ? <p className="text-muted-foreground text-xs">现价 ¥{String(row.price)}</p> : null}
-                {tags.length ? <p className="text-xs">回踩: {tags.join(", ")}</p> : null}
-                {row.tradeable === false ? <p className="text-destructive text-xs">买不到（涨停）</p> : null}
-                {row.reasoning ? <p className="text-xs">{String(row.reasoning)}</p> : null}
-                {row.risk ? <p className="text-destructive text-xs">风险: {String(row.risk)}</p> : null}
-              </CardShell>
-            );
-          })}
-        </>
-      )}
-      {watch.length ? (
-        <div>
-          <p className="text-xs text-amber-600">观察（涨停买不到）:</p>
-          {watch.map((w, i) => (
-            <p key={`${String(w.symbol)}-${i}`} className="text-muted-foreground text-xs">
-              {String(w.name || "")} ({String(w.symbol || "")})
-            </p>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
+function outlookText(v: unknown): string {
+  if (v == null) return "";
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) return v.map(outlookText).filter(Boolean).join("；");
+  if (typeof v === "object") {
+    return Object.entries(v as Record<string, unknown>)
+      .map(([k, val]) => {
+        const inner = outlookText(val);
+        return inner ? `${k}: ${inner}` : "";
+      })
+      .filter(Boolean)
+      .join("；");
+  }
+  return "";
 }
 
 export function QualityValueResult({ result, onAnalyze }: { result: Obj; onAnalyze?: AnalyzeFn }) {
@@ -334,10 +308,32 @@ export function MiddayResult({ result, onAnalyze }: { result: Obj; onAnalyze?: A
 export function LongTermResult({ result, onAnalyze }: { result: Obj; onAnalyze?: AnalyzeFn }) {
   const picks = asPickList(result.picks);
   const metals = asObj(result.precious_metals);
+  const outlook = asObj(metals.llm_outlook);
   const themes = Array.isArray(result.themes) ? (result.themes as Obj[]) : [];
+  const factors = asObj(result.factors);
+  const fOutlook = asObj(factors.llm_outlook);
+  const macro = asObj(factors.macro);
+  const macroSeries = Array.isArray(macro.series) ? (macro.series as Obj[]) : [];
+  const headlines = Array.isArray(macro.official_headlines) ? (macro.official_headlines as Obj[]) : [];
+  const factorKeys = [
+    { key: "oil", label: "油价" },
+    { key: "dollar", label: "美元" },
+    { key: "rates", label: "美债" },
+    { key: "crypto", label: "加密" },
+  ] as const;
+  const hasMacro =
+    macroSeries.some((s) => s.data_available) || headlines.length > 0 || Boolean(fOutlook.macro);
+  const hasSeries = factorKeys.some((fk) => asObj(factors[fk.key]).data_available || fOutlook[fk.key]);
+  const showThermometer = hasMacro || hasSeries || Boolean(fOutlook.summary);
+  const showMetals = Boolean(metals.gold || metals.silver || (outlook && !outlook.error && Object.keys(outlook).length));
+
+  if (result.error) {
+    return <p className="text-destructive text-sm">{String(result.error)}</p>;
+  }
+
   return (
     <div className="space-y-4">
-      {metals.gold || metals.silver ? (
+      {showMetals ? (
         <div className="space-y-2">
           <p className="text-sm font-medium">贵金属分析</p>
           {(["gold", "silver"] as const).map((key) => {
@@ -360,6 +356,66 @@ export function LongTermResult({ result, onAnalyze }: { result: Obj; onAnalyze?:
               </CardShell>
             );
           })}
+          {outlook && !outlook.error
+            ? (["gold", "silver"] as const).map((key) => {
+                const o = asObj(outlook[key]);
+                if (!Object.keys(o).length) return null;
+                return (
+                  <CardShell key={`${key}-outlook`}>
+                    <p className="text-sm font-medium">
+                      {key === "gold" ? "黄金" : "白银"}展望: {outlookText(o.trend)}
+                    </p>
+                    {o.drivers ? <p className="text-muted-foreground text-xs">驱动: {outlookText(o.drivers)}</p> : null}
+                    {o.advice ? <p className="text-xs">建议: {outlookText(o.advice)}</p> : null}
+                    {o.price_range ? <p className="text-xs">区间: {outlookText(o.price_range)}</p> : null}
+                  </CardShell>
+                );
+              })
+            : null}
+          {outlook.summary ? <p className="text-xs">{outlookText(outlook.summary)}</p> : null}
+        </div>
+      ) : null}
+      {showThermometer ? (
+        <div className="space-y-2">
+          <p className="text-sm font-medium">宏观与市场温度计</p>
+          {hasMacro ? (
+            <CardShell>
+              <p className="text-sm font-medium">官方宏观</p>
+              {macroSeries
+                .filter((s) => s.data_available)
+                .map((s) => (
+                  <p key={String(s.id || s.label)} className="text-muted-foreground text-xs">
+                    {String(s.label || s.id)}: {String(s.latest)} (前值 {s.prior == null ? "-" : String(s.prior)})
+                  </p>
+                ))}
+              {headlines.slice(0, 5).map((hd, i) => (
+                <p key={`${String(hd.headline)}-${i}`} className="text-muted-foreground text-xs">
+                  · {String(hd.headline || "")}
+                </p>
+              ))}
+              {asObj(fOutlook.macro).trend ? (
+                <p className="text-xs">展望: {outlookText(asObj(fOutlook.macro).trend)}</p>
+              ) : null}
+              {asObj(fOutlook.macro).advice ? (
+                <p className="text-xs">建议: {outlookText(asObj(fOutlook.macro).advice)}</p>
+              ) : null}
+            </CardShell>
+          ) : null}
+          {factorKeys.map((fk) => {
+            const m = asObj(factors[fk.key]);
+            const o = asObj(fOutlook[fk.key]);
+            if (!m.data_available && !Object.keys(o).length) return null;
+            return (
+              <CardShell key={fk.key}>
+                <p className="text-sm font-medium">
+                  {fk.label} {m.latest_price != null ? String(m.latest_price) : "-"}
+                </p>
+                {o.trend ? <p className="text-xs">展望: {outlookText(o.trend)}</p> : null}
+                {o.advice ? <p className="text-xs">建议: {outlookText(o.advice)}</p> : null}
+              </CardShell>
+            );
+          })}
+          {fOutlook.summary ? <p className="text-xs">{outlookText(fOutlook.summary)}</p> : null}
         </div>
       ) : null}
       {themes.length ? (
@@ -382,7 +438,9 @@ export function LongTermResult({ result, onAnalyze }: { result: Obj; onAnalyze?:
             </CardShell>
           ))}
         </div>
-      ) : null}
+      ) : (
+        <p className="text-muted-foreground text-xs">本次未产出投资主题</p>
+      )}
       {!picks.length ? (
         <EmptyBlock title="本次分析: 暂无个股推荐" detail="未找到空间充裕且趋势明确的标的, 请参考贵金属分析和投资主题。" />
       ) : (
@@ -421,9 +479,8 @@ export function LongTermResult({ result, onAnalyze }: { result: Obj; onAnalyze?:
 
 export function UnifiedResult({ result, onAnalyze }: { result: Obj; onAnalyze?: AnalyzeFn }) {
   const sections = extractScanSections(result);
-  const athObj = asObj(result.ath);
   return (
-    <div className="grid gap-3 lg:grid-cols-3">
+    <div className="grid gap-3 lg:grid-cols-2">
       <div className="space-y-1">
         <p className="text-xs font-medium">左侧 · 短期</p>
         {scanSectionRan(result.left) ? (
@@ -438,14 +495,6 @@ export function UnifiedResult({ result, onAnalyze }: { result: Obj; onAnalyze?: 
           <RightPickCards picks={sections.right} onAnalyze={onAnalyze} />
         ) : (
           <p className="text-muted-foreground text-xs">暂无右侧扫描结果（尚未扫描或正在运行）。</p>
-        )}
-      </div>
-      <div className="space-y-1">
-        <p className="text-xs font-medium">近5年高 · 二次突破</p>
-        {scanSectionRan(result.ath) ? (
-          <AthPickCards result={athObj} onAnalyze={onAnalyze} />
-        ) : (
-          <p className="text-muted-foreground text-xs">暂无近5年高二次突破结果（尚未扫描或正在运行）。</p>
         )}
       </div>
     </div>

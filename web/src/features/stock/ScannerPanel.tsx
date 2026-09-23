@@ -17,26 +17,22 @@ type ScanKind = {
   datedResult?: (date: string) => string;
 };
 
-const SCANS: ScanKind[] = [
+export const SCANNER_KINDS: ScanKind[] = [
   { id: "unified", label: "Left-Right-ATH", start: "/api/stock/unified_scan/start", status: "/api/stock/unified_scan/status", stop: "/api/stock/unified_scan/stop", result: "/api/stock/unified_scan/result" },
-  { id: "scan", label: "AI scan", start: "/api/stock/scan/start", status: "/api/stock/scan/status", stop: "/api/stock/scan/stop", result: "/api/stock/scan/result", history: "/api/stock/scan/history", datedResult: (d) => `/api/stock/scan/result/${d}` },
   { id: "long-term", label: "Long-term", start: "/api/stock/long-term/start", status: "/api/stock/long-term/status", stop: "/api/stock/long-term/stop", result: "/api/stock/long-term/result", history: "/api/stock/long-term/history", datedResult: (d) => `/api/stock/long-term/result/${d}` },
   { id: "qv", label: "Quality-value", start: "/api/stock/quality-value/start", status: "/api/stock/quality-value/status", stop: "/api/stock/quality-value/stop", result: "/api/stock/quality-value/result", history: "/api/stock/quality-value/history", datedResult: (d) => `/api/stock/quality-value/result/${d}` },
   { id: "midday", label: "Midday", start: "/api/stock/midday/start", status: "/api/stock/midday/status", stop: "/api/stock/midday/stop", result: "/api/stock/midday/result" },
-  { id: "right", label: "Right-side", start: "/api/stock/right_side/start", status: "/api/stock/right_side/status", stop: "/api/stock/right_side/stop", result: "/api/stock/right_side/result" },
 ];
 
 const PDF_TYPE: Record<string, string> = {
-  scan: "short_term",
   unified: "short_term",
   midday: "short_term",
-  right: "short_term",
   "long-term": "long_term",
   qv: "quality_value",
 };
 
 export function ScannerPanel({ onAnalyze }: { onAnalyze: (symbol: string) => void }) {
-  const [kind, setKind] = useState(SCANS[0]);
+  const [kind, setKind] = useState(SCANNER_KINDS[0]);
   const [status, setStatus] = useState<Record<string, unknown>>({});
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [deepseek, setDeepseek] = useState(false);
@@ -160,7 +156,7 @@ export function ScannerPanel({ onAnalyze }: { onAnalyze: (symbol: string) => voi
       </CardHeader>
       <CardContent className="space-y-3">
         <div className="flex flex-wrap gap-1">
-          {SCANS.map((s) => (
+          {SCANNER_KINDS.map((s) => (
             <Button key={s.id} size="sm" variant={kind.id === s.id ? "default" : "outline"} onClick={() => setKind(s)}>
               {s.label}
             </Button>
