@@ -20,24 +20,26 @@ class ShelfStore(private val root: File) {
 
     fun find(id: String): ShelfEntry? = readIndex().books.firstOrNull { it.id == id }
 
-    fun loadChunks(id: String): List<String> {
-        val file = File(root, "$id.json")
-        if (!file.exists()) return emptyList()
-        val array = JSONArray(file.readText())
-        return (0 until array.length()).map { array.getString(it) }
-    }
+    fun loadChunks(id: String): List<String> = readBook(id).chunks
+
+    fun loadTitles(id: String): List<String> = readBook(id).titles
 
     fun save(
         title: String,
         kind: String,
         chunks: List<String>,
+        titles: List<String> = emptyList(),
         now: Long = System.currentTimeMillis(),
     ): ShelfEntry {
         root.mkdirs()
         val id = uniqueId(now)
-        val array = JSONArray()
-        chunks.forEach { array.put(it) }
-        File(root, "$id.json").writeText(array.toString())
+        val aligned = List(chunks.size) { index -> titles.getOrElse(index) { "" } }
+        val chunkArray = JSONArray()
+        chunks.forEach { chunkArray.put(it) }
+        val titleArray = JSONArray()
+        aligned.forEach { titleArray.put(it) }
+        val body = JSONObject().put("chunks", chunkArray).put("titles", titleArray)
+        File(root, "$id.json").writeText(body.toString())
         val entry = ShelfEntry(
             id = id,
             title = title.ifBlank { kind },
@@ -49,6 +51,13 @@ class ShelfStore(private val root: File) {
         val index = readIndex()
         writeIndex(index.copy(lastId = id, books = index.books + entry))
         return entry
+    }
+
+    fun delete(id: String) {
+        val index = readIndex()
+        val last = if (index.lastId == id) null else index.lastId
+        writeIndex(index.copy(lastId = last, books = index.books.filter { it.id != id }))
+        File(root, "$id.json").delete()
     }
 
     fun updatePosition(id: String, chunkIndex: Int, now: Long = System.currentTimeMillis()) {
@@ -72,6 +81,27 @@ class ShelfStore(private val root: File) {
             id = "$now-$n"
         }
         return id
+    }
+
+    private data class BookFile(val chunks: List<String>, val titles: List<String>)
+
+    private fun readBook(id: String): BookFile {
+        val file = File(root, "$id.json")
+        if (!file.exists()) return BookFile(emptyList(), emptyList())
+        val text = file.readText().trim()
+        if (text.startsWith("[")) {
+            val array = JSONArray(text)
+            val chunks = (0 until array.length()).map { array.getString(it) }
+            return BookFile(chunks, List(chunks.size) { "" })
+        }
+        val json = JSONObject(text)
+        val chunksJson = json.optJSONArray("chunks") ?: JSONArray()
+        val titlesJson = json.optJSONArray("titles") ?: JSONArray()
+        val chunks = (0 until chunksJson.length()).map { chunksJson.optString(it) }
+        val titles = List(chunks.size) { index ->
+            if (index < titlesJson.length()) titlesJson.optString(index) else ""
+        }
+        return BookFile(chunks, titles)
     }
 
     private data class Index(val lastId: String?, val books: List<ShelfEntry>)

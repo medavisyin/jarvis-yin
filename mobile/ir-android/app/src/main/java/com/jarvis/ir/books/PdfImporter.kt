@@ -11,6 +11,17 @@ object PdfImporter {
         }
     }
 
+    fun extractPages(input: InputStream): List<String> {
+        PDDocument.load(input).use { doc ->
+            val stripper = PDFTextStripper()
+            return (1..doc.numberOfPages).map { page ->
+                stripper.startPage = page
+                stripper.endPage = page
+                stripper.getText(doc).trim()
+            }
+        }
+    }
+
     fun importPdf(input: InputStream, maxWords: Int = 400): List<String> =
         Chunker.chunk(extractText(input), maxWords)
 }

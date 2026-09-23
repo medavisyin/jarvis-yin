@@ -9,14 +9,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -32,7 +37,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import com.jarvis.ir.books.BookOpen
+import com.jarvis.ir.books.ChapterJump
+import com.jarvis.ir.books.ChapterLabels
+import com.jarvis.ir.books.EconomistMessages
 import com.jarvis.ir.books.EpubImporter
+import com.jarvis.ir.books.LocalImport
+import com.jarvis.ir.books.LocalImportMessages
 import com.jarvis.ir.books.PdfImporter
 import com.jarvis.ir.books.ShelfEntry
 import com.jarvis.ir.books.ShelfStore
@@ -46,6 +58,7 @@ import com.jarvis.ir.explain.CactusGlossEngine
 import com.jarvis.ir.explain.ExplainPipeline
 import com.jarvis.ir.explain.GlossModelStore
 import com.jarvis.ir.explain.GlossSession
+import com.jarvis.ir.ui.EconomistPicker
 import com.jarvis.ir.ui.ReaderScreen
 import com.jarvis.ir.ui.SettingsDialog
 import com.jarvis.ir.ui.ShelfScreen
@@ -57,8 +70,14 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
     private var sqlite: SqliteDict? = null
     private var chunks by mutableStateOf(listOf<String>())
+    private var chunkTitles by mutableStateOf(listOf<String>())
     private var chunkIndex by mutableIntStateOf(0)
+    private val chapterJump = ChapterJump()
+    private var chapterJumpTick by mutableIntStateOf(0)
+    private var showChapters by mutableStateOf(false)
+    private var importError by mutableStateOf<String?>(null)
     private var showSettings by mutableStateOf(false)
+    private var showEconomist by mutableStateOf(false)
     private var showShelf by mutableStateOf(true)
     private var bookTitle by mutableStateOf("样例")
     private var bookId by mutableStateOf<String?>(null)
@@ -71,14 +90,8 @@ class MainActivity : ComponentActivity() {
     private var glossBusy by mutableStateOf(false)
     private var glossReady by mutableStateOf(false)
 
-    private val openTxt = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        importUri(uri, kind = "txt")
-    }
-    private val openEpub = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        importUri(uri, kind = "epub")
-    }
-    private val openPdf = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        importUri(uri, kind = "pdf")
+    private val openLocal = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        importLocal(uri)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -108,7 +121,10 @@ class MainActivity : ComponentActivity() {
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (!showShelf) {
-                            TextButton(onClick = { showShelf = true }) { Text("书架") }
+                            TextButton(onClick = {
+                                chapterJump.reset()
+                                showShelf = true
+                            }) { Text("书架") }
                         }
                         Text(
                             if (showShelf) "书架" else bookTitle,
@@ -125,6 +141,7 @@ class MainActivity : ComponentActivity() {
                                 fontSize = 14.sp,
                                 modifier = Modifier.padding(end = 4.dp),
                             )
+                            TextButton(onClick = { showChapters = true }) { Text("章节") }
                         }
                         TextButton(onClick = { showSettings = true }) { Text("设置") }
                     }
@@ -132,6 +149,7 @@ class MainActivity : ComponentActivity() {
                         ShelfScreen(
                             books = shelfBooks,
                             onOpen = { openEntry(it) },
+                            onDelete = { deleteBook(it) },
                             onSample = if (shelfBooks.isEmpty()) {
                                 { openSample() }
                             } else {
@@ -148,6 +166,11 @@ class MainActivity : ComponentActivity() {
                             )
                             LaunchedEffect(pagerState.settledPage) {
                                 moveChunk(pagerState.settledPage)
+                            }
+                            LaunchedEffect(chapterJumpTick) {
+                                chapterJump.consume { page ->
+                                    pagerState.scrollToPage(page.coerceIn(0, chunks.lastIndex))
+                                }
                             }
                             HorizontalPager(
                                 state = pagerState,
@@ -176,11 +199,17 @@ class MainActivity : ComponentActivity() {
                                 saveGlossModel(glossModel)
                                 showSettings = false
                             },
-                            onOpenTxt = { openTxt.launch(arrayOf("text/plain")) },
-                            onOpenEpub = {
-                                openEpub.launch(arrayOf("application/epub+zip", "application/octet-stream"))
+                            onOpenLocal = {
+                                openLocal.launch(
+                                    arrayOf(
+                                        "text/plain",
+                                        "application/epub+zip",
+                                        "application/pdf",
+                                        "application/octet-stream",
+                                    ),
+                                )
                             },
-                            onOpenPdf = { openPdf.launch(arrayOf("application/pdf")) },
+                            onOpenEconomist = { showEconomist = true },
                             glossSelected = glossModel,
                             glossStatus = glossStatus,
                             glossBusy = glossBusy,
@@ -204,6 +233,55 @@ class MainActivity : ComponentActivity() {
                             },
                         )
                     }
+                    if (showEconomist) {
+                        EconomistPicker(
+                            cacheDir = cacheDir,
+                            onDismiss = { showEconomist = false },
+                            onImported = { title, kind, imported, titles ->
+                                openSaved(shelfStore.save(title, kind, imported, titles = titles))
+                                showSettings = false
+                                showEconomist = false
+                            },
+                        )
+                    }
+                    if (showChapters) {
+                        Dialog(onDismissRequest = { showChapters = false }) {
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .background(readingPaper)
+                                    .padding(16.dp),
+                            ) {
+                                Text("章节", color = readingInk, fontSize = 18.sp)
+                                LazyColumn(Modifier.heightIn(max = 480.dp)) {
+                                    itemsIndexed(chunks) { index, _ ->
+                                        Text(
+                                            ChapterLabels.label(chunkTitles.getOrElse(index) { "" }, index),
+                                            color = readingInk,
+                                            fontSize = 16.sp,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    showChapters = false
+                                                    chapterJump.request(index)
+                                                    chapterJumpTick += 1
+                                                }
+                                                .padding(vertical = 12.dp),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    importError?.let { message ->
+                        AlertDialog(
+                            onDismissRequest = { importError = null },
+                            text = { Text(message) },
+                            confirmButton = {
+                                TextButton(onClick = { importError = null }) { Text("关闭") }
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -222,10 +300,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun restoreLastBook() {
+        chapterJump.reset()
         val last = shelfStore.lastId()?.let { shelfStore.find(it) } ?: return
         val loaded = shelfStore.loadChunks(last.id)
         if (loaded.isEmpty()) return
         chunks = loaded
+        chunkTitles = shelfStore.loadTitles(last.id)
         chunkIndex = last.chunkIndex.coerceIn(0, loaded.lastIndex)
         bookId = last.id
         bookTitle = last.title
@@ -233,9 +313,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openEntry(entry: ShelfEntry) {
+        chapterJump.reset()
         val loaded = shelfStore.loadChunks(entry.id)
-        if (loaded.isEmpty()) return
+        val error = BookOpen.errorIfEmpty(loaded)
+        if (error != null) {
+            importError = error
+            return
+        }
         chunks = loaded
+        chunkTitles = shelfStore.loadTitles(entry.id)
         chunkIndex = entry.chunkIndex.coerceIn(0, loaded.lastIndex)
         bookId = entry.id
         bookTitle = entry.title
@@ -245,8 +331,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun openSample() {
+        chapterJump.reset()
         val sample = assets.open("sample.txt").bufferedReader().use { it.readText() }
         chunks = listOf(sample)
+        chunkTitles = emptyList()
         chunkIndex = 0
         bookId = null
         bookTitle = "样例"
@@ -261,29 +349,60 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun importUri(uri: Uri?, kind: String) {
+    private fun importLocal(uri: Uri?) {
         if (uri == null) return
+        val probe = LocalImport.probe(
+            name = { displayName(uri) },
+            mime = { contentResolver.getType(uri) },
+        )
+        val kind = probe.kind
+        if (probe.error != null || kind == null) {
+            importError = probe.error ?: LocalImportMessages.UNKNOWN
+            return
+        }
         try {
-            contentResolver.openInputStream(uri)?.use { input ->
-                val imported = when (kind) {
+            val imported = contentResolver.openInputStream(uri)?.use { input ->
+                when (kind) {
                     "epub" -> EpubImporter.importEpub(input)
                     "pdf" -> PdfImporter.importPdf(input)
                     else -> TxtImporter.importUtf8(input.readBytes())
                 }
-                if (imported.isEmpty()) return
-                val title = displayName(uri) ?: kind.uppercase()
-                val entry = shelfStore.save(title, kind, imported)
-                chunks = imported
-                chunkIndex = 0
-                bookId = entry.id
-                bookTitle = entry.title
-                shelfBooks = shelfStore.list()
-                showShelf = false
-                showSettings = false
             }
+            if (imported.isNullOrEmpty()) {
+                importError = EconomistMessages.IMPORT
+                return
+            }
+            val title = probe.name ?: kind.uppercase()
+            openSaved(shelfStore.save(title, kind, imported, titles = List(imported.size) { "" }))
+            showSettings = false
         } catch (e: Exception) {
             Log.e("Y", "import failed", e)
+            importError = EconomistMessages.IMPORT
         }
+    }
+
+    private fun openSaved(entry: ShelfEntry) {
+        chapterJump.reset()
+        chunks = shelfStore.loadChunks(entry.id)
+        chunkTitles = shelfStore.loadTitles(entry.id)
+        chunkIndex = 0
+        bookId = entry.id
+        bookTitle = entry.title
+        shelfBooks = shelfStore.list()
+        showShelf = false
+    }
+
+    private fun deleteBook(entry: ShelfEntry) {
+        chapterJump.reset()
+        shelfStore.delete(entry.id)
+        if (bookId == entry.id) {
+            bookId = null
+            chunks = emptyList()
+            chunkTitles = emptyList()
+            chunkIndex = 0
+            showShelf = true
+        }
+        shelfBooks = shelfStore.list()
     }
 
     private fun saveGlossModel(slug: String) {

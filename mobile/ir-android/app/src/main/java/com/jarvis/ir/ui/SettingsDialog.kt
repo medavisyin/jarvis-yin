@@ -19,9 +19,8 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SettingsDialog(
     onDismiss: () -> Unit,
-    onOpenTxt: () -> Unit,
-    onOpenEpub: () -> Unit,
-    onOpenPdf: () -> Unit,
+    onOpenLocal: () -> Unit,
+    onOpenEconomist: () -> Unit,
     glossSelected: String,
     glossStatus: String,
     glossBusy: Boolean,
@@ -40,9 +39,8 @@ fun SettingsDialog(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Button(onClick = onOpenTxt) { Text("打开 TXT") }
-                    Button(onClick = onOpenEpub) { Text("打开 EPUB") }
-                    Button(onClick = onOpenPdf) { Text("打开 PDF") }
+                    Button(onClick = onOpenLocal) { Text("导入本地文件") }
+                    Button(onClick = onOpenEconomist) { Text("经济学人") }
                 }
                 GlossDownloadBar(
                     selected = glossSelected,

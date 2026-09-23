@@ -7,6 +7,33 @@ import java.util.zip.ZipInputStream
 
 object EpubImporter {
     fun extractText(input: InputStream): String {
+        val (opfDir, spineHrefs, files) = spine(input)
+        val parts = spineHrefs.mapNotNull { href ->
+            htmlBytes(files, opfDir, href)?.let { htmlToParagraphs(String(it, Charsets.UTF_8)) }
+        }
+        return parts.filter { it.isNotBlank() }.joinToString("\n\n")
+    }
+
+    fun extractSections(input: InputStream): List<BookSection> {
+        val (opfDir, spineHrefs, files) = spine(input)
+        return spineHrefs.mapNotNull { href ->
+            val bytes = htmlBytes(files, opfDir, href) ?: return@mapNotNull null
+            val html = String(bytes, Charsets.UTF_8)
+            val text = htmlToParagraphs(html)
+            if (text.isBlank()) return@mapNotNull null
+            val heading = Jsoup.parse(html).body()?.selectFirst("h1, h2, h3")?.text()?.trim().orEmpty()
+            val fallback = href.substringAfterLast('/').substringBeforeLast('.')
+            BookSection(heading.ifBlank { fallback }, text)
+        }
+    }
+
+    private data class Spine(
+        val opfDir: String,
+        val hrefs: List<String>,
+        val files: Map<String, ByteArray>,
+    )
+
+    private fun spine(input: InputStream): Spine {
         val files = HashMap<String, ByteArray>()
         ZipInputStream(input).use { zip ->
             while (true) {
@@ -25,12 +52,12 @@ object EpubImporter {
         val opf = Jsoup.parse(String(opfBytes, Charsets.UTF_8), "", Parser.xmlParser())
         val hrefById = opf.select("manifest > item").associate { it.attr("id") to it.attr("href") }
         val spineHrefs = opf.select("spine > itemref").mapNotNull { hrefById[it.attr("idref")] }
-        val parts = spineHrefs.mapNotNull { href ->
-            val path = opfDir + href
-            val html = files[path] ?: files.entries.firstOrNull { it.key.endsWith(href) }?.value
-            html?.let { htmlToParagraphs(String(it, Charsets.UTF_8)) }
-        }
-        return parts.filter { it.isNotBlank() }.joinToString("\n\n")
+        return Spine(opfDir, spineHrefs, files)
+    }
+
+    private fun htmlBytes(files: Map<String, ByteArray>, opfDir: String, href: String): ByteArray? {
+        val path = opfDir + href
+        return files[path] ?: files.entries.firstOrNull { it.key.endsWith(href) }?.value
     }
 
     private fun htmlToParagraphs(html: String): String {
