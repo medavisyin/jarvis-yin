@@ -1,0 +1,9 @@
+xcuserdata/
+*.xcuserstate
+DerivedData/
+.DS_Store
+
+# Dictionary and model weights stay off GitHub. Copy them into ir-ios/ on the Mac before building.
+ecdict.db
+lemma.en.txt
+models/
