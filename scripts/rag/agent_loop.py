@@ -23,6 +23,8 @@ from prompts import (
 )
 from rag_engine import auto_rag_search as _auto_rag_search
 from tools import TOOL_SCHEMAS, execute_tool as _execute_tool
+import glm_chat
+import mimo_chat
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,32 @@ def init(*, ollama_model: str, ollama_host: str, ollama_model_fast: str,
     _OLLAMA_HOST = ollama_host
     _OLLAMA_MODEL_FAST = ollama_model_fast
     _MAX_AGENT_ITERATIONS = max_agent_iterations
+
+
+def _default_chat_agent() -> str:
+    return "ollama"
+
+
+def _default_glm_key() -> str:
+    return ""
+
+
+_chat_agent_fn = _default_chat_agent
+_glm_key_fn = _default_glm_key
+_mimo_key_fn = _default_glm_key
+
+
+def configure_glm(*, agent_fn, key_fn):
+    """Point the chat loop at the current settings (Ollama or GLM)."""
+    global _chat_agent_fn, _glm_key_fn
+    _chat_agent_fn = agent_fn
+    _glm_key_fn = key_fn
+
+
+def configure_mimo(*, key_fn):
+    """Point MiMo chat at the saved Xiaomi key. The agent name stays on configure_glm."""
+    global _mimo_key_fn
+    _mimo_key_fn = key_fn
 
 
 def set_ollama_model(model: str) -> None:
@@ -239,9 +267,23 @@ def run_agent(user_query: str, image_b64: str | None = None,
       {"type": "answer_done", "sources": [...]}
       {"type": "error", "message": "..."}
     """
-    import ollama
+    agent_name = _chat_agent_fn()
+    use_glm = agent_name == "glm"
+    use_mimo = agent_name == "mimo"
+    cloud = glm_chat if use_glm else mimo_chat if use_mimo else None
+    cloud_key = ""
+    if cloud is not None and image_b64:
+        yield {"type": "error", "message": cloud.image_rejected_message()}
+        return
+    if cloud is not None:
+        key_fn = _glm_key_fn if use_glm else _mimo_key_fn
+        try:
+            cloud_key = cloud.require_key(key_fn())
+        except (glm_chat.GlmConfigError, mimo_chat.MimoConfigError) as exc:
+            yield {"type": "error", "message": str(exc)}
+            return
 
-    effective_model = _OLLAMA_MODEL
+    effective_model = cloud.MODEL if cloud is not None else _OLLAMA_MODEL
     yield {"type": "model", "model": effective_model}
 
     messages: list[dict] = []
@@ -377,28 +419,48 @@ def run_agent(user_query: str, image_b64: str | None = None,
                 if s.get("function", {}).get("name") not in suggested_tools]
         effective_tools = priority + rest
 
+    cloud_client = None
+    if cloud is not None:
+        try:
+            cloud_client = cloud.make_client(cloud_key)
+        except Exception as exc:
+            yield {"type": "error", "message": cloud.public_error(exc)}
+            return
+
     for iteration in range(_MAX_AGENT_ITERATIONS):
         try:
-            call_kwargs: dict[str, Any] = {
-                "model": effective_model,
-                "messages": messages,
-                "stream": True,
-                "think": False,
-                "options": {"num_ctx": num_ctx, "num_predict": 4096},
-            }
-            call_kwargs["tools"] = effective_tools
-            stream_iter = _traced_ollama_chat(ollama, call_kwargs, session_id=session_id)
             full_content = ""
             tool_calls = []
-            for text, chunk in stream_iter:
-                c = chunk.message
-                if text:
-                    full_content += text
-                    yield {"type": "token", "content": text}
-                if c.tool_calls:
-                    tool_calls.extend(c.tool_calls)
+            if cloud is not None:
+                for text, calls in cloud.stream_chat(cloud_client, messages, effective_tools):
+                    if text:
+                        full_content += text
+                        yield {"type": "token", "content": text}
+                    if calls:
+                        tool_calls.extend(calls)
+            else:
+                import ollama
+                call_kwargs: dict[str, Any] = {
+                    "model": effective_model,
+                    "messages": messages,
+                    "stream": True,
+                    "think": False,
+                    "options": {"num_ctx": num_ctx, "num_predict": 4096},
+                }
+                call_kwargs["tools"] = effective_tools
+                stream_iter = _traced_ollama_chat(ollama, call_kwargs, session_id=session_id)
+                for text, chunk in stream_iter:
+                    c = chunk.message
+                    if text:
+                        full_content += text
+                        yield {"type": "token", "content": text}
+                    if c.tool_calls:
+                        tool_calls.extend(c.tool_calls)
         except Exception as e:
-            yield {"type": "error", "message": f"Ollama error: {e}"}
+            if cloud is not None:
+                yield {"type": "error", "message": cloud.public_error(e)}
+            else:
+                yield {"type": "error", "message": f"Ollama error: {e}"}
             return
 
         if not tool_calls:
@@ -469,7 +531,11 @@ def run_agent(user_query: str, image_b64: str | None = None,
             except Exception:
                 pass
 
-            messages.append({"role": "tool", "content": result_str})
+            tool_msg = {"role": "tool", "content": result_str}
+            call_id = getattr(call, "id", None)
+            if call_id:
+                tool_msg["tool_call_id"] = call_id
+            messages.append(tool_msg)
 
     yield {
         "type": "error",

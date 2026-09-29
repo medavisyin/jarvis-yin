@@ -24,6 +24,7 @@ export function ExplainPopover({
   title,
   chunkIndex,
   learnerLevel,
+  llm,
 }: {
   enabled: boolean;
   bookId: string;
@@ -31,6 +32,7 @@ export function ExplainPopover({
   title: string;
   chunkIndex?: number;
   learnerLevel: string;
+  llm: "local" | "deepseek" | "glm" | "mimo";
 }) {
   const [btn, setBtn] = useState<Sel | null>(null);
   const [open, setOpen] = useState(false);
@@ -142,6 +144,7 @@ export function ExplainPopover({
           title,
           source: s.source,
           learner_level: learnerLevel,
+          llm,
         },
         (event) => {
           if (event.type === "token" && typeof event.content === "string") {

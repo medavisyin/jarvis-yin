@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { apiJson, apiSsePost, apiUpload } from "@/lib/api";
+import { CloudModelSelect, type CloudModel } from "@/components/CloudModelSelect";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -101,6 +102,10 @@ export function ReadingPage() {
   const [cachedTabs, setCachedTabs] = useState<Record<string, CachedSlot>>({});
   const [streaming, setStreaming] = useState(false);
   const [level, setLevel] = useState("university");
+  const [llm, setLlm] = useState<CloudModel>(() => {
+    const saved = localStorage.getItem("jarvis-reading-llm");
+    return saved === "deepseek" || saved === "glm" || saved === "mimo" ? saved : "local";
+  });
   const [outLang, setOutLang] = useState("zh");
   const [oral, setOral] = useState("");
   const [speakOut, setSpeakOut] = useState("");
@@ -286,6 +291,7 @@ export function ReadingPage() {
           learner_level: level,
           output_lang: outLang,
           learner_reflection: prev.reflection,
+          llm,
         },
         (event) => {
           if (event.type === "token" && typeof event.content === "string") {
@@ -331,6 +337,7 @@ export function ReadingPage() {
           chunk_index: chunk?.chunk_index,
           exercise,
           oral_text: oral,
+          llm,
         },
         (event) => {
           if (event.type === "token" && typeof event.content === "string") {
@@ -450,6 +457,7 @@ export function ReadingPage() {
         title={chunk?.title || ""}
         chunkIndex={chunk?.chunk_index}
         learnerLevel={level}
+        llm={llm}
       />
       <div className="flex flex-wrap items-center gap-2">
         {focus ? (
@@ -567,6 +575,14 @@ export function ReadingPage() {
                 </span>
               ))}
             </span>
+            <CloudModelSelect
+              value={llm}
+              disabled={streaming}
+              onChange={(next) => {
+                setLlm(next);
+                localStorage.setItem("jarvis-reading-llm", next);
+              }}
+            />
             <label className="ml-auto flex items-center gap-1">
               难度
               <select

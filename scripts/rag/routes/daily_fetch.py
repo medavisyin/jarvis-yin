@@ -943,7 +943,15 @@ def _run_daily_fetch(
                                 total_chars = sum(len(n) for n in narrations_ai)
                                 ai_mp3 = os.path.join(output_dir, "ai-briefing.mp3")
                                 before_mtime = os.path.getmtime(ai_mp3) if os.path.isfile(ai_mp3) else None
-                                _tts_segments_to_mp3(narrations_ai, ai_mp3, voice=tts_voice_from_settings(ai_lang, gs))
+                                _tts_segments_to_mp3(
+                                    narrations_ai,
+                                    ai_mp3,
+                                    voice=tts_voice_from_settings(ai_lang, gs),
+                                    engine=(gs or {}).get("audio_engine") or "edge",
+                                    lang=ai_lang,
+                                    style=(gs or {}).get("audio_mimo_style") or "平静",
+                                    key=(gs or {}).get("mimo_api_key") or "",
+                                )
                                 if not _mp3_was_replaced(ai_mp3, before_mtime):
                                     steps.append({"step": "ai_audio", "exit_code": 1,
                                                   "output": "TTS produced no audio file"})
@@ -1202,7 +1210,15 @@ def _run_daily_fetch(
                             continue
                         fn_mp3 = os.path.join(output_dir, mp3_name)
                         before_mtime = os.path.getmtime(fn_mp3) if os.path.isfile(fn_mp3) else None
-                        _tts_segments_to_mp3(narrations_fn, fn_mp3, voice=tts_voice_from_settings(fn_lang, gs))
+                        _tts_segments_to_mp3(
+                            narrations_fn,
+                            fn_mp3,
+                            voice=tts_voice_from_settings(fn_lang, gs),
+                            engine=(gs or {}).get("audio_engine") or "edge",
+                            lang=fn_lang,
+                            style=(gs or {}).get("audio_mimo_style") or "平静",
+                            key=(gs or {}).get("mimo_api_key") or "",
+                        )
                         if not _mp3_was_replaced(fn_mp3, before_mtime):
                             steps.append({"step": step_name, "exit_code": 1,
                                           "output": f"TTS produced no audio file ({mp3_name})"})

@@ -66,11 +66,22 @@ class TestIntentClassification:
         assert result.confidence == 1.0
 
     def test_llm_fallback_for_ambiguous(self):
-        from intent import classify_intent, Intent
-        result = classify_intent(
-            "How does the caching layer work in our system?"
+        from intent import Intent, IntentResult, classify_intent
+        llm_result = IntentResult(
+            intent=Intent.PROJECT_QUERY,
+            confidence=0.8,
+            enhanced_query="How does the caching layer work in our system?",
+            original_query="How does the caching layer work in our system?",
+            reasoning="llm",
         )
-        assert result.intent in (Intent.KNOWLEDGE_QA, Intent.PROJECT_QUERY)
+        with patch("intent._laya_classify", return_value=None), patch(
+            "intent._llm_classify", return_value=llm_result
+        ) as llm:
+            result = classify_intent(
+                "How does the caching layer work in our system?"
+            )
+        assert result.intent == Intent.PROJECT_QUERY
+        llm.assert_called_once()
 
 
 class TestQueryEnhancement:

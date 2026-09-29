@@ -95,6 +95,94 @@ def _ollama_settings() -> tuple[str, str]:
     return host, model
 
 
+def _reading_llm(value) -> str:
+    text = str(value or "ollama").strip().lower()
+    if text in ("deepseek", "glm", "mimo"):
+        return text
+    return "ollama"
+
+
+def _settings_key(field: str) -> str:
+    try:
+        import agent as agent_mod
+        settings = getattr(agent_mod, "_GLOBAL_SETTINGS", {}) or {}
+        return (settings.get(field) or "").strip()
+    except Exception:
+        return ""
+
+
+def _cloud_error_text(llm: str, exc: BaseException) -> str:
+    if llm == "mimo":
+        try:
+            import mimo_chat
+            if isinstance(exc, mimo_chat.MimoConfigError):
+                return str(exc)
+            return mimo_chat.public_error(exc)
+        except Exception:
+            pass
+    try:
+        import glm_chat
+        if isinstance(exc, glm_chat.GlmConfigError):
+            return str(exc)
+        if llm == "glm":
+            return glm_chat.public_error(exc)
+    except Exception:
+        pass
+    if str(exc) == "No DeepSeek API key configured":
+        return str(exc)
+    _log.warning("Reading cloud request failed: %s", type(exc).__name__)
+    return "DeepSeek request failed" if llm == "deepseek" else "GLM request failed"
+
+
+def _iter_cloud_tokens(llm: str, system_prompt: str, user_msg: str, max_tokens: int):
+    """Yield answer text from DeepSeek, GLM, or MiMo. Thinking stays off."""
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_msg},
+    ]
+    if llm == "mimo":
+        import mimo_chat
+        key = _settings_key("mimo_api_key")
+        mimo_chat.require_key(key)
+        client = mimo_chat.make_client(key)
+        for text, _calls in mimo_chat.stream_chat(client, messages, max_tokens=max_tokens):
+            if text:
+                yield text
+        return
+
+    if llm == "glm":
+        import glm_chat
+        key = _settings_key("glm_api_key")
+        glm_chat.require_key(key)
+        client = glm_chat.make_client(key)
+        for text, _calls in glm_chat.stream_chat(client, messages, max_tokens=max_tokens):
+            if text:
+                yield text
+        return
+
+    from openai import OpenAI
+    key = _settings_key("deepseek_api_key") or os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if not key:
+        raise RuntimeError("No DeepSeek API key configured")
+    client = OpenAI(api_key=key, base_url="https://api.deepseek.com")
+    stream = client.chat.completions.create(
+        model="deepseek-v4-flash",
+        messages=messages,
+        max_tokens=max_tokens,
+        stream=True,
+        extra_body={"thinking": {"type": "disabled"}},
+        timeout=300,
+    )
+    for chunk in stream:
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            continue
+        delta = choices[0].delta
+        text = getattr(delta, "content", None) or ""
+        if text:
+            yield text
+
+
 def _ollama_fast_settings() -> tuple[str, str]:
     """Host + small model for selection Explain (default qwen3:1.7b)."""
     host, _main = _ollama_settings()
@@ -524,6 +612,7 @@ def api_analyze():
     num_predict = 4096 if analysis_kind == KIND_VOCAB else 2048
 
     host, model = _ollama_settings()
+    llm = _reading_llm(data.get("llm"))
     user_msg = analysis_user_message(
         meta.get("title") or book_id,
         int(chunk_index),
@@ -543,6 +632,18 @@ def api_analyze():
 
         full = ""
         done_reason = ""
+        if llm != "ollama":
+            try:
+                for token in _iter_cloud_tokens(llm, system_prompt, user_msg, num_predict):
+                    full += token
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                if not full.strip():
+                    yield f"data: {json.dumps({'type': 'error', 'content': 'Model returned empty content.'})}\n\n"
+                    return
+                yield f"data: {json.dumps({'type': 'done', 'content': full, 'has_more': has_more, 'next_offset': next_offset, 'part': part, 'gen_truncated': False, 'passage_len': len(full_text), 'offset': offset, 'analysis_kind': analysis_kind})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'content': _cloud_error_text(llm, e)})}\n\n"
+            return
         try:
             resp = req_mod.post(
                 f"{host}/api/chat",
@@ -642,11 +743,24 @@ def api_explain_selection():
 
     system_prompt = selection_explain_system_prompt(source, learner_level=learner_level)
     host, model = _ollama_fast_settings()
+    llm = _reading_llm(data.get("llm"))
 
     def generate():
         import requests as req_mod
 
         full = ""
+        if llm != "ollama":
+            try:
+                for token in _iter_cloud_tokens(llm, system_prompt, user_msg, 1024):
+                    full += token
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                if not full.strip():
+                    yield f"data: {json.dumps({'type': 'error', 'content': 'Model returned empty content.'})}\n\n"
+                    return
+                yield f"data: {json.dumps({'type': 'done', 'content': full})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'content': _cloud_error_text(llm, e)})}\n\n"
+            return
         try:
             resp = req_mod.post(
                 f"{host}/api/chat",
@@ -765,11 +879,24 @@ def api_speaking():
 
     system_prompt = speaking_system_prompt(exercise)
     host, model = _ollama_settings()
+    llm = _reading_llm(data.get("llm"))
 
     def generate():
         import requests as req_mod
 
         full = ""
+        if llm != "ollama":
+            try:
+                for token in _iter_cloud_tokens(llm, system_prompt, user_msg, 1600):
+                    full += token
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                if not full.strip():
+                    yield f"data: {json.dumps({'type': 'error', 'content': 'Model returned empty content.'})}\n\n"
+                    return
+                yield f"data: {json.dumps({'type': 'done', 'content': full})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'content': _cloud_error_text(llm, e)})}\n\n"
+            return
         try:
             resp = req_mod.post(
                 f"{host}/api/chat",
@@ -820,6 +947,15 @@ def api_speaking():
     )
 
 
+def _global_settings() -> dict:
+    try:
+        import agent as agent_mod
+        gs = getattr(agent_mod, "_GLOBAL_SETTINGS", None) or {}
+        return gs if isinstance(gs, dict) else {}
+    except Exception:
+        return {}
+
+
 def _speak_voice_en() -> str:
     gender = "female"
     try:
@@ -843,14 +979,34 @@ def api_speak_selection():
     rate = edge_rate_for(data.get("rate"))
     pad = can_pad_silence()
     spoken = speak_text_for_tts(text, pad_silence=pad)
+    gs = _global_settings()
     try:
-        audio = synthesize_speech(text=spoken, voice=_speak_voice_en(), rate=rate)
+        if (gs.get("audio_engine") or "edge") == "mimo":
+            import mimo_chat
+            style = gs.get("audio_mimo_style") or mimo_chat.DEFAULT_STYLE
+            key = mimo_chat.require_key(gs.get("mimo_api_key") or "")
+            wav = mimo_chat.synthesize_wav(
+                mimo_chat.make_client(key),
+                mimo_chat.with_style(spoken, style),
+                lang="en",
+            )
+            audio = mimo_chat.wav_to_mp3(wav)
+        else:
+            audio = synthesize_speech(text=spoken, voice=_speak_voice_en(), rate=rate)
         if pad:
             audio = prepend_silence_mp3(audio)
     except TimeoutError:
         _log.warning("intensive-reading speak timed out")
         return jsonify({"error": "TTS timed out"}), 504
-    except Exception:
+    except Exception as exc:
+        try:
+            import mimo_chat
+            if isinstance(exc, mimo_chat.MimoConfigError):
+                return jsonify({"error": str(exc)}), 400
+            if isinstance(exc, mimo_chat.MimoTtsError):
+                return jsonify({"error": str(exc)}), 500
+        except Exception:
+            pass
         _log.exception("intensive-reading speak failed")
         return jsonify({"error": "TTS failed"}), 502
     if not audio:

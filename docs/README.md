@@ -4,7 +4,7 @@ tags:
   - navigation
 category: hub
 status: current
-last-updated: 2026-09-15
+last-updated: 2026-09-28
 ---
 
 # Jarvis Documentation
@@ -28,6 +28,7 @@ last-updated: 2026-09-15
 | **新增股票策略(开发)** | [New Strategy Guide (中文)](guides/stock-new-strategy-guide.md) — 插件接口规范与模板 |
 | **Learn stock investing** | [Stock Learning Track (中文)](learning/stock/) — 从零到合格投资者 |
 | **Use Telegram remote** | [Telegram Bot Guide](guides/telegram-bot-guide.md) |
+| **Laya 意图分类** | [Laya 指南（中文）](guides/laya-intent-guide.md) — 能做什么、安装、在 Jarvis 里怎么起作用、怎么看出它在跑 |
 | **See the roadmap** | [Enhancement Plan](plans/2026-04-17-jarvis-next.md) |
 
 ---
@@ -67,7 +68,8 @@ docs/
 │   ├── stock-knowledge-guide.md # 股票知识入门 (Chinese)
 │   ├── stock-strategy-guide.md  # 股票推荐策略指南·小白向 (Chinese)
 │   ├── stock-new-strategy-guide.md # 新增股票策略·插件接口规范 (Chinese)
-│   └── telegram-bot-guide.md    # Telegram remote control guide
+│   ├── telegram-bot-guide.md    # Telegram remote control guide
+│   └── laya-intent-guide.md     # Laya 意图分类（中文）
 │
 ├── implementation/              # Developer implementation docs
 │   ├── README.md                # Implementation navigation hub
@@ -125,6 +127,7 @@ docs/
 | [股票推荐策略指南(小白)](guides/stock-strategy-guide.md) | 左侧/右侧交易原理、统一扫描入口、报告解读、交易纪律 (中文) |
 | [新增股票策略指南(开发)](guides/stock-new-strategy-guide.md) | 策略插件接口规范、模块模板、接入统一扫描器检查清单 (中文) |
 | [Telegram 远程控制](guides/telegram-bot-guide.md) | Telegram Bot 远程命令指南: 每日抓取、搜索、AI问答、股票分析 |
+| [Laya 意图分类](guides/laya-intent-guide.md) | Laya 能做什么、如何安装、在 Jarvis 意图流程里如何起作用、如何从日志确认 |
 
 ## Implementation Docs
 

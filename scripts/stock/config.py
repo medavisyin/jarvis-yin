@@ -93,6 +93,120 @@ def _get_deepseek_client():
     return make_openai_client(api_key=key, base_url=DEEPSEEK_BASE_URL)
 
 
+def get_glm_key() -> str:
+    """GLM key from the same local settings file as DeepSeek. No env fallback."""
+    if os.path.isfile(_AGENT_SETTINGS_FILE):
+        try:
+            import json as _json
+            with open(_AGENT_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                key = _json.load(f).get("glm_api_key", "")
+                if key:
+                    return key.strip()
+        except Exception:
+            pass
+    return ""
+
+
+def get_mimo_key() -> str:
+    """MiMo key from the same local settings file. No env fallback."""
+    if os.path.isfile(_AGENT_SETTINGS_FILE):
+        try:
+            import json as _json
+            with open(_AGENT_SETTINGS_FILE, "r", encoding="utf-8") as f:
+                key = _json.load(f).get("mimo_api_key", "")
+                if key:
+                    return key.strip()
+        except Exception:
+            pass
+    return ""
+
+
+def _import_glm_chat():
+    rag = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "rag"))
+    if rag not in sys.path:
+        sys.path.insert(0, rag)
+    import glm_chat
+    return glm_chat
+
+
+def _import_mimo_chat():
+    rag = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "rag"))
+    if rag not in sys.path:
+        sys.path.insert(0, rag)
+    import mimo_chat
+    return mimo_chat
+
+
+def _call_mimo(system_prompt: str, user_prompt: str, max_tokens: int = 4096) -> dict:
+    """Same return shape as call_deepseek, using the saved MiMo key."""
+    mimo_chat = _import_mimo_chat()
+    key = get_mimo_key()
+    try:
+        mimo_chat.require_key(key)
+        client = mimo_chat.make_client(key)
+        text = mimo_chat.complete(
+            client,
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=max_tokens,
+        )
+        return {
+            "ok": True,
+            "content": text,
+            "reasoning_content": "",
+            "finish_reason": "stop",
+            "model": mimo_chat.MODEL,
+            "usage": {},
+        }
+    except mimo_chat.MimoConfigError as exc:
+        return {"ok": False, "error": str(exc), "content": "", "model": mimo_chat.MODEL, "usage": {}}
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": mimo_chat.public_error(exc),
+            "content": "",
+            "model": mimo_chat.MODEL,
+            "usage": {},
+        }
+
+
+def _call_glm(system_prompt: str, user_prompt: str, max_tokens: int = 4096) -> dict:
+    """Same return shape as call_deepseek, using the saved GLM key."""
+    glm_chat = _import_glm_chat()
+    key = get_glm_key()
+    try:
+        glm_chat.require_key(key)
+        client = glm_chat.make_client(key)
+        text = glm_chat.complete(
+            client,
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            max_tokens=max_tokens,
+        )
+        return {
+            "ok": True,
+            "content": text,
+            "reasoning_content": "",
+            "finish_reason": "stop",
+            "model": glm_chat.MODEL,
+            "usage": {},
+        }
+    except glm_chat.GlmConfigError as exc:
+        return {"ok": False, "error": str(exc), "content": "", "model": glm_chat.MODEL, "usage": {}}
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": glm_chat.public_error(exc),
+            "content": "",
+            "model": glm_chat.MODEL,
+            "usage": {},
+        }
+
+
 def call_deepseek(system_prompt: str, user_prompt: str,
                   max_tokens: int = 4096,
                   reasoning_effort: str = "high",
@@ -111,7 +225,19 @@ def call_deepseek(system_prompt: str, user_prompt: str,
     Note: thinking tokens share max_tokens with the final answer. finish_reason
     "length" with empty/short content means reasoning exhausted the budget.
     Pass thinking=False to disable thinking mode so the budget goes to content.
+
+    When this thread's cloud provider is GLM or MiMo, the same scanners call that provider instead.
     """
+    glm_chat = None
+    try:
+        glm_chat = _import_glm_chat()
+    except Exception:
+        glm_chat = None
+    if glm_chat is not None and glm_chat.cloud_llm() == "mimo":
+        return _call_mimo(system_prompt, user_prompt, max_tokens=max_tokens)
+    if glm_chat is not None and glm_chat.cloud_llm() == "glm":
+        return _call_glm(system_prompt, user_prompt, max_tokens=max_tokens)
+
     client = _get_deepseek_client()
     if client is None:
         return {"ok": False, "error": "No DeepSeek API key configured"}

@@ -29,6 +29,39 @@ _stock_config = _ilu.module_from_spec(_stock_cfg_spec)
 _stock_cfg_spec.loader.exec_module(_stock_config)
 
 
+def _llm_from_body(body, default_use_deepseek=False):
+    """UI sends llm=local|deepseek|glm|mimo. Older clients only send use_deepseek."""
+    llm = str((body or {}).get("llm") or "").strip().lower()
+    if llm == "glm":
+        return True, "glm"
+    if llm == "mimo":
+        return True, "mimo"
+    if llm in ("local", "ollama", "none"):
+        return False, "deepseek"
+    if llm == "deepseek":
+        return True, "deepseek"
+    return bool((body or {}).get("use_deepseek", default_use_deepseek)), "deepseek"
+
+
+class _CloudScope:
+    """Set GLM vs DeepSeek before a worker thread starts, then restore this thread."""
+
+    def __init__(self, provider: str):
+        self.provider = provider if provider in ("glm", "mimo") else "deepseek"
+        self._token = None
+
+    def __enter__(self):
+        import glm_chat
+        self._token = glm_chat.set_cloud_llm(self.provider)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        import glm_chat
+        if self._token is not None:
+            glm_chat.reset_cloud_llm(self._token)
+        return False
+
+
 _STOCK_MODULES = [
     "config", "fetch_market_data", "technical_analysis", "report_technical",
     "fundamental_analysis", "sentiment", "features", "model_xgboost",
@@ -214,6 +247,7 @@ def api_stock_analyze_deepseek():
     if not symbol or not symbol.isdigit():
         return jsonify({"error": "请输入有效的股票代码 (纯数字)"}), 400
 
+    provider = "deepseek"
     try:
         from fetch_market_data import fetch_daily_ohlcv, fetch_realtime_quote
 
@@ -229,11 +263,20 @@ def api_stock_analyze_deepseek():
             log.warning("获取 %s 实时行情失败: %s", symbol, e)
 
         from llm_reasoning import generate_prediction_deepseek
-        result = generate_prediction_deepseek(symbol, realtime_quote=realtime, cost_price=cost_price)
+        llm_name = str(body.get("llm") or "").strip().lower()
+        provider = llm_name if llm_name in ("glm", "mimo") else "deepseek"
+        with _CloudScope(provider):
+            result = generate_prediction_deepseek(symbol, realtime_quote=realtime, cost_price=cost_price)
         return jsonify(result)
     except Exception as exc:
         traceback.print_exc()
-        return jsonify({"error": f"DeepSeek 分析失败: {exc}"}), 500
+        if provider == "mimo":
+            message = "MiMo 分析失败"
+        elif provider == "glm":
+            message = "GLM 分析失败"
+        else:
+            message = f"DeepSeek 分析失败: {exc}"
+        return jsonify({"error": message}), 500
 
 
 @stock_bp.route("/api/stock/watchlist", methods=["GET"])
@@ -358,9 +401,10 @@ def api_stock_scan_start():
     """Start AI stock scanner."""
     try:
         body = request.get_json(silent=True) or {}
-        use_ds = body.get("use_deepseek", False)
+        use_ds, provider = _llm_from_body(body, False)
         from scanner import start_scan
-        result = start_scan(use_deepseek=use_ds)
+        with _CloudScope(provider):
+            result = start_scan(use_deepseek=use_ds)
         return jsonify(result)
     except Exception as exc:
         traceback.print_exc()
@@ -495,9 +539,10 @@ def api_stock_lt_start():
     """Start long-term stock scanner."""
     try:
         body = request.get_json(silent=True) or {}
-        use_ds = body.get("use_deepseek", False)
+        use_ds, provider = _llm_from_body(body, False)
         from long_term_scanner import start_lt_scan
-        result = start_lt_scan(use_deepseek=use_ds)
+        with _CloudScope(provider):
+            result = start_lt_scan(use_deepseek=use_ds)
         return jsonify(result)
     except Exception as exc:
         traceback.print_exc()
@@ -589,10 +634,11 @@ def api_stock_lt_result_by_date(date_str):
 def api_stock_qv_start():
     try:
         body = request.get_json(silent=True) or {}
-        use_ds = body.get("use_deepseek", False)
+        use_ds, provider = _llm_from_body(body, False)
         horizon = body.get("horizon", "long")
         from quality_value_scanner import start_qv_scan
-        return jsonify(start_qv_scan(use_deepseek=use_ds, horizon=horizon))
+        with _CloudScope(provider):
+            return jsonify(start_qv_scan(use_deepseek=use_ds, horizon=horizon))
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500
@@ -678,9 +724,10 @@ def api_stock_midday_start():
     """Start Mid-day Overnight scanner."""
     try:
         body = request.get_json(silent=True) or {}
-        use_ds = bool(body.get("use_deepseek", True))
+        use_ds, provider = _llm_from_body(body, True)
         from midday_scanner import start_midday_scan
-        result = start_midday_scan(use_deepseek=use_ds)
+        with _CloudScope(provider):
+            result = start_midday_scan(use_deepseek=use_ds)
         return jsonify(result)
     except Exception as exc:
         traceback.print_exc()
@@ -734,9 +781,10 @@ def api_stock_right_side_start():
     """Start right-side trading scanner."""
     try:
         body = request.get_json(silent=True) or {}
-        use_ds = bool(body.get("use_deepseek", True))
+        use_ds, provider = _llm_from_body(body, True)
         from right_side_scanner import start_right_side_scan
-        result = start_right_side_scan(use_deepseek=use_ds)
+        with _CloudScope(provider):
+            result = start_right_side_scan(use_deepseek=use_ds)
         return jsonify(result)
     except Exception as exc:
         traceback.print_exc()
@@ -817,9 +865,10 @@ def api_stock_unified_scan_start():
     """Start unified scan: shared market data -> left + right reports."""
     try:
         body = request.get_json(silent=True) or {}
-        use_ds = bool(body.get("use_deepseek", True))
+        use_ds, provider = _llm_from_body(body, True)
         from unified_scanner import start_unified_scan
-        return jsonify(start_unified_scan(use_deepseek=use_ds))
+        with _CloudScope(provider):
+            return jsonify(start_unified_scan(use_deepseek=use_ds))
     except Exception as exc:
         traceback.print_exc()
         return jsonify({"error": str(exc)}), 500
@@ -875,7 +924,7 @@ def api_stock_train_daily():
     import threading
 
     req_data = request.get_json(silent=True) or {}
-    use_deepseek = req_data.get("use_deepseek", False)
+    use_deepseek, provider = _llm_from_body(req_data, False)
 
     with _train_lock:
         if _train_thread is not None and _train_thread.is_alive():
@@ -990,9 +1039,10 @@ def api_stock_train_daily():
         progress["finished_at"] = __import__("datetime").datetime.now().isoformat()
         _save_prog()
 
-    with _train_lock:
-        _train_thread = __import__("threading").Thread(target=_run_training, daemon=True)
-        _train_thread.start()
+    with _CloudScope(provider):
+        with _train_lock:
+            _train_thread = __import__("threading").Thread(target=_run_training, daemon=True)
+            _train_thread.start()
 
     return jsonify({"ok": True, "message": "训练已启动"})
 

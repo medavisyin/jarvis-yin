@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { apiJson } from "@/lib/api";
 import { isTerminalJobStatus, wait } from "@/lib/jobs";
+import { CloudModelSelect, cloudBody, type CloudModel } from "@/components/CloudModelSelect";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataGrid } from "@/components/DataGrid";
@@ -21,7 +22,7 @@ type TrainStatus = {
 };
 
 export function TrainPanel() {
-  const [deepseek, setDeepseek] = useState(false);
+  const [llm, setLlm] = useState<CloudModel>("local");
   const [st, setSt] = useState<TrainStatus>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -40,7 +41,7 @@ export function TrainPanel() {
     try {
       const started = await apiJson<TrainStatus>("/api/stock/train/daily", {
         method: "POST",
-        body: JSON.stringify({ use_deepseek: deepseek }),
+        body: JSON.stringify(cloudBody(llm)),
       });
       if (started.ok === false) throw new Error(started.error || "启动失败");
       let sawRunning = false;
@@ -85,10 +86,7 @@ export function TrainPanel() {
         <Button size="sm" disabled={running} onClick={() => void start()}>
           开始训练
         </Button>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={deepseek} onChange={(e) => setDeepseek(e.target.checked)} />
-          启用 DeepSeek 专家校准
-        </label>
+        <CloudModelSelect value={llm} onChange={setLlm} disabled={running} />
         <Button size="sm" variant="outline" disabled={!results.length && !verifications.length} onClick={() => void exportPdf()}>
           导出PDF
         </Button>

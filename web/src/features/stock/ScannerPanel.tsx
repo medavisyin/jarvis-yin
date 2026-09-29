@@ -3,6 +3,7 @@ import { apiJson } from "@/lib/api";
 import { pollJob } from "@/lib/jobs";
 import { formatScannerStatus } from "@/lib/scannerResults";
 import { HistoryList, ScannerResultBody } from "@/features/stock/scannerViews";
+import { CloudModelSelect, cloudBody, type CloudModel } from "@/components/CloudModelSelect";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -35,7 +36,7 @@ export function ScannerPanel({ onAnalyze }: { onAnalyze: (symbol: string) => voi
   const [kind, setKind] = useState(SCANNER_KINDS[0]);
   const [status, setStatus] = useState<Record<string, unknown>>({});
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
-  const [deepseek, setDeepseek] = useState(false);
+  const [llm, setLlm] = useState<CloudModel>("local");
   const [horizon, setHorizon] = useState<"long" | "medium">("long");
   const [running, setRunning] = useState(false);
   const [pdfUrl, setPdfUrl] = useState("");
@@ -89,7 +90,7 @@ export function ScannerPanel({ onAnalyze }: { onAnalyze: (symbol: string) => voi
     setError("");
     setHistory(null);
     try {
-      const body: Record<string, unknown> = { use_deepseek: deepseek };
+      const body: Record<string, unknown> = { ...cloudBody(llm) };
       if (kind.id === "qv") body.horizon = horizon;
       await apiJson(kind.start, { method: "POST", body: JSON.stringify(body) });
       const done = await pollJob(
@@ -175,10 +176,7 @@ export function ScannerPanel({ onAnalyze }: { onAnalyze: (symbol: string) => voi
             </select>
           </label>
         ) : null}
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={deepseek} onChange={(e) => setDeepseek(e.target.checked)} />
-          Use DeepSeek
-        </label>
+        <CloudModelSelect value={llm} onChange={setLlm} />
         <div className="flex flex-wrap gap-2">
           <Button size="sm" disabled={running} onClick={() => void start()}>
             Start

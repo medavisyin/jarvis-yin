@@ -495,6 +495,10 @@ Knowledge base content:
         out_path = os.path.join(out_dir, out_filename)
 
         async def _do_tts():
+            prefs = _audio_prefs()
+            engine = prefs.get("audio_engine") or "edge"
+            style = prefs.get("audio_mimo_style") or "平静"
+            mimo_key = prefs.get("mimo_api_key") or ""
             is_en = language == "en"
             lang_key = "en" if is_en else "zh"
             ka_voices = _DIALOGUE_VOICES.get(lang_key, _DIALOGUE_VOICES["zh"])
@@ -503,6 +507,18 @@ Knowledge base content:
             part_paths = []
 
             async def _save_ka_chunk(chunk_text, chunk_path, chunk_voice):
+                if engine == "mimo":
+                    import mimo_chat
+                    try:
+                        styled = mimo_chat.with_style(chunk_text, style)
+                        client = mimo_chat.make_client(mimo_chat.require_key(mimo_key))
+                        wav = mimo_chat.synthesize_wav(client, styled, lang=language)
+                        mp3 = mimo_chat.wav_to_mp3(wav)
+                        with open(chunk_path, "wb") as handle:
+                            handle.write(mp3)
+                    except Exception as exc:
+                        mimo_chat.reraise_public(exc)
+                    return
                 fallbacks = _voice_fallback_chain(chunk_voice)
                 for v in fallbacks:
                     try:
@@ -1286,7 +1302,26 @@ def _enhance_narration_rhythm(text: str) -> str:
     return "\n\n".join(enhanced)
 
 
-def _tts_segments_to_mp3(narrations: list[str], out_path: str, voice: str = TTS_VOICE_ZH):
+def _audio_prefs() -> dict:
+    """Lazy settings read. Do not import agent at module top."""
+    try:
+        import agent as agent_mod
+        gs = getattr(agent_mod, "_GLOBAL_SETTINGS", None) or {}
+        return gs if isinstance(gs, dict) else {}
+    except Exception:
+        return {}
+
+
+def _tts_segments_to_mp3(
+    narrations: list[str],
+    out_path: str,
+    voice: str = TTS_VOICE_ZH,
+    *,
+    engine: str = "edge",
+    lang: str = "zh",
+    style: str = "平静",
+    key: str = "",
+):
     """Convert a list of narration segments to a single combined MP3."""
     import edge_tts
     import shutil
@@ -1296,6 +1331,18 @@ def _tts_segments_to_mp3(narrations: list[str], out_path: str, voice: str = TTS_
     all_part_paths: list[str] = []
 
     async def _save_chunk(chunk_text, chunk_path):
+        if engine == "mimo":
+            import mimo_chat
+            try:
+                styled = mimo_chat.with_style(chunk_text, style or mimo_chat.DEFAULT_STYLE)
+                client = mimo_chat.make_client(mimo_chat.require_key(key))
+                wav = mimo_chat.synthesize_wav(client, styled, lang=lang)
+                mp3 = mimo_chat.wav_to_mp3(wav)
+                with open(chunk_path, "wb") as handle:
+                    handle.write(mp3)
+            except Exception as exc:
+                mimo_chat.reraise_public(exc)
+            return
         for v in _voice_fallback_chain(voice):
             for attempt in range(3):
                 try:

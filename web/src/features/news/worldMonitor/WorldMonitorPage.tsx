@@ -20,7 +20,7 @@ const VARIANT_LABEL: Record<MonitorVariant, string> = {
   tech: "Tech",
   finance: "Finance",
   commodity: "Commodity",
-  happy: "Happy",
+  happy: "Constructive news",
   energy: "Energy",
 };
 

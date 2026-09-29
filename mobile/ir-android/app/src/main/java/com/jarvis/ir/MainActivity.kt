@@ -11,12 +11,15 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.pager.HorizontalPager
@@ -25,6 +28,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -58,14 +62,32 @@ import com.jarvis.ir.explain.CactusGlossEngine
 import com.jarvis.ir.explain.ExplainPipeline
 import com.jarvis.ir.explain.GlossModelStore
 import com.jarvis.ir.explain.GlossSession
+import com.jarvis.ir.glm.GlmAnalysis
+import com.jarvis.ir.glm.GlmConfigException
+import com.jarvis.ir.glm.GlmErrors
+import com.jarvis.ir.glm.GlmHttpException
+import com.jarvis.ir.glm.GlmKey
+import com.jarvis.ir.mimo.MimoConfigException
+import com.jarvis.ir.mimo.MimoKey
+import com.jarvis.ir.mimo.MimoProtocol
+import com.jarvis.ir.glm.GlmProtocol
+import com.jarvis.ir.glm.HttpGlmTransport
+import com.jarvis.ir.glm.StreamGate
+import com.jarvis.ir.ui.AnalysisPane
 import com.jarvis.ir.ui.EconomistPicker
 import com.jarvis.ir.ui.ReaderScreen
 import com.jarvis.ir.ui.SettingsDialog
 import com.jarvis.ir.ui.ShelfScreen
+import com.jarvis.ir.ui.analysisBesidePassage
 import com.jarvis.ir.ui.readingInk
 import com.jarvis.ir.ui.readingPaper
 import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
     private var sqlite: SqliteDict? = null
@@ -89,6 +111,18 @@ class MainActivity : ComponentActivity() {
     private var glossStatus by mutableStateOf(GlossSession.NOT_DOWNLOADED)
     private var glossBusy by mutableStateOf(false)
     private var glossReady by mutableStateOf(false)
+    private var glmKey by mutableStateOf("")
+    private var glmStatus by mutableStateOf("")
+    private var glmBusy by mutableStateOf(false)
+    private var mimoKey by mutableStateOf("")
+    private var mimoStatus by mutableStateOf("")
+    private var mimoBusy by mutableStateOf(false)
+    private var analysisText by mutableStateOf("")
+    private var analysisError by mutableStateOf("")
+    private var analysisRunning by mutableStateOf(false)
+    private var showAnalysis by mutableStateOf(false)
+    private var analysisJob: Job? = null
+    private var analysisTransport: HttpGlmTransport? = null
 
     private val openLocal = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         importLocal(uri)
@@ -100,6 +134,8 @@ class MainActivity : ComponentActivity() {
         ModelFiles.filesDir = filesDir
         val modelPrefs = getSharedPreferences(GlossModelStore.PREFS, Context.MODE_PRIVATE)
         glossModel = GlossModelStore.normalize(modelPrefs.getString(GlossModelStore.KEY, null))
+        glmKey = modelPrefs.getString(GlmKey.PREF_KEY, "").orEmpty()
+        mimoKey = modelPrefs.getString(MimoKey.PREF_KEY, "").orEmpty()
         shelfStore = ShelfStore(File(filesDir, "shelf"))
         shelfReady = true
         shelfBooks = shelfStore.list()
@@ -123,6 +159,7 @@ class MainActivity : ComponentActivity() {
                         if (!showShelf) {
                             TextButton(onClick = {
                                 chapterJump.reset()
+                                resetAnalysis()
                                 showShelf = true
                             }) { Text("书架") }
                         }
@@ -158,39 +195,78 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.weight(1f),
                         )
                     } else if (chunks.isNotEmpty()) {
-                        Box(Modifier.weight(1f)) {
-                        key(bookId ?: "sample") {
-                            val pagerState = rememberPagerState(
-                                initialPage = chunkIndex.coerceIn(0, chunks.lastIndex),
-                                pageCount = { chunks.size },
-                            )
-                            LaunchedEffect(pagerState.settledPage) {
-                                moveChunk(pagerState.settledPage)
-                            }
-                            LaunchedEffect(chapterJumpTick) {
-                                chapterJump.consume { page ->
-                                    pagerState.scrollToPage(page.coerceIn(0, chunks.lastIndex))
+                        BoxWithConstraints(Modifier.weight(1f)) {
+                            val wide = analysisBesidePassage(maxWidth.value.toInt())
+                            val passage: @Composable (Modifier) -> Unit = { passageModifier ->
+                                Box(passageModifier) {
+                                    key(bookId ?: "sample") {
+                                        val pagerState = rememberPagerState(
+                                            initialPage = chunkIndex.coerceIn(0, chunks.lastIndex),
+                                            pageCount = { chunks.size },
+                                        )
+                                        LaunchedEffect(pagerState.settledPage) {
+                                            moveChunk(pagerState.settledPage)
+                                        }
+                                        LaunchedEffect(chapterJumpTick) {
+                                            chapterJump.consume { page ->
+                                                pagerState.scrollToPage(page.coerceIn(0, chunks.lastIndex))
+                                            }
+                                        }
+                                        HorizontalPager(
+                                            state = pagerState,
+                                            modifier = Modifier.fillMaxSize(),
+                                            userScrollEnabled = chunks.size > 1,
+                                        ) { page ->
+                                            ReaderScreen(
+                                                passage = chunks.getOrElse(page) { "" },
+                                                pipeline = pipeline,
+                                                gloss = gloss,
+                                                glossModel = glossModel,
+                                                glossReady = glossReady,
+                                                onModelRejected = {
+                                                    glossReady = false
+                                                    glossStatus = GlossSession.NOT_DOWNLOADED
+                                                },
+                                                modifier = Modifier.fillMaxSize(),
+                                            )
+                                        }
+                                    }
                                 }
                             }
-                            HorizontalPager(
-                                state = pagerState,
-                                modifier = Modifier.fillMaxSize(),
-                                userScrollEnabled = chunks.size > 1,
-                            ) { page ->
-                                ReaderScreen(
-                                    passage = chunks.getOrElse(page) { "" },
-                                    pipeline = pipeline,
-                                    gloss = gloss,
-                                    glossModel = glossModel,
-                                    glossReady = glossReady,
-                                    onModelRejected = {
-                                        glossReady = false
-                                        glossStatus = GlossSession.NOT_DOWNLOADED
-                                    },
-                                    modifier = Modifier.fillMaxSize(),
+                            val pane = @Composable { paneModifier: Modifier ->
+                                AnalysisPane(
+                                    text = analysisText,
+                                    error = analysisError,
+                                    running = analysisRunning,
+                                    onRun = { kind -> startAnalysis(kind, scope) },
+                                    onCancel = { cancelAnalysis() },
+                                    modifier = paneModifier,
                                 )
                             }
-                        }
+                            if (wide) {
+                                Row(Modifier.fillMaxSize()) {
+                                    passage(Modifier.weight(1f).fillMaxHeight())
+                                    pane(Modifier.width(360.dp).fillMaxHeight())
+                                }
+                            } else {
+                                Box(Modifier.fillMaxSize()) {
+                                    passage(Modifier.fillMaxSize())
+                                    TextButton(
+                                        onClick = { showAnalysis = true },
+                                        modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp),
+                                    ) { Text("分析") }
+                                }
+                                if (showAnalysis) {
+                                    Dialog(onDismissRequest = { showAnalysis = false }) {
+                                        pane(
+                                            Modifier
+                                                .fillMaxWidth()
+                                                .heightIn(min = 320.dp, max = 640.dp)
+                                                .background(readingPaper),
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                     if (showSettings) {
@@ -229,6 +305,52 @@ class MainActivity : ComponentActivity() {
                                     }
                                     glossReady = gloss.downloaded(slug)
                                     glossBusy = false
+                                }
+                            },
+                            glmMasked = GlmKey.mask(glmKey),
+                            glmStatus = glmStatus,
+                            glmBusy = glmBusy,
+                            onSaveGlm = { raw ->
+                                val trimmed = raw.trim()
+                                getSharedPreferences(GlmKey.PREFS, Context.MODE_PRIVATE)
+                                    .edit()
+                                    .putString(GlmKey.PREF_KEY, trimmed)
+                                    .apply()
+                                glmKey = trimmed
+                                glmStatus = "已保存"
+                            },
+                            onTestGlm = { draft ->
+                                glmBusy = true
+                                glmStatus = "测试中…"
+                                scope.launch {
+                                    val message = withContext(Dispatchers.IO) {
+                                        probeGlm(if (draft.isNotBlank()) draft else glmKey)
+                                    }
+                                    glmStatus = message
+                                    glmBusy = false
+                                }
+                            },
+                            mimoMasked = MimoKey.mask(mimoKey),
+                            mimoStatus = mimoStatus,
+                            mimoBusy = mimoBusy,
+                            onSaveMimo = { raw ->
+                                val trimmed = raw.trim()
+                                getSharedPreferences(MimoKey.PREFS, Context.MODE_PRIVATE)
+                                    .edit()
+                                    .putString(MimoKey.PREF_KEY, trimmed)
+                                    .apply()
+                                mimoKey = trimmed
+                                mimoStatus = "已保存"
+                            },
+                            onTestMimo = { draft ->
+                                mimoBusy = true
+                                mimoStatus = "测试中…"
+                                scope.launch {
+                                    val message = withContext(Dispatchers.IO) {
+                                        probeMimo(if (draft.isNotBlank()) draft else mimoKey)
+                                    }
+                                    mimoStatus = message
+                                    mimoBusy = false
                                 }
                             },
                         )
@@ -320,6 +442,7 @@ class MainActivity : ComponentActivity() {
             importError = error
             return
         }
+        resetAnalysis()
         chunks = loaded
         chunkTitles = shelfStore.loadTitles(entry.id)
         chunkIndex = entry.chunkIndex.coerceIn(0, loaded.lastIndex)
@@ -332,6 +455,7 @@ class MainActivity : ComponentActivity() {
 
     private fun openSample() {
         chapterJump.reset()
+        resetAnalysis()
         val sample = assets.open("sample.txt").bufferedReader().use { it.readText() }
         chunks = listOf(sample)
         chunkTitles = emptyList()
@@ -342,10 +466,69 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun moveChunk(index: Int) {
-        chunkIndex = index.coerceIn(0, chunks.lastIndex.coerceAtLeast(0))
+        val next = index.coerceIn(0, chunks.lastIndex.coerceAtLeast(0))
+        if (next != chunkIndex) resetAnalysis()
+        chunkIndex = next
         bookId?.let {
             shelfStore.updatePosition(it, chunkIndex)
             shelfBooks = shelfStore.list()
+        }
+    }
+
+    private fun cancelAnalysis() {
+        analysisJob?.cancel()
+        analysisTransport?.cancel()
+        analysisTransport = null
+        analysisRunning = false
+    }
+
+    private fun resetAnalysis() {
+        cancelAnalysis()
+        analysisText = ""
+        analysisError = ""
+        showAnalysis = false
+    }
+
+    private fun startAnalysis(kind: String, scope: CoroutineScope) {
+        cancelAnalysis()
+        analysisText = ""
+        analysisError = ""
+        analysisRunning = true
+        val title = bookTitle
+        val index = chunkIndex
+        val passage = chunks.getOrElse(index) { "" }
+        val transport = HttpGlmTransport()
+        analysisTransport = transport
+        analysisJob = scope.launch {
+            try {
+                val analysis = GlmAnalysis(key = { glmKey }, transport = transport)
+                withContext(Dispatchers.IO) {
+                    analysis.run(kind, title, index, passage) { delta ->
+                        runOnUiThread {
+                            if (StreamGate.isCurrent(analysisTransport, transport)) {
+                                analysisText += delta
+                            }
+                        }
+                    }
+                }
+            } catch (_: CancellationException) {
+                // Keep text already received.
+            } catch (e: GlmConfigException) {
+                if (StreamGate.isCurrent(analysisTransport, transport)) {
+                    analysisError = e.message ?: GlmKey.MISSING
+                }
+            } catch (e: GlmHttpException) {
+                if (StreamGate.isCurrent(analysisTransport, transport)) {
+                    analysisError = e.message ?: GlmErrors.FAILED
+                }
+            } catch (e: Exception) {
+                Log.w("Glm", "request failed: ${e.javaClass.simpleName}")
+                if (StreamGate.isCurrent(analysisTransport, transport)) {
+                    analysisError = GlmErrors.FAILED
+                }
+            } finally {
+                if (analysisTransport === transport) analysisRunning = false
+            }
         }
     }
 
@@ -383,6 +566,7 @@ class MainActivity : ComponentActivity() {
 
     private fun openSaved(entry: ShelfEntry) {
         chapterJump.reset()
+        resetAnalysis()
         chunks = shelfStore.loadChunks(entry.id)
         chunkTitles = shelfStore.loadTitles(entry.id)
         chunkIndex = 0
@@ -401,6 +585,7 @@ class MainActivity : ComponentActivity() {
             chunkTitles = emptyList()
             chunkIndex = 0
             showShelf = true
+            resetAnalysis()
         }
         shelfBooks = shelfStore.list()
     }
@@ -430,5 +615,47 @@ class MainActivity : ComponentActivity() {
             out.outputStream().use { input.copyTo(it) }
         }
         return out
+    }
+
+    private fun probeGlm(rawKey: String): String {
+        return try {
+            val apiKey = GlmKey.require(rawKey)
+            val parts = StringBuilder()
+            HttpGlmTransport().post(
+                apiKey,
+                GlmProtocol.body("You are a helpful assistant.", "Say hello in one sentence."),
+            ) { parts.append(it) }
+            parts.toString().ifBlank { GlmErrors.EMPTY }
+        } catch (e: GlmConfigException) {
+            e.message ?: GlmKey.MISSING
+        } catch (e: GlmHttpException) {
+            e.message ?: GlmErrors.FAILED
+        } catch (e: Exception) {
+            Log.w("Glm", "request failed: ${e.javaClass.simpleName}")
+            GlmErrors.FAILED
+        }
+    }
+
+    private fun probeMimo(rawKey: String): String {
+        return try {
+            val apiKey = MimoKey.require(rawKey)
+            val conn = java.net.URL(MimoProtocol.ENDPOINT).openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.connectTimeout = 20000
+            conn.readTimeout = 20000
+            conn.doOutput = true
+            conn.setRequestProperty("Authorization", "Bearer $apiKey")
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.outputStream.use { it.write(MimoProtocol.body().toByteArray(Charsets.UTF_8)) }
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val raw = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (code !in 200..299) MimoProtocol.FAILED else MimoProtocol.replyText(raw)
+        } catch (e: MimoConfigException) {
+            e.message ?: MimoKey.MISSING
+        } catch (e: Exception) {
+            Log.w("MiMo", "request failed: ${e.javaClass.simpleName}")
+            MimoProtocol.FAILED
+        }
     }
 }

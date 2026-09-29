@@ -5,6 +5,10 @@ import androidx.compose.ui.graphics.Color
 val readingPaper = Color(0xFFF6F1E7)
 val readingInk = Color(0xFF2A261F)
 
+const val ANALYSIS_PANE_MIN_DP = 600
+
+fun analysisBesidePassage(widthDp: Int): Boolean = widthDp >= ANALYSIS_PANE_MIN_DP
+
 fun paragraphRanges(passage: String): List<IntRange> {
     if (passage.isEmpty()) return emptyList()
     val ranges = mutableListOf<IntRange>()

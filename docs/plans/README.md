@@ -16,6 +16,8 @@ Status overview for all planning documents in this folder.
 | [quality-value-screener](2026-08-16-quality-value-screener.md) | Active | 优质低估独立扫描器（同业低估 + 财务排雷 + PB-ROE + DeepSeek） | `docs/stock-modules/quality_value_scanner.md` |
 | [ath-rebreak-scanner](2026-08-30-ath-rebreak-scanner.md) | Active | 近5年高回踩二次突破：第三套统一推荐 + A股分析共用检测器 | — |
 | [long-term-news-factors](2026-08-30-long-term-news-factors.md) | Active | 长期推荐接入 6 类财经新闻 + 宏观/油/美元/利率/加密温度计 | `docs/stock-modules/long_term_scanner.md` |
+| [mobile-glm-analysis](2026-09-29-mobile-glm-analysis.md) | Active | 手机直接调 GLM，做好词好句和社会文化右侧栏 | — |
+| [mimo-api](2026-09-29-mimo-api.md) | Active | 小米 MiMo 文本与 TTS，对齐 GLM 的可选位置 | — |
 
 ## Archived (Completed)
 

@@ -10,7 +10,10 @@ This module replaces the keyword-matching approach with a two-stage pipeline:
 
 import json
 import logging
+import os
 import re
+import sys
+import threading
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
@@ -21,6 +24,25 @@ logger = logging.getLogger(__name__)
 
 OLLAMA_HOST = "http://localhost:11434"
 OLLAMA_MODEL_FAST = "qwen3:1.7b"
+LAYA_MIN_CONFIDENCE = 0.6
+_CJK_RE = re.compile(r"[\u4e00-\u9fff]")
+_LAYA_ROUTER = None
+_LAYA_LOCK = threading.Lock()
+_INTENT_CRITERIA = {
+    "knowledge_qa": "general questions from briefings, wiki, or docs",
+    "jira_report": "Jira tickets, sprints, workload, task status",
+    "commit_summary": "git commits, code changes, who pushed or merged",
+    "confluence_wiki": "Confluence wiki pages and team documentation",
+    "project_query": "project dependencies, architecture, impact analysis",
+    "team_activity": "team activity across commits and tickets",
+    "explain_topic": "a deep explanation or tutorial on one topic",
+    "trend_analysis": "trends over time in the knowledge base",
+    "ai_news_kb": "recent AI industry news, papers, tech developments",
+    "finance_news": "finance news such as gold, oil, crypto, policy, markets",
+    "stock_analysis": "stock market, A-shares, investment analysis",
+    "smalltalk": "greetings, thanks, or casual chat",
+    "out_of_scope": "requests Jarvis cannot do, such as sending email",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -141,7 +163,9 @@ def classify_intent(query: str, enhanced_query: str = "",
     Pipeline:
     1. Check if session_type already determines intent (learning modes)
     2. Run keyword heuristics for obvious cases (fast, no LLM call)
-    3. Fall back to LLM classification for ambiguous queries
+    3. Translate Chinese to English with the fast Ollama model
+    4. Closed-label choice with the Laya English checkpoint
+    5. Fall back to LLM classification when Laya is missing or unsure
 
     Args:
         query: The original user query.
@@ -168,7 +192,32 @@ def classify_intent(query: str, enhanced_query: str = "",
     if heuristic and heuristic.confidence >= 0.8:
         return heuristic
 
-    # Stage 3: LLM-based classification
+    # Stage 3: Chinese text is translated before the English checkpoint.
+    text_for_laya = effective_query
+    if _contains_cjk(effective_query):
+        translated = _translate_to_english(effective_query)
+        if not translated:
+            _log_laya("Laya skipped: Chinese translation failed, using fast LLM")
+            return _llm_classify(query, effective_query, history)
+        text_for_laya = translated
+
+    # Stage 4: Laya choice. Low confidence falls through to the fast LLM.
+    laya_result = _laya_classify(query, text_for_laya, effective_query)
+    if laya_result is not None and laya_result.confidence >= LAYA_MIN_CONFIDENCE:
+        _log_laya(
+            "Laya intent: %s (%.2f) query=%r"
+            % (laya_result.intent.value, laya_result.confidence, (query or "")[:80])
+        )
+        return laya_result
+    if laya_result is None:
+        _log_laya("Laya skipped: classify failed, using fast LLM")
+    else:
+        _log_laya(
+            "Laya intent below %.2f (got %.2f), using fast LLM"
+            % (LAYA_MIN_CONFIDENCE, laya_result.confidence)
+        )
+
+    # Stage 5: LLM-based classification
     return _llm_classify(query, effective_query, history)
 
 
@@ -274,6 +323,132 @@ def _keyword_heuristic(query: str) -> Optional[IntentResult]:
             )
 
     return None
+
+
+def _contains_cjk(text: str) -> bool:
+    return bool(_CJK_RE.search(text or ""))
+
+
+def _log_laya(message: str) -> None:
+    """INFO log plus a console line. The Agent window does not show logger.info."""
+    logger.info(message)
+    print(message, flush=True)
+
+
+def _force_hub_offline() -> None:
+    """Keep Hub lookups offline for this process, matching rag_engine."""
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    os.environ["TRANSFORMERS_OFFLINE"] = "1"
+    os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+    constants = sys.modules.get("huggingface_hub.constants")
+    if constants is not None:
+        constants.HF_HUB_OFFLINE = True
+
+
+def _clean_translation(raw: str) -> str:
+    text = (raw or "").strip()
+    text = re.sub(r"^```(?:english|text)?\s*|\s*```$", "", text, flags=re.I).strip()
+    text = re.sub(r"^(?:English|Translation)\s*:\s*", "", text, flags=re.I).strip()
+    text = re.sub(r"^['\"]|['\"]$", "", text).strip()
+    return text
+
+
+def _ollama_translate(messages: list[dict]) -> str:
+    import requests as _req
+    resp = _req.post(
+        f"{OLLAMA_HOST}/api/chat",
+        json={
+            "model": OLLAMA_MODEL_FAST,
+            "messages": messages,
+            "stream": False,
+            "think": False,
+            "options": {"temperature": 0.1, "num_predict": 200, "num_ctx": 512},
+        },
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return _clean_translation(resp.json().get("message", {}).get("content", ""))
+
+
+def _translate_to_english(text: str) -> str | None:
+    """Translate Chinese classifier input to English. Classification only.
+
+    qwen3:1.7b copies the Chinese sentence when asked in a bare system prompt.
+    A one-shot example, then a format retry, is what actually yields English.
+    """
+    fewshot = [
+        {"role": "system", "content": "Translate Chinese into English. Output English only."},
+        {"role": "user", "content": "登录失败怎么办"},
+        {"role": "assistant", "content": "What should I do if login fails?"},
+        {"role": "user", "content": text},
+    ]
+    retry = [
+        {"role": "user", "content": (
+            "把下面这句译成英文，只写 English: 后面的译文。\n"
+            f"句子：{text}\nEnglish:"
+        )},
+    ]
+    last = ""
+    try:
+        last = _ollama_translate(fewshot)
+        if not last or _contains_cjk(last):
+            last = _ollama_translate(retry)
+    except Exception as exc:
+        _log_laya(f"Laya translation error: {exc}")
+        return None
+    if not last or _contains_cjk(last):
+        _log_laya(f"Laya translation still Chinese: {last[:120]!r}")
+        return None
+    return last
+
+
+def _laya_router():
+    """Lazy router. Offline mode is set once and left on for the process."""
+    global _LAYA_ROUTER
+    if _LAYA_ROUTER is not None:
+        return _LAYA_ROUTER
+    with _LAYA_LOCK:
+        if _LAYA_ROUTER is None:
+            _force_hub_offline()
+            from laya import Router
+            _force_hub_offline()
+            _LAYA_ROUTER = Router()
+        return _LAYA_ROUTER
+
+
+def _laya_classify(query: str, text: str, enhanced_query: str) -> IntentResult | None:
+    """Closed-label intent on English text. None when Laya cannot answer."""
+    _force_hub_offline()
+    try:
+        router = _laya_router()
+        _force_hub_offline()
+        result = router.predict(
+            text,
+            {
+                "intent": {
+                    "type": "choice",
+                    "instructions": "Which Jarvis capability should handle this request?",
+                    "criteria": _INTENT_CRITERIA,
+                }
+            },
+            model="english",
+            min_confidence=LAYA_MIN_CONFIDENCE,
+        )
+        answer = ((result or {}).get("answers") or {}).get("intent") or {}
+        label = answer.get("choice")
+        intent = Intent(label)
+        confidence = float(answer.get("answer_confidence", answer.get("confidence")))
+    except Exception as exc:
+        logger.debug("Laya intent classification failed: %s", exc)
+        return None
+    return IntentResult(
+        intent=intent,
+        confidence=confidence,
+        enhanced_query=enhanced_query,
+        original_query=query,
+        reasoning=f"Laya English choice: {label}",
+        suggested_tools=_intent_to_tools(intent),
+    )
 
 
 def _llm_classify(query: str, enhanced_query: str,

@@ -105,6 +105,8 @@ from rag_engine import (
 # Agent loop (imported from agent_loop.py)
 # ---------------------------------------------------------------------------
 import agent_loop
+import glm_chat
+import mimo_chat
 from agent_loop import set_ollama_model as _set_ollama_model
 agent_loop.init(
     ollama_model=OLLAMA_MODEL,
@@ -112,6 +114,22 @@ agent_loop.init(
     ollama_model_fast=OLLAMA_MODEL_FAST,
     max_agent_iterations=MAX_AGENT_ITERATIONS,
 )
+
+
+def _chat_agent_name() -> str:
+    return glm_chat.normalize_chat_agent(_GLOBAL_SETTINGS.get("chat_agent"))
+
+
+def _glm_api_key() -> str:
+    return glm_chat.resolve_key(_GLOBAL_SETTINGS)
+
+
+def _mimo_api_key() -> str:
+    return mimo_chat.resolve_key(_GLOBAL_SETTINGS)
+
+
+agent_loop.configure_glm(agent_fn=_chat_agent_name, key_fn=_glm_api_key)
+agent_loop.configure_mimo(key_fn=_mimo_api_key)
 from agent_loop import run_agent
 
 # ---------------------------------------------------------------------------
@@ -1163,6 +1181,11 @@ _GLOBAL_SETTINGS_DEFAULTS = {
     "audio_voice_zh": "female",
     "audio_voice_en": "female",
     "deepseek_api_key": "",
+    "chat_agent": "ollama",
+    "glm_api_key": "",
+    "mimo_api_key": "",
+    "audio_engine": "edge",
+    "audio_mimo_style": "平静",
     "finance_sources_enabled": {},
     "world_sources_enabled": {},
 }
@@ -1190,7 +1213,9 @@ def _load_settings() -> dict:
             settings.update(saved)
         except Exception:
             pass
-    return _migrate_audio_lang_finance(settings, saved)
+    settings = _migrate_audio_lang_finance(settings, saved)
+    mimo_chat.sanitize_settings(settings)
+    return settings
 
 
 def _save_settings(settings: dict):
@@ -1216,9 +1241,8 @@ def api_settings():
     """Get or update global settings."""
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
-        for k in _GLOBAL_SETTINGS_DEFAULTS:
-            if k in data:
-                _GLOBAL_SETTINGS[k] = data[k]
+        glm_chat.apply_settings_post(_GLOBAL_SETTINGS, data, _GLOBAL_SETTINGS_DEFAULTS)
+        mimo_chat.sanitize_settings(_GLOBAL_SETTINGS)
         _save_settings(_GLOBAL_SETTINGS)
         return jsonify({"ok": True, "settings": _settings_safe()})
     return jsonify(_settings_safe())
@@ -1233,7 +1257,7 @@ def _settings_safe() -> dict:
     else:
         out["deepseek_api_key_masked"] = ""
     out.pop("deepseek_api_key", None)
-    return out
+    return mimo_chat.public_view(glm_chat.public_view(out))
 
 
 @app.route("/api/settings/deepseek-key", methods=["POST"])
@@ -1245,6 +1269,78 @@ def api_settings_deepseek_key():
     _save_settings(_GLOBAL_SETTINGS)
     masked = key[:4] + "****" + key[-4:] if len(key) > 8 else ("****" if key else "")
     return jsonify({"ok": True, "masked": masked})
+
+
+@app.route("/api/settings/glm-key", methods=["POST"])
+def api_settings_glm_key():
+    """Set the GLM API key. The raw value is stored only in the local settings file."""
+    data = request.get_json(silent=True) or {}
+    masked = glm_chat.save_glm_key(_GLOBAL_SETTINGS, data.get("api_key") or "")
+    _save_settings(_GLOBAL_SETTINGS)
+    return jsonify({"ok": True, "masked": masked})
+
+
+@app.route("/api/glm/test", methods=["POST"])
+def api_glm_test():
+    """Test the GLM API with a short completion."""
+    data = request.get_json(silent=True) or {}
+    api_key = (data.get("api_key") or "").strip() or _glm_api_key()
+    try:
+        glm_chat.require_key(api_key)
+    except glm_chat.GlmConfigError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    try:
+        reply = glm_chat.probe(glm_chat.make_client(api_key))
+        return jsonify({"ok": True, "model": glm_chat.MODEL, "reply": reply})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": glm_chat.public_error(exc)}), 500
+
+
+@app.route("/api/settings/mimo-key", methods=["POST"])
+def api_settings_mimo_key():
+    """Set the MiMo API key. The raw value is stored only in the local settings file."""
+    data = request.get_json(silent=True) or {}
+    masked = mimo_chat.save_key(_GLOBAL_SETTINGS, data.get("api_key") or "")
+    _save_settings(_GLOBAL_SETTINGS)
+    return jsonify({"ok": True, "masked": masked})
+
+
+@app.route("/api/mimo/test", methods=["POST"])
+def api_mimo_test():
+    """Test the MiMo API with a short completion."""
+    data = request.get_json(silent=True) or {}
+    api_key = (data.get("api_key") or "").strip() or _mimo_api_key()
+    try:
+        mimo_chat.require_key(api_key)
+    except mimo_chat.MimoConfigError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    try:
+        reply = mimo_chat.probe(mimo_chat.make_client(api_key))
+        return jsonify({"ok": True, "model": mimo_chat.MODEL, "reply": reply})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": mimo_chat.public_error(exc)}), 500
+
+
+@app.route("/api/mimo/tts/test", methods=["POST"])
+def api_mimo_tts_test():
+    """Return WAV for the fixed speak or sing sample."""
+    data = request.get_json(silent=True) or {}
+    mode = str(data.get("mode") or "").strip().lower()
+    if mode == "speak":
+        sample = mimo_chat.SPEAK_SAMPLE
+    elif mode == "sing":
+        sample = mimo_chat.SING_SAMPLE
+    else:
+        return jsonify({"ok": False, "error": "mode must be speak or sing"}), 400
+    api_key = (data.get("api_key") or "").strip() or _mimo_api_key()
+    try:
+        mimo_chat.require_key(api_key)
+        wav = mimo_chat.synthesize_wav(mimo_chat.make_client(api_key), sample, lang="zh")
+    except mimo_chat.MimoConfigError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": mimo_chat.public_error(exc)}), 500
+    return Response(wav, mimetype="audio/wav")
 
 
 @app.route("/api/deepseek/test", methods=["POST"])

@@ -5,7 +5,7 @@ tags:
   - navigation
 category: hub
 status: current
-last-updated: 2026-09-20
+last-updated: 2026-09-28
 ---
 
 # Jarvis Implementation Documentation
@@ -196,6 +196,7 @@ The live UI at **http://127.0.0.1:18889/**. Search UI **:18888** is Flask and st
 | [reindex-all-impl.md](./rag/reindex-all-impl.md) | How `reindex_all.py` orchestrates full or partial reindexing. |
 | [search-ui-impl.md](./rag/search-ui-impl.md) | Implementation of `search_ui.py` (embedding, Qdrant search, Flask UI). |
 | [agent-impl.md](./rag/agent-impl.md) | Implementation of `agent.py` — FastAPI orchestrator with Blueprints, query pipeline, memory. Frontend: [web/](./web/). API map: [agent-spa-impl.md](./rag/agent-spa-impl.md). |
+| [laya-intent-guide.md](../guides/laya-intent-guide.md) | Laya closed-label intent: install, the keyword → translate → Laya → fast-LLM order, and the log lines that show it ran. |
 | [agent-spa-impl.md](./rag/agent-spa-impl.md) | Page → `/api` catalog for Chat, News, Stock, Reading, Medavis, Settings. |
 | [eval-datasets-impl.md](./rag/eval-datasets-impl.md) | RAG evaluation & data management — HF `datasets` integration, precision/recall/MRR metrics, CLI tools. |
 | [learning-features-impl.md](./rag/learning-features-impl.md) | Learning modes: AI Learning, Tech English, Casual English, AWS AIF-C01 Cert, Notes system. |

@@ -12,12 +12,13 @@ import {
   relativeStrengthMarkdown,
   stockReportMarkdown,
 } from "@/lib/stockFormat";
+import { CloudModelSelect, type CloudModel } from "@/components/CloudModelSelect";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 type Regime = { market?: { regime_zh?: string; advice?: string }; symbol_regime?: { regime_zh?: string } };
-type Tab = "local" | "deepseek";
+type Tab = "local" | "cloud";
 
 export function AnalyzePanel({
   symbol,
@@ -27,7 +28,7 @@ export function AnalyzePanel({
   onSymbolChange: (s: string) => void;
 }) {
   const [cost, setCost] = useState("");
-  const [deepseek, setDeepseek] = useState(false);
+  const [llm, setLlm] = useState<CloudModel>("local");
   const [tab, setTab] = useState<Tab>("local");
   const [regime, setRegime] = useState<Regime>({});
   const [localHtml, setLocalHtml] = useState("");
@@ -79,10 +80,12 @@ export function AnalyzePanel({
       } else {
         renderLocal(data);
       }
-      if (deepseek) {
-        setStatus("DeepSeek 分析中...");
-        setTab("deepseek");
-        const dsPayload: Record<string, unknown> = { symbol: symbol.trim() };
+      if (llm !== "local") {
+        setStatus(
+          llm === "glm" ? "GLM 分析中..." : llm === "mimo" ? "MiMo 分析中..." : "DeepSeek 分析中...",
+        );
+        setTab("cloud");
+        const dsPayload: Record<string, unknown> = { symbol: symbol.trim(), llm };
         const n = parseFloat(cost);
         if (n > 0) dsPayload.cost_price = n;
         const ds = await apiJson<Record<string, unknown>>("/api/stock/analyze/deepseek", {
@@ -180,10 +183,7 @@ export function AnalyzePanel({
         <div className="flex flex-wrap gap-2">
           <Input className="w-32" placeholder="代码" value={symbol} onChange={(e) => onSymbolChange(e.target.value)} />
           <Input className="w-28" placeholder="成本价 (选填)" value={cost} onChange={(e) => setCost(e.target.value)} />
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={deepseek} onChange={(e) => setDeepseek(e.target.checked)} />
-            DeepSeek
-          </label>
+          <CloudModelSelect value={llm} onChange={setLlm} disabled={busy} />
           <Button size="sm" disabled={busy || !symbol.trim()} onClick={() => void runFull()}>
             全面分析
           </Button>
@@ -239,13 +239,13 @@ export function AnalyzePanel({
             Download PDF
           </a>
         ) : null}
-        {deepseek && (localHtml || dsHtml) ? (
+        {llm !== "local" && (localHtml || dsHtml) ? (
           <div className="flex gap-1">
             <Button size="xs" variant={tab === "local" ? "default" : "outline"} onClick={() => setTab("local")}>
               本地
             </Button>
-            <Button size="xs" variant={tab === "deepseek" ? "default" : "outline"} onClick={() => setTab("deepseek")}>
-              DeepSeek
+            <Button size="xs" variant={tab === "cloud" ? "default" : "outline"} onClick={() => setTab("cloud")}>
+              {llm === "glm" ? "GLM" : llm === "mimo" ? "MiMo" : "DeepSeek"}
             </Button>
           </div>
         ) : null}
@@ -277,7 +277,7 @@ export function AnalyzePanel({
         {tab === "local" && localHtml ? (
           <div className="bg-muted/40 max-h-[60vh] overflow-auto rounded-xl border p-3 text-sm" dangerouslySetInnerHTML={{ __html: localHtml }} />
         ) : null}
-        {tab === "deepseek" && dsHtml ? (
+        {tab === "cloud" && dsHtml ? (
           <div className="bg-muted/40 max-h-[60vh] overflow-auto rounded-xl border p-3 text-sm" dangerouslySetInnerHTML={{ __html: dsHtml }} />
         ) : null}
       </CardContent>
