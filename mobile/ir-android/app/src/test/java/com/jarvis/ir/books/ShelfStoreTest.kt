@@ -72,6 +72,58 @@ class ShelfStoreTest {
     }
 
     @Test
+    fun replaceRewritesTheSameBookAndReturnsToTheFirstPage() {
+        val root = Files.createTempDirectory("shelf-replace").toFile()
+        val store = ShelfStore(root)
+        val saved = store.save("River", "txt", listOf("a", "b", "c"), now = 10)
+        store.updatePosition(saved.id, 2, now = 20)
+        val replaced = store.replace(
+            saved.id,
+            listOf("Left.", "Right."),
+            listOf("Chapter 1", "Chapter 2"),
+            now = 30,
+        )
+        assertEquals(saved.id, replaced?.id)
+        assertEquals(0, replaced?.chunkIndex)
+        assertEquals(2, replaced?.chunkCount)
+        val again = ShelfStore(root)
+        assertEquals(listOf("Left.", "Right."), again.loadChunks(saved.id))
+        assertEquals(listOf("Chapter 1", "Chapter 2"), again.loadTitles(saved.id))
+        assertEquals(0, again.find(saved.id)?.chunkIndex)
+        assertNull(store.replace("missing", listOf("x"), listOf("Chapter 1")))
+        root.deleteRecursively()
+    }
+
+    @Test
+    fun writeReplacingSwapsInTheNewTextAndRemovesTheTempFile() {
+        val root = Files.createTempDirectory("shelf-atomic").toFile()
+        val file = File(root, "1.json")
+        file.writeText("{\"chunks\":[\"keep\"]}")
+        writeReplacing(file, "{\"chunks\":[\"keep\"],\"read\":[\"k\"]}")
+        val text = file.readText()
+        assertTrue(text.contains("keep"))
+        assertTrue(text.contains("\"read\""))
+        assertFalse(File(root, "1.json.tmp").exists())
+        root.deleteRecursively()
+    }
+
+    @Test
+    fun markReadKeepsThePagesAndSurvivesARetitle() {
+        val root = Files.createTempDirectory("shelf-read").toFile()
+        val store = ShelfStore(root)
+        val saved = store.save("Issue", "epub", listOf("a", "b"), listOf("One", "Two"), now = 10)
+        assertTrue(store.loadRead(saved.id).isEmpty())
+        assertTrue(store.markRead(saved.id, "Leaders\u0000Fed shift"))
+        assertTrue(store.markRead(saved.id, "Leaders\u0000Fed shift"))
+        assertEquals(setOf("Leaders\u0000Fed shift"), store.loadRead(saved.id))
+        assertEquals(listOf("a", "b"), store.loadChunks(saved.id))
+        store.replace(saved.id, listOf("Left.", "Right."), listOf("Chapter 1", "Chapter 2"), now = 30)
+        assertEquals(setOf("Leaders\u0000Fed shift"), ShelfStore(root).loadRead(saved.id))
+        assertFalse(store.markRead("missing", "Leaders\u0000Fed shift"))
+        root.deleteRecursively()
+    }
+
+    @Test
     fun deleteRemovesBookFileAndLastOpened() {
         val root = Files.createTempDirectory("shelf-delete").toFile()
         val store = ShelfStore(root)

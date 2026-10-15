@@ -40,11 +40,14 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextIndent
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.jarvis.ir.books.ReadingDisplay
 import com.jarvis.ir.explain.ExplainCard
+import com.jarvis.ir.notes.NoteExplanation
 import com.jarvis.ir.explain.ExplainPipeline
 import com.jarvis.ir.explain.GlossPrompt
 import com.jarvis.ir.explain.GlossSession
@@ -60,6 +63,10 @@ fun ReaderScreen(
     glossModel: String,
     glossReady: Boolean,
     onModelRejected: () -> Unit = {},
+    onNote: (String, String) -> Unit = { _, _ -> },
+    onQuote: (String, String) -> Unit = { _, _ -> },
+    heading: String? = null,
+    onTurn: ((Int) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -117,14 +124,25 @@ fun ReaderScreen(
         }
     }
 
+    Box(modifier.fillMaxSize()) {
     Column(
-        modifier
+        Modifier
             .fillMaxSize()
             .background(readingPaper)
             .padding(horizontal = 28.dp, vertical = 20.dp)
             .onSizeChanged { viewportHeight = it.height }
             .verticalScroll(scroll),
     ) {
+        if (!heading.isNullOrBlank()) {
+            Text(
+                heading,
+                color = readingInk,
+                fontFamily = FontFamily.Serif,
+                fontSize = 28.sp,
+                lineHeight = 36.sp,
+                modifier = Modifier.padding(bottom = 18.dp),
+            )
+        }
         Box {
             Text(
                 text = highlighted,
@@ -136,7 +154,7 @@ fun ReaderScreen(
                     color = readingInk,
                 ),
                 onTextLayout = { layout = it },
-                modifier = Modifier.pointerInput(passage) {
+                modifier = Modifier.pointerInput(passage, onTurn) {
                     detectTapGestures(
                         onLongPress = { offset ->
                             val index = indexAt(layout, passage, offset) ?: return@detectTapGestures
@@ -149,6 +167,18 @@ fun ReaderScreen(
                             selection = hit
                         },
                         onTap = { offset ->
+                            val turn = onTurn
+                            if (turn != null) {
+                                val delta = ReadingDisplay.edgeDelta(
+                                    offset.x,
+                                    size.width.toFloat(),
+                                    56.dp.toPx(),
+                                )
+                                if (delta != null) {
+                                    turn(delta)
+                                    return@detectTapGestures
+                                }
+                            }
                             val start = anchor
                             if (start < 0 || selection == null) return@detectTapGestures
                             val index = indexAt(layout, passage, offset) ?: return@detectTapGestures
@@ -188,7 +218,7 @@ fun ReaderScreen(
                             gap = gap,
                         )
                         val count = if (speakReady) 3 else 2
-                        val rowWidth = 40.dp.toPx() * count + gap * (count - 1)
+                        val rowWidth = 40.dp.toPx() * count + 56.dp.toPx() * 2 + gap * (count + 1)
                         val maxX = (textLayout.size.width - rowWidth).coerceAtLeast(0f)
                         IntOffset(spot.left.coerceIn(0f, maxX).roundToInt(), top.roundToInt())
                     },
@@ -232,9 +262,26 @@ fun ReaderScreen(
                             speaker?.speak(hit.word, TextToSpeech.QUEUE_FLUSH, null, "ir-word")
                         }
                     }
+                    SelectionAction("笔记", width = 56.dp) {
+                        val explanation = NoteExplanation.text(
+                            card ?: pipeline.dictionaryCard(hit.word, hit.sentence),
+                            glossLine,
+                            glossLabel,
+                        )
+                        onNote(hit.word, explanation)
+                    }
+                    SelectionAction("摘句", width = 56.dp) {
+                        val explanation = NoteExplanation.text(
+                            card ?: pipeline.dictionaryCard(hit.word, hit.sentence),
+                            glossLine,
+                            glossLabel,
+                        )
+                        onQuote(hit.sentence, explanation)
+                    }
                 }
             }
         }
+    }
     }
     val shown = card
     if (shown != null) {
@@ -244,7 +291,17 @@ fun ReaderScreen(
             glossLine = null
             glossLabel = null
         }) {
-            ExplainCardView(shown, glossLine = glossLine, glossLabel = glossLabel)
+            ExplainCardView(
+                shown,
+                glossLine = glossLine,
+                glossLabel = glossLabel,
+                onNote = selection?.let { hit ->
+                    {
+                        val saved = if (glossLabel == "句" && hit.sentence.isNotBlank()) hit.sentence else hit.word
+                        onNote(saved, NoteExplanation.text(shown, glossLine, glossLabel))
+                    }
+                },
+            )
         }
     }
 }
@@ -271,10 +328,10 @@ private fun selectionBounds(layout: TextLayoutResult, start: Int, endExclusive: 
 }
 
 @Composable
-private fun SelectionAction(label: String, onClick: () -> Unit) {
+private fun SelectionAction(label: String, width: Dp = 40.dp, onClick: () -> Unit) {
     Button(
         onClick = onClick,
-        modifier = Modifier.size(40.dp),
+        modifier = Modifier.size(width = width, height = 40.dp),
         contentPadding = PaddingValues(0.dp),
         colors = ButtonDefaults.buttonColors(
             containerColor = readingInk,

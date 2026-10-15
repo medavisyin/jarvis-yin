@@ -1,7 +1,7 @@
 # Memory: iOS Intensive-Reading App Prep
 
 **Generated**: 2026-09-29 ~17:50 UTC+8
-**Last updated**: 2026-09-29 ~18:20 UTC+8
+**Last updated**: 2026-09-29 ~19:30 UTC+8
 **Project**: c:\jarvis
 **Focus**: Prepare an iOS Xcode project on Windows that matches the Android IR app, for the user to copy to a Mac and open in Xcode
 
@@ -24,6 +24,7 @@ Feature target matches `mobile/ir-android`: import English TXT / EPUB / PDF, she
 5. **First deliverable is a full reading project, Qwen stubbed**: User chose scope C. Include TXT/EPUB/PDF import, ECDICT lookup, and the explain card. Leave a Qwen call interface; do not vendor an iOS inference library in this round. Rejected: empty SwiftUI shell; rejected: TXT-only shelf.
 6. **Project directory is a sibling of `mobile`**: User corrected the path. The Xcode project lives at `ir-ios/` (repo root of a future GitHub upload), not `mobile/ir-ios`. User said to generate it without further questions.
 7. **Approach used**: One SwiftUI app, no Swift packages. EPUB unzip via zlib raw inflate. PDFKit for PDF. System SQLite for ECDICT. `QwenEngine` is unimplemented; the card says the runtime is not connected. Economist / GLM / Mimo from later Android work stay out.
+8. **Pushed to GitHub main**: User asked to upload the latest code. Commit `d91fe45` on `main` of `git@github.com:medavisyin/jarvis-yin.git`. Included `ir-ios/` and this memory file. Left `docs/.obsidian/workspace.json` uncommitted.
 
 ---
 
@@ -69,8 +70,8 @@ Feature target matches `mobile/ir-android`: import English TXT / EPUB / PDF, she
 
 ## Current State (required)
 
-- **Working**: Android IR app. iOS sources are written at `ir-ios/` for copy to the Mac. Not compiled here.
-- **Pending**: User installs Xcode, opens `ir-ios/ir-ios.xcodeproj`, selects the Team, copies `ecdict.db` and `lemma.en.txt` into `ir-ios/ir-ios/`, and Runs. Cmd+U runs `ir-iosTests`.
+- **Working**: Android IR app. iOS project is on GitHub `main` at commit `d91fe45` (`https://github.com/medavisyin/jarvis-yin`). Not compiled on Windows.
+- **Pending**: User installs Xcode, opens `ir-ios/ir-ios.xcodeproj`, selects the Team, copies `ecdict.db` and `lemma.en.txt` into `ir-ios/ir-ios/`, and Runs. Cmd+U runs `ir-iosTests`. This memory update after the push is local only.
 - **Blocked**: No iOS toolchain on the current Windows machine.
 
 ---
@@ -92,6 +93,7 @@ Open `ir-ios/ir-ios.xcodeproj`, not the Jarvis root. Display name Y, bundle id `
 
 ## References (required)
 
+- `https://github.com/medavisyin/jarvis-yin` — GitHub repo, `main` @ `d91fe45`
 - `ir-ios/README.md` — how to open the Xcode project on the Mac
 - `ir-ios/ir-ios.xcodeproj` — project to double-click
 - `ir-ios/ir-ios/ReadingLogic.swift` — chunking, dictionary, gloss prompts, `QwenEngine`

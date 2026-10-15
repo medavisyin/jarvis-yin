@@ -31,6 +31,7 @@ object EpubImporter {
         val opfDir: String,
         val hrefs: List<String>,
         val files: Map<String, ByteArray>,
+        val opf: org.jsoup.nodes.Document,
     )
 
     private fun spine(input: InputStream): Spine {
@@ -52,7 +53,42 @@ object EpubImporter {
         val opf = Jsoup.parse(String(opfBytes, Charsets.UTF_8), "", Parser.xmlParser())
         val hrefById = opf.select("manifest > item").associate { it.attr("id") to it.attr("href") }
         val spineHrefs = opf.select("spine > itemref").mapNotNull { hrefById[it.attr("idref")] }
-        return Spine(opfDir, spineHrefs, files)
+        return Spine(opfDir, spineHrefs, files, opf)
+    }
+
+    fun importLocal(input: InputStream, maxWords: Int = 400): List<BookChapters.Page> {
+        val opened = spine(input)
+        val pieces = opened.hrefs.mapNotNull { href ->
+            val bytes = htmlBytes(opened.files, opened.opfDir, href) ?: return@mapNotNull null
+            val text = htmlToParagraphs(String(bytes, Charsets.UTF_8))
+            if (text.isBlank()) null else BookChapters.SpinePiece(href, text)
+        }
+        val fromToc = BookChapters.pagesFromTocSources(pieces, tocSources(opened), maxWords)
+        if (fromToc != null) return fromToc
+        return BookChapters.fromPlainText(pieces.joinToString("\n\n") { it.text }, maxWords)
+    }
+
+    private fun tocSources(opened: Spine): List<List<BookChapters.TocRef>> {
+        val tocId = opened.opf.selectFirst("spine")?.attr("toc").orEmpty()
+        val ncxItem = opened.opf.select("manifest > item").firstOrNull { item ->
+            (tocId.isNotEmpty() && item.attr("id") == tocId) ||
+                item.attr("media-type").contains("dtbncx", ignoreCase = true) ||
+                item.attr("href").endsWith(".ncx", ignoreCase = true)
+        }
+        val ncx = ncxItem?.attr("href")?.let { href ->
+            htmlBytes(opened.files, opened.opfDir, href)?.let {
+                BookChapters.tocFromNcx(String(it, Charsets.UTF_8))
+            }
+        }.orEmpty()
+        val navItem = opened.opf.select("manifest > item").firstOrNull { item ->
+            item.attr("properties").split(Regex("""\s+""")).any { it == "nav" }
+        }
+        val nav = navItem?.attr("href")?.let { href ->
+            htmlBytes(opened.files, opened.opfDir, href)?.let {
+                BookChapters.tocFromNav(String(it, Charsets.UTF_8))
+            }
+        }.orEmpty()
+        return listOf(ncx, nav)
     }
 
     private fun htmlBytes(files: Map<String, ByteArray>, opfDir: String, href: String): ByteArray? {

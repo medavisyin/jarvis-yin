@@ -1,7 +1,7 @@
 # Memory: 小米 MiMo API 接入
 
 **Generated**: 2026-09-29 15:10
-**Last updated**: 2026-09-29 17:25
+**Last updated**: 2026-10-10 09:20
 **Project**: c:\jarvis
 **Focus**: 按 GLM 的方式接入小米 MiMo 文本与 TTS
 
@@ -9,7 +9,7 @@
 
 ## Goal & Scope
 
-在 Jarvis 设置里保存小米 API Key，凡是能选 GLM 作为 Agent / 云模型的地方都加上 MiMo。文本走按量 OpenAI 兼容接口，模型 `mimo-v2.6-flash`。音频输出增加 MiMo-V2.5-TTS；选中后日报音频和精读朗读也改走该接口，风格可选。手机端只加 Key 和连通性测试。
+在 Jarvis 设置里保存小米 API Key，凡是能选 GLM 作为 Agent / 云模型的地方都加上 MiMo。文本走按量 OpenAI 兼容接口，模型 `mimo-v2.6-flash`。音频输出增加 MiMo-V2.5-TTS；选中后日报音频和精读朗读也改走该接口，风格可选。手机端最初只加 Key 和连通性测试。2026-10-10 起，Android 精读的「好词好句 / 社会文化」可在设置里于 GLM 和 MiMo 之间切换。
 
 ---
 
@@ -32,6 +32,8 @@
 15. **用户要求代码评审**，并更新本记忆。关注点：需求对齐、响应里不出现原始 Key、GLM 与 Edge 不回退、测试不打真实网络。
 16. **评审发现走 receiving-code-review**。六条都接受。正常 MiMo 分析失败不会走到 `stock.py` 的外层异常：`_call_mimo` 已用 `public_error` 返回字典。外层「DeepSeek 分析失败」只在别的异常冒出时出现。
 17. **六条都改了**。MiMo TTS 失败改抛 `MimoTtsError("MiMo request failed")`，缺 Key 和 ffmpeg 文案保留。设置引擎显示 Edge / MiMo-V2.5-TTS，存储值仍是 edge / mimo。股票分析外层异常按提供方写 MiMo / GLM / DeepSeek，MiMo 和 GLM 不拼原始异常。尚未做第二轮评审。
+18. **Reversed: 手机端只保存 Key 并做连通性测试**: 用户要求 Android 精读分析能在 GLM 和 MiMo 之间切换（2026-10-10）。设置里单选，偏好键 `analysis_provider`，缺省 `glm`。分析面板不加控件。点词释义、iOS、桌面不改。MiMo 分析用 `mimo-v2.6-flash`、流式、`max_completion_tokens` 4096，不传 `thinking`。失败不回退 GLM。连通测试仍是非流式 hello。用户选择直接实现，不另写计划。
+19. **Deferred: Android 切换的两条 Minor**: 评审认为可以合并，没有 Critical / Important。用户选择先不改代码（2026-10-10）。Minor-1：`HttpMimoTransport` 读到 `data: [DONE]` 后外层循环仍可能继续读，GLM 传输层同样如此。Minor-2：`analysisTransport` 是 `Any?`，取消靠手写 `when`。
 
 ---
 
@@ -69,20 +71,17 @@
 
 ## Current State
 
-- **Working**: 桌面和手机代码已落地。pytest 72 项通过。Android `MimoKeyTest`、`MimoProtocolTest`、`GlmKeyTest` 通过。
-- **Pending**: 是否对已改的六条做第二轮评审。真实 Key 连通未测。设置页下拉没有在浏览器里点过。
+- **Working**: 桌面 MiMo 文本与 TTS 已落地。Android 设置里可以在 GLM 和 MiMo 之间切换精读分析，选择存在 `analysis_provider`，默认 `glm`。
+- **Pending**: 桌面六条评审发现是否做第二轮，仍未定。真实 Key 连通未测。手机切换尚未在真机上点过。Android 切换的 Minor-1、Minor-2 已明确延后。
 - **Blocked**: 无。
 
 ---
 
 ## Next Steps
 
-1. [x] 用户确认需求理解。
-2. [x] 方案通过，并写成 `docs/plans/2026-09-29-mimo-api.md`。
-3. [x] 在 main 上实现。桌面 72 项测试通过，Android 单测通过。
-4. [x] 代码评审完成，发现已核对。
-5. [x] 六条发现已改。相关 pytest 77 项通过（54 + 23）。
-6. [ ] 用户决定要不要做第二轮评审。
+1. [x] 实现 Android 设置里的 GLM / MiMo 分析切换。
+2. [x] Android 切换已评审。用户延后 Minor-1 和 Minor-2，不在本轮改代码。
+3. [ ] 用户决定要不要做桌面 MiMo 评审的第二轮。
 
 ---
 

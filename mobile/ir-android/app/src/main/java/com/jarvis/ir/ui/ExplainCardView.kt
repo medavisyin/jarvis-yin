@@ -2,12 +2,17 @@ package com.jarvis.ir.ui
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import com.jarvis.ir.explain.ExplainCard
 import com.jarvis.ir.explain.ExplainStatus
@@ -18,9 +23,11 @@ fun ExplainCardView(
     modifier: Modifier = Modifier,
     glossLine: String? = null,
     glossLabel: String? = null,
+    onNote: (() -> Unit)? = null,
 ) {
-    Card(modifier = modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp)) {
+    val maxHeight = ExplainWindow.maxHeightDp(LocalConfiguration.current.screenHeightDp).dp
+    Card(modifier = modifier.fillMaxWidth().heightIn(max = maxHeight)) {
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp)) {
             when (card.status) {
                 ExplainStatus.NOT_IN_DICT -> {
                     Text(card.word, style = MaterialTheme.typography.titleMedium)
@@ -42,6 +49,11 @@ fun ExplainCardView(
                     if (!glossLine.isNullOrBlank()) {
                         Text(labeledGloss(glossLabel, glossLine), modifier = Modifier.padding(top = 12.dp))
                     }
+                }
+            }
+            if (onNote != null) {
+                TextButton(onClick = onNote, modifier = Modifier.padding(top = 8.dp)) {
+                    Text("笔记")
                 }
             }
         }

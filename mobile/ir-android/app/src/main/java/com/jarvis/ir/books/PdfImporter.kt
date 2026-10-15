@@ -24,4 +24,7 @@ object PdfImporter {
 
     fun importPdf(input: InputStream, maxWords: Int = 400): List<String> =
         Chunker.chunk(extractText(input), maxWords)
+
+    fun importLocal(input: InputStream, maxWords: Int = 400): List<BookChapters.Page> =
+        BookChapters.fromPlainText(extractText(input), maxWords)
 }

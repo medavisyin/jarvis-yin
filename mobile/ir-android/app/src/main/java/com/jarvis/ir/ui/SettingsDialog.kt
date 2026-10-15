@@ -4,12 +4,14 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TextField
@@ -18,9 +20,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import com.jarvis.ir.analysis.AnalysisProvider
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -33,6 +37,8 @@ fun SettingsDialog(
     glossBusy: Boolean,
     onSelectModel: (String) -> Unit,
     onDownload: () -> Unit,
+    analysisProvider: String,
+    onSelectAnalysisProvider: (String) -> Unit,
     glmMasked: String,
     glmStatus: String,
     glmBusy: Boolean,
@@ -69,6 +75,16 @@ fun SettingsDialog(
                     onDownload = onDownload,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Text("分析模型", modifier = Modifier.padding(top = 12.dp))
+                listOf(AnalysisProvider.GLM to "GLM", AnalysisProvider.MIMO to "MiMo").forEach { (id, label) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = analysisProvider == id,
+                            onClick = { onSelectAnalysisProvider(id) },
+                        )
+                        Text(label)
+                    }
+                }
                 Text(
                     if (glmMasked.isEmpty()) "GLM 密钥：未配置" else "GLM 密钥：$glmMasked",
                     modifier = Modifier.padding(top = 12.dp),

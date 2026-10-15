@@ -28,10 +28,16 @@ fun ShelfScreen(
     books: List<ShelfEntry>,
     onOpen: (ShelfEntry) -> Unit,
     onDelete: (ShelfEntry) -> Unit,
+    onRetitle: (ShelfEntry) -> Unit,
     onSample: (() -> Unit)? = null,
+    caption: (ShelfEntry) -> String = { book ->
+        val page = book.chunkIndex + 1
+        "上次读到 $page/${book.chunkCount}"
+    },
     modifier: Modifier = Modifier,
 ) {
     var pendingDelete by remember { mutableStateOf<ShelfEntry?>(null) }
+    var pendingRetitle by remember { mutableStateOf<ShelfEntry?>(null) }
     if (books.isEmpty()) {
         Column(modifier.fillMaxSize().padding(28.dp)) {
             Text("还没有书。打开设置，导入本地文件。", color = readingInk, fontSize = 18.sp)
@@ -67,17 +73,33 @@ fun ShelfScreen(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    val page = book.chunkIndex + 1
                     Text(
-                        "上次读到 $page/${book.chunkCount}",
+                        caption(book),
                         color = readingInk.copy(alpha = 0.7f),
                         fontSize = 14.sp,
                         modifier = Modifier.padding(top = 4.dp),
                     )
                 }
+                TextButton(onClick = { pendingRetitle = book }) { Text("重切") }
                 TextButton(onClick = { pendingDelete = book }) { Text("删除") }
             }
         }
+    }
+    val pendingCut = pendingRetitle
+    if (pendingCut != null) {
+        AlertDialog(
+            onDismissRequest = { pendingRetitle = null },
+            title = { Text("按章节重新切开？") },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingRetitle = null
+                    onRetitle(pendingCut)
+                }) { Text("重切") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingRetitle = null }) { Text("取消") }
+            },
+        )
     }
     val pending = pendingDelete
     if (pending != null) {

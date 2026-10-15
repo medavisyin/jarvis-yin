@@ -15,14 +15,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.jarvis.ir.analysis.AnalysisShare
 
 @Composable
 fun AnalysisPane(
     text: String,
     error: String,
     running: Boolean,
+    bookTitle: String,
     onRun: (String) -> Unit,
     onCancel: () -> Unit,
+    onShare: (String) -> Unit,
+    onNote: (String) -> Unit,
+    onRewrite: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -31,8 +36,11 @@ fun AnalysisPane(
             .padding(12.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { onRun("vocab") }) { Text("好词好句") }
-            Button(onClick = { onRun("culture") }) { Text("社会文化") }
+            Button(onClick = { onRun("vocab") }, enabled = !running) { Text("好词好句") }
+            Button(onClick = { onRun("culture") }, enabled = !running) { Text("社会文化") }
+            if (onRewrite != null) {
+                Button(onClick = onRewrite, enabled = !running) { Text("重写") }
+            }
         }
         if (running) {
             TextButton(onClick = onCancel) { Text("取消") }
@@ -47,11 +55,30 @@ fun AnalysisPane(
                 .verticalScroll(rememberScrollState())
                 .padding(top = 8.dp),
         ) {
-            Text(
-                text.ifBlank { if (running) "分析中…" else "选一个分析" },
-                color = readingInk,
-                fontSize = 15.sp,
-            )
+            if (text.isBlank()) {
+                Text(
+                    if (running) "分析中…" else "选一个分析",
+                    color = readingInk,
+                    fontSize = 15.sp,
+                )
+            } else {
+                val shareable = AnalysisShare.paragraphs(text, includeTail = !running)
+                val tail = if (running) AnalysisShare.openTail(text) else ""
+                shareable.forEach { paragraph ->
+                    Text(paragraph, color = readingInk, fontSize = 15.sp)
+                    Row {
+                        TextButton(onClick = { onShare(AnalysisShare.body(bookTitle, paragraph)) }) {
+                            Text("分享")
+                        }
+                        TextButton(onClick = { onNote(paragraph) }) {
+                            Text("笔记")
+                        }
+                    }
+                }
+                if (tail.isNotEmpty()) {
+                    Text(tail, color = readingInk, fontSize = 15.sp)
+                }
+            }
         }
     }
 }

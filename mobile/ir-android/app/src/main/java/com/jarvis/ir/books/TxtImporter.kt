@@ -7,4 +7,9 @@ object TxtImporter {
         val text = String(bytes, StandardCharsets.UTF_8).trim()
         return Chunker.chunk(text, maxWords)
     }
+
+    fun importLocal(bytes: ByteArray, maxWords: Int = 400): List<BookChapters.Page> {
+        val text = String(bytes, StandardCharsets.UTF_8).trim()
+        return BookChapters.fromPlainText(text, maxWords)
+    }
 }

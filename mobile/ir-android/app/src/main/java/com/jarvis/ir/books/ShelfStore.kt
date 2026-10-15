@@ -3,6 +3,9 @@ package com.jarvis.ir.books
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 data class ShelfEntry(
     val id: String,
@@ -12,6 +15,27 @@ data class ShelfEntry(
     val chunkCount: Int,
     val updatedAt: Long,
 )
+
+internal fun writeReplacing(file: File, text: String) {
+    file.parentFile?.mkdirs()
+    val temp = File(file.parentFile, "${file.name}.tmp")
+    temp.writeText(text)
+    val source = temp.toPath()
+    val target = file.toPath()
+    try {
+        Files.move(source, target, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+    } catch (_: AtomicMoveNotSupportedException) {
+        try {
+            Files.move(source, target, StandardCopyOption.REPLACE_EXISTING)
+        } catch (error: Exception) {
+            temp.delete()
+            throw error
+        }
+    } catch (error: Exception) {
+        temp.delete()
+        throw error
+    }
+}
 
 class ShelfStore(private val root: File) {
     fun list(): List<ShelfEntry> = readIndex().books.sortedByDescending { it.updatedAt }
@@ -53,11 +77,55 @@ class ShelfStore(private val root: File) {
         return entry
     }
 
+    fun replace(
+        id: String,
+        chunks: List<String>,
+        titles: List<String>,
+        now: Long = System.currentTimeMillis(),
+    ): ShelfEntry? {
+        if (chunks.isEmpty()) return null
+        val index = readIndex()
+        val current = index.books.firstOrNull { it.id == id } ?: return null
+        val aligned = List(chunks.size) { indexInChunk -> titles.getOrElse(indexInChunk) { "" } }
+        val chunkArray = JSONArray()
+        chunks.forEach { chunkArray.put(it) }
+        val titleArray = JSONArray()
+        aligned.forEach { titleArray.put(it) }
+        val body = JSONObject().put("chunks", chunkArray).put("titles", titleArray)
+        readJsonObject(id)?.optJSONArray("read")?.let { body.put("read", it) }
+        File(root, "$id.json").writeText(body.toString())
+        File(root, "$id.analyses.json").delete()
+        val updated = current.copy(chunkIndex = 0, chunkCount = chunks.size, updatedAt = now)
+        writeIndex(index.copy(books = index.books.map { if (it.id == id) updated else it }))
+        return updated
+    }
+
     fun delete(id: String) {
         val index = readIndex()
         val last = if (index.lastId == id) null else index.lastId
         writeIndex(index.copy(lastId = last, books = index.books.filter { it.id != id }))
         File(root, "$id.json").delete()
+        File(root, "$id.analyses.json").delete()
+    }
+
+    fun loadRead(id: String): Set<String> {
+        val array = readJsonObject(id)?.optJSONArray("read") ?: return emptySet()
+        return (0 until array.length()).map { array.optString(it) }.filter { it.isNotEmpty() }.toSet()
+    }
+
+    fun markRead(id: String, key: String): Boolean {
+        if (key.isBlank()) return false
+        val file = File(root, "$id.json")
+        if (!file.exists()) return false
+        val json = readJsonObject(id) ?: return false
+        val array = json.optJSONArray("read") ?: JSONArray()
+        val existing = (0 until array.length()).map { array.optString(it) }
+        if (key !in existing) {
+            array.put(key)
+            json.put("read", array)
+            writeReplacing(file, json.toString())
+        }
+        return true
     }
 
     fun updatePosition(id: String, chunkIndex: Int, now: Long = System.currentTimeMillis()) {
@@ -84,6 +152,16 @@ class ShelfStore(private val root: File) {
     }
 
     private data class BookFile(val chunks: List<String>, val titles: List<String>)
+
+    private fun readJsonObject(id: String): JSONObject? {
+        val file = File(root, "$id.json")
+        if (!file.exists()) return null
+        val text = file.readText().trim()
+        if (text.startsWith("[")) {
+            return JSONObject().put("chunks", JSONArray(text)).put("titles", JSONArray())
+        }
+        return JSONObject(text)
+    }
 
     private fun readBook(id: String): BookFile {
         val file = File(root, "$id.json")
