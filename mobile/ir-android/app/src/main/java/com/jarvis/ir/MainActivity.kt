@@ -44,7 +44,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.jarvis.ir.analysis.AnalysisRestore
 import com.jarvis.ir.analysis.AnalysisSave
+import com.jarvis.ir.analysis.AnalysisView
 import com.jarvis.ir.analysis.AnalysisShare
 import com.jarvis.ir.analysis.PageAnalysisStore
 import com.jarvis.ir.books.BookChapters
@@ -376,8 +378,12 @@ class MainActivity : ComponentActivity() {
                                     error = analysisError,
                                     running = analysisRunning,
                                     bookTitle = bookTitle,
-                                    onRun = { kind -> openAnalysis(kind, scope) },
-                                    onCancel = { cancelAnalysis() },
+                                    selectedKind = analysisKind ?: AnalysisView.VOCAB,
+                                    onSelect = { kind -> showSaved(kind) },
+                                    onGenerate = {
+                                        startAnalysis(analysisKind ?: AnalysisView.VOCAB, scope)
+                                    },
+                                    onCancel = { stopAnalysis() },
                                     onShare = { body -> shareAnalysis(body) },
                                     onNote = { paragraph -> saveNote(bookTitle, paragraph) },
                                     onRewrite = if (analysisSaved && analysisKind != null) {
@@ -600,6 +606,7 @@ class MainActivity : ComponentActivity() {
         bookTitle = last.title
         readKeys = shelfStore.loadRead(last.id)
         showShelf = false
+        showSaved(AnalysisView.VOCAB)
         noteArticleProgress()
     }
 
@@ -619,6 +626,7 @@ class MainActivity : ComponentActivity() {
         bookTitle = entry.title
         readKeys = shelfStore.loadRead(entry.id)
         shelfStore.updatePosition(entry.id, chunkIndex)
+        showSaved(AnalysisView.VOCAB)
         noteArticleProgress()
         shelfBooks = shelfStore.list()
         showShelf = false
@@ -635,6 +643,7 @@ class MainActivity : ComponentActivity() {
         bookTitle = "样例"
         readKeys = emptySet()
         showShelf = false
+        showSaved(AnalysisView.VOCAB)
     }
 
     private fun moveChunk(index: Int) {
@@ -651,7 +660,7 @@ class MainActivity : ComponentActivity() {
             shelfStore.updatePosition(it, chunkIndex)
             shelfBooks = shelfStore.list()
         }
-        if (changed) restoreAnalysis()
+        if (changed) showSaved(AnalysisView.VOCAB)
         noteArticleProgress()
     }
 
@@ -681,6 +690,28 @@ class MainActivity : ComponentActivity() {
         startActivity(Intent.createChooser(send, "分享"))
     }
 
+    private fun stopAnalysis() {
+        val kind = analysisKind ?: return
+        val id = bookId
+        val page = chunkIndex
+        cancelAnalysis()
+        restoreUnsuccessful(id, page, kind)
+    }
+
+    private fun restoreUnsuccessful(startedBook: String?, startedPage: Int, startedKind: String) {
+        val state = AnalysisRestore.screen(
+            startedBook,
+            startedPage,
+            startedKind,
+            bookId,
+            chunkIndex,
+            analysisKind,
+            savedAnalysis(startedKind),
+        ) ?: return
+        analysisText = state.text
+        analysisSaved = state.saved
+    }
+
     private fun cancelAnalysis() {
         analysisJob?.cancel()
         when (val transport = analysisTransport) {
@@ -700,24 +731,13 @@ class MainActivity : ComponentActivity() {
         showAnalysis = false
     }
 
-    private fun openAnalysis(kind: String, scope: CoroutineScope) {
-        val saved = savedAnalysis(kind)
-        analysisKind = kind
-        if (saved.isNotBlank()) {
-            cancelAnalysis()
-            analysisText = saved
-            analysisError = ""
-            analysisSaved = true
-            return
-        }
-        startAnalysis(kind, scope)
-    }
-
-    private fun restoreAnalysis() {
-        val kind = analysisKind ?: return
-        val saved = savedAnalysis(kind)
-        analysisText = saved
-        analysisSaved = saved.isNotBlank()
+    private fun showSaved(kind: String) {
+        cancelAnalysis()
+        val state = AnalysisView.show(kind, savedAnalysis(kind))
+        analysisKind = state.kind
+        analysisText = state.text
+        analysisError = ""
+        analysisSaved = state.saved
     }
 
     private fun savedAnalysis(kind: String): String {
@@ -734,6 +754,7 @@ class MainActivity : ComponentActivity() {
         analysisRunning = true
         val title = bookTitle
         val index = chunkIndex
+        val startedBook = bookId
         val passage = chunks.getOrElse(index) { "" }
         val useMimo = analysisProvider == AnalysisProvider.MIMO
         val transport = if (useMimo) HttpMimoTransport() else HttpGlmTransport()
@@ -758,7 +779,7 @@ class MainActivity : ComponentActivity() {
                 }
                 completed = true
             } catch (_: CancellationException) {
-                // Keep text already received.
+                // stopAnalysis restores the saved text when this page is still open.
             } catch (e: GlmConfigException) {
                 if (StreamGate.isCurrent(analysisTransport, transport)) {
                     analysisError = e.message ?: GlmKey.MISSING
@@ -782,11 +803,14 @@ class MainActivity : ComponentActivity() {
                 }
             } finally {
                 if (analysisTransport === transport) {
-                    if (AnalysisSave.shouldPersist(completed, analysisError, analysisText)) {
-                        val id = bookId
-                        if (id != null && pageAnalysis.save(id, index, kind, analysisText.trim())) {
-                            analysisSaved = true
-                        }
+                    val text = analysisText
+                    val wrote = AnalysisSave.shouldPersist(completed, analysisError, text) &&
+                        startedBook != null &&
+                        pageAnalysis.save(startedBook, index, kind, text.trim())
+                    if (wrote) {
+                        analysisSaved = true
+                    } else {
+                        restoreUnsuccessful(startedBook, index, kind)
                     }
                     analysisRunning = false
                 }
@@ -844,6 +868,7 @@ class MainActivity : ComponentActivity() {
         readKeys = shelfStore.loadRead(entry.id)
         shelfBooks = shelfStore.list()
         showShelf = false
+        showSaved(AnalysisView.VOCAB)
         noteArticleProgress()
     }
 
@@ -860,6 +885,7 @@ class MainActivity : ComponentActivity() {
             chunks = pages.map { it.text }
             chunkTitles = pages.map { it.title }
             chunkIndex = 0
+            showSaved(AnalysisView.VOCAB)
             noteArticleProgress()
         }
     }
