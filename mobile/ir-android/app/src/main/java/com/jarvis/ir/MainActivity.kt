@@ -84,6 +84,7 @@ import com.jarvis.ir.mimo.MimoAnalysis
 import com.jarvis.ir.mimo.MimoConfigException
 import com.jarvis.ir.mimo.MimoHttpException
 import com.jarvis.ir.mimo.MimoKey
+import com.jarvis.ir.speak.PassageSpeak
 import com.jarvis.ir.mimo.MimoProtocol
 import com.jarvis.ir.glm.GlmProtocol
 import com.jarvis.ir.glm.HttpGlmTransport
@@ -138,6 +139,10 @@ class MainActivity : ComponentActivity() {
     private var glmStatus by mutableStateOf("")
     private var glmBusy by mutableStateOf(false)
     private var mimoKey by mutableStateOf("")
+    private var speakEngine by mutableStateOf("browser")
+    private var voiceEn by mutableStateOf("female")
+    private var voiceZh by mutableStateOf("female")
+    private var mimoStyle by mutableStateOf(PassageSpeak.DEFAULT_STYLE)
     private var mimoStatus by mutableStateOf("")
     private var mimoBusy by mutableStateOf(false)
     private var analysisText by mutableStateOf("")
@@ -164,6 +169,11 @@ class MainActivity : ComponentActivity() {
         )
         glmKey = modelPrefs.getString(GlmKey.PREF_KEY, "").orEmpty()
         mimoKey = modelPrefs.getString(MimoKey.PREF_KEY, "").orEmpty()
+        val speakPrefs = getSharedPreferences(MimoKey.PREFS, Context.MODE_PRIVATE)
+        speakEngine = PassageSpeak.engine(speakPrefs.getString(PassageSpeak.PREF_ENGINE, null))
+        voiceEn = PassageSpeak.gender(speakPrefs.getString(PassageSpeak.PREF_VOICE_EN, null))
+        voiceZh = PassageSpeak.gender(speakPrefs.getString(PassageSpeak.PREF_VOICE_ZH, null))
+        mimoStyle = PassageSpeak.style(speakPrefs.getString(PassageSpeak.PREF_STYLE, null))
         shelfStore = ShelfStore(File(filesDir, "shelf"))
         pageAnalysis = PageAnalysisStore(File(filesDir, "shelf"))
         noteStore = NoteStore(File(filesDir, "notes/notes.json"))
@@ -347,6 +357,7 @@ class MainActivity : ComponentActivity() {
                                                     glossStatus = GlossSession.NOT_DOWNLOADED
                                                 },
                                                 heading = shown.heading,
+                                                mimoKey = mimoKey,
                                                 onTurn = if (
                                                     info != null &&
                                                     ReadingDisplay.allowsEdge(info.magazine) &&
@@ -502,6 +513,14 @@ class MainActivity : ComponentActivity() {
                                 mimoKey = trimmed
                                 mimoStatus = "已保存"
                             },
+                            speakEngine = speakEngine,
+                            onSpeakEngine = { speakEngine = it; saveSpeakPrefs() },
+                            voiceEn = voiceEn,
+                            onVoiceEn = { voiceEn = it; saveSpeakPrefs() },
+                            voiceZh = voiceZh,
+                            onVoiceZh = { voiceZh = it; saveSpeakPrefs() },
+                            mimoStyle = mimoStyle,
+                            onMimoStyle = { mimoStyle = it; saveSpeakPrefs() },
                             onTestMimo = { draft ->
                                 mimoBusy = true
                                 mimoStatus = "测试中…"
@@ -671,6 +690,16 @@ class MainActivity : ComponentActivity() {
         if (page.readKey in readKeys) return
         if (!shelfStore.markRead(id, page.readKey)) return
         readKeys = readKeys + page.readKey
+    }
+
+    private fun saveSpeakPrefs() {
+        getSharedPreferences(MimoKey.PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(PassageSpeak.PREF_ENGINE, speakEngine)
+            .putString(PassageSpeak.PREF_VOICE_EN, voiceEn)
+            .putString(PassageSpeak.PREF_VOICE_ZH, voiceZh)
+            .putString(PassageSpeak.PREF_STYLE, mimoStyle)
+            .apply()
     }
 
     private fun saveNote(title: String, content: String, explanation: String = "") {

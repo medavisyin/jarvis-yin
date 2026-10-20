@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.jarvis.ir.speak.PassageSpeak
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -49,7 +50,16 @@ fun SettingsDialog(
     mimoBusy: Boolean,
     onSaveMimo: (String) -> Unit,
     onTestMimo: (String) -> Unit,
+    speakEngine: String,
+    onSpeakEngine: (String) -> Unit,
+    voiceEn: String,
+    onVoiceEn: (String) -> Unit,
+    voiceZh: String,
+    onVoiceZh: (String) -> Unit,
+    mimoStyle: String,
+    onMimoStyle: (String) -> Unit,
 ) {
+    var stylesOpen by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = {
@@ -75,6 +85,31 @@ fun SettingsDialog(
                     onDownload = onDownload,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Text("阅读全文", modifier = Modifier.padding(top = 12.dp))
+                listOf("browser" to "浏览器", "mimo" to "MiMo").forEach { (id, label) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = speakEngine == id, onClick = { onSpeakEngine(id) })
+                        Text(label)
+                    }
+                }
+                Text("Voice EN", modifier = Modifier.padding(top = 4.dp))
+                listOf("female" to "女", "male" to "男").forEach { (id, label) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = voiceEn == id, onClick = { onVoiceEn(id) })
+                        Text(label)
+                    }
+                }
+                Text("Voice ZH")
+                listOf("female" to "女", "male" to "男").forEach { (id, label) ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = voiceZh == id, onClick = { onVoiceZh(id) })
+                        Text(label)
+                    }
+                }
+                if (speakEngine == "mimo") {
+                    Text("Style", modifier = Modifier.padding(top = 4.dp))
+                    TextButton(onClick = { stylesOpen = true }) { Text(mimoStyle) }
+                }
                 Text("分析模型", modifier = Modifier.padding(top = 12.dp))
                 listOf(AnalysisProvider.GLM to "GLM", AnalysisProvider.MIMO to "MiMo").forEach { (id, label) ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -146,4 +181,29 @@ fun SettingsDialog(
             }
         },
     )
+    if (stylesOpen) {
+        AlertDialog(
+            onDismissRequest = { stylesOpen = false },
+            confirmButton = {
+                TextButton(onClick = { stylesOpen = false }) { Text("关闭") }
+            },
+            title = { Text("Style") },
+            text = {
+                Column(Modifier.verticalScroll(rememberScrollState())) {
+                    PassageSpeak.STYLES.forEach { item ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(
+                                selected = mimoStyle == item,
+                                onClick = {
+                                    onMimoStyle(item)
+                                    stylesOpen = false
+                                },
+                            )
+                            Text(item)
+                        }
+                    }
+                }
+            },
+        )
+    }
 }

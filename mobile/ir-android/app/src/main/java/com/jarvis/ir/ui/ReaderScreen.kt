@@ -1,8 +1,14 @@
 package com.jarvis.ir.ui
 
+import android.content.Context
+import android.content.SharedPreferences
+import android.media.MediaPlayer
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
+import android.speech.tts.Voice
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -47,12 +53,21 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.jarvis.ir.books.ReadingDisplay
 import com.jarvis.ir.explain.ExplainCard
+import com.jarvis.ir.mimo.MimoKey
+import com.jarvis.ir.mimo.MimoTtsClient
+import com.jarvis.ir.mimo.MimoTtsException
+import com.jarvis.ir.speak.PassageSpeak
 import com.jarvis.ir.notes.NoteExplanation
 import com.jarvis.ir.explain.ExplainPipeline
 import com.jarvis.ir.explain.GlossPrompt
 import com.jarvis.ir.explain.GlossSession
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import java.io.File
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlin.math.roundToInt
 
 @Composable
@@ -67,6 +82,7 @@ fun ReaderScreen(
     onQuote: (String, String) -> Unit = { _, _ -> },
     heading: String? = null,
     onTurn: ((Int) -> Unit)? = null,
+    mimoKey: String = "",
     modifier: Modifier = Modifier,
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -97,9 +113,40 @@ fun ReaderScreen(
             }
         }
         onDispose {
+            engine?.stop()
             engine?.shutdown()
             speaker = null
             speakReady = false
+        }
+    }
+    var readBusy by remember(passage) { mutableStateOf(false) }
+    var readError by remember(passage) { mutableStateOf("") }
+    var resumeOffset by remember(passage) { mutableIntStateOf(0) }
+    var readJob by remember(passage) { mutableStateOf<Job?>(null) }
+    val readPlace = remember(passage) { mutableIntStateOf(0) }
+    fun stopRead(keepPlace: Boolean) {
+        readJob?.cancel()
+        readJob = null
+        speaker?.stop()
+        readBusy = false
+        if (keepPlace && readPlace.intValue > 0) resumeOffset = readPlace.intValue else if (!keepPlace) resumeOffset = 0
+    }
+    DisposableEffect(passage) {
+        val prefs = context.getSharedPreferences(MimoKey.PREFS, Context.MODE_PRIVATE)
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (
+                key == PassageSpeak.PREF_ENGINE ||
+                key == PassageSpeak.PREF_VOICE_EN ||
+                key == PassageSpeak.PREF_VOICE_ZH ||
+                key == PassageSpeak.PREF_STYLE
+            ) {
+                stopRead(true)
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose {
+            prefs.unregisterOnSharedPreferenceChangeListener(listener)
+            stopRead(false)
         }
     }
     var glossJob by remember { mutableStateOf<Job?>(null) }
@@ -124,12 +171,99 @@ fun ReaderScreen(
         }
     }
 
+    fun startRead() {
+        if (readBusy) {
+            stopRead(true)
+            return
+        }
+        val text = passage.trim()
+        if (text.isEmpty()) return
+        val prefs = context.getSharedPreferences(MimoKey.PREFS, Context.MODE_PRIVATE)
+        val selected = PassageSpeak.choice(
+            prefs.getString(PassageSpeak.PREF_ENGINE, null),
+            prefs.getString(PassageSpeak.PREF_VOICE_EN, null),
+            prefs.getString(PassageSpeak.PREF_VOICE_ZH, null),
+            prefs.getString(PassageSpeak.PREF_STYLE, null),
+        )
+        val pageLang = PassageSpeak.lang(text)
+        val gender = if (pageLang == "zh") selected.voiceZh else selected.voiceEn
+        val max = if (selected.engine == "mimo") PassageSpeak.PASSAGE_CHUNK else PassageSpeak.BROWSER_CHUNK
+        val pieces = PassageSpeak.chunks(text, max)
+        if (pieces.isEmpty()) return
+        val found = PassageSpeak.starts(text, pieces)
+        val startAt = PassageSpeak.indexAt(found, resumeOffset)
+        readError = ""
+        readBusy = true
+        readJob = scope.launch {
+            try {
+                if (selected.engine == "mimo") {
+                    val key = try {
+                        MimoKey.require(mimoKey)
+                    } catch (e: Exception) {
+                        readError = e.message ?: MimoKey.MISSING
+                        return@launch
+                    }
+                    PassageSpeak.playPrefetched(
+                        from = startAt,
+                        until = pieces.size,
+                        fetch = { index ->
+                            val spoken = PassageSpeak.withStyle(pieces[index], selected.style)
+                            MimoTtsClient.wav(key, PassageSpeak.ttsBody(spoken, pageLang, gender))
+                        },
+                        onChunk = { index -> readPlace.intValue = found[index] },
+                        play = { wav -> playWav(context.cacheDir, wav) },
+                    )
+                } else {
+                    val synth = speaker
+                    if (synth == null) {
+                        readError = "手机不能朗读"
+                        return@launch
+                    }
+                    applySystemVoice(synth, pageLang, gender)
+                    for (index in startAt until pieces.size) {
+                        if (!isActive) return@launch
+                        readPlace.intValue = found[index]
+                        speakUtterance(synth, pieces[index])
+                    }
+                }
+                if (isActive) {
+                    readPlace.intValue = 0
+                    resumeOffset = 0
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: MimoTtsException) {
+                if (isActive) {
+                    readError = e.message ?: MimoTtsClient.FAILED
+                    if (readPlace.intValue > 0) resumeOffset = readPlace.intValue
+                }
+            } catch (_: Exception) {
+                if (isActive) {
+                    readError = "朗读失败"
+                    if (readPlace.intValue > 0) resumeOffset = readPlace.intValue
+                }
+            } finally {
+                readBusy = false
+                readJob = null
+            }
+        }
+    }
     Box(modifier.fillMaxSize()) {
     Column(
         Modifier
             .fillMaxSize()
-            .background(readingPaper)
-            .padding(horizontal = 28.dp, vertical = 20.dp)
+            .background(readingPaper),
+    ) {
+    PassageSpeakBar(
+        speaking = readBusy,
+        canResume = resumeOffset > 0,
+        error = readError,
+        onToggle = { startRead() },
+    )
+    Column(
+        Modifier
+            .weight(1f)
+            .padding(horizontal = 28.dp, vertical = 12.dp)
             .onSizeChanged { viewportHeight = it.height }
             .verticalScroll(scroll),
     ) {
@@ -283,6 +417,7 @@ fun ReaderScreen(
         }
     }
     }
+    }
     val shown = card
     if (shown != null) {
         Dialog(onDismissRequest = {
@@ -304,6 +439,69 @@ fun ReaderScreen(
             )
         }
     }
+}
+
+private suspend fun speakUtterance(tts: TextToSpeech, text: String) {
+    suspendCancellableCoroutine { cont ->
+        tts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(utteranceId: String?) = Unit
+            override fun onDone(utteranceId: String?) {
+                if (cont.isActive) cont.resume(Unit)
+            }
+            override fun onError(utteranceId: String?) {
+                if (cont.isActive) cont.resumeWithException(IllegalStateException("朗读失败"))
+            }
+        })
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, Bundle(), "ir-page")
+        cont.invokeOnCancellation { tts.stop() }
+    }
+}
+
+private suspend fun playWav(cacheDir: File, wav: ByteArray) {
+    val file = File.createTempFile("ir-speak", ".wav", cacheDir)
+    file.writeBytes(wav)
+    suspendCancellableCoroutine { cont ->
+        val player = MediaPlayer()
+        fun finish(error: Throwable?) {
+            player.release()
+            file.delete()
+            if (!cont.isActive) return
+            if (error == null) cont.resume(Unit) else cont.resumeWithException(error)
+        }
+        player.setOnCompletionListener { finish(null) }
+        player.setOnErrorListener { _, _, _ ->
+            finish(IllegalStateException("朗读失败"))
+            true
+        }
+        cont.invokeOnCancellation {
+            player.release()
+            file.delete()
+        }
+        try {
+            player.setDataSource(file.absolutePath)
+            player.prepare()
+            player.start()
+        } catch (e: Exception) {
+            finish(e)
+        }
+    }
+}
+
+private fun applySystemVoice(tts: TextToSpeech, lang: String, gender: String) {
+    val locale = if (lang == "zh") Locale.SIMPLIFIED_CHINESE else Locale.US
+    val prefix = if (lang == "zh") "zh" else "en"
+    val same = tts.voices.orEmpty().filter { it.locale.language.lowercase().startsWith(prefix) }
+    val match = same.firstOrNull { voiceMatches(it, gender) } ?: same.firstOrNull()
+    if (match != null) tts.voice = match else tts.language = locale
+    tts.setSpeechRate(0.68f)
+}
+
+private fun voiceMatches(voice: Voice, gender: String): Boolean {
+    val name = voice.name
+    val female = Regex("female|\\bwoman\\b|\\bgirl\\b|女|zira|xiaoxiao", RegexOption.IGNORE_CASE).containsMatchIn(name)
+    if (gender == "female") return female
+    if (female) return false
+    return Regex("\\bmale\\b|\\bman\\b|\\bboy\\b|男|david|yunjian", RegexOption.IGNORE_CASE).containsMatchIn(name)
 }
 
 private fun indexAt(layout: TextLayoutResult?, passage: String, offset: Offset): Int? {
