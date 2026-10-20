@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { FinanceSourcesCard } from "@/features/news/FinanceSourcesCard";
 import { WorldSourcesCard } from "@/features/news/WorldSourcesCard";
 import { PageFrame } from "@/layouts/PageFrame";
+import { AUDIO_ENGINES, AUDIO_ENGINE_LABELS, AUDIO_LANGS, AUDIO_VOICES, MIMO_STYLES } from "@/lib/audioSettings";
 
 type Health = {
   ollama?: boolean;
@@ -29,23 +30,10 @@ type GlobalSettings = {
   audio_mimo_style?: string;
 };
 
-const LANGS = ["zh", "en"] as const;
-const VOICES = ["female", "male"] as const;
-const ENGINES = ["edge", "mimo"] as const;
-const ENGINE_LABELS: Record<(typeof ENGINES)[number], string> = {
-  edge: "Edge",
-  mimo: "MiMo-V2.5-TTS",
-};
-const MIMO_STYLES = [
-  "开心", "悲伤", "愤怒", "恐惧", "惊讶", "兴奋", "委屈", "平静", "冷漠",
-  "怅然", "欣慰", "无奈", "愧疚", "释然", "嫉妒", "厌倦", "忐忑", "动情",
-  "温柔", "高冷", "活泼", "严肃", "慵懒", "俏皮", "深沉", "干练", "凌厉",
-  "磁性", "醇厚", "清亮", "空灵", "稚嫩", "苍老", "甜美", "沙哑", "醇雅",
-  "夹子音", "御姐音", "正太音", "大叔音", "台湾腔",
-  "东北话", "四川话", "河南话", "粤语",
-  "孙悟空", "林黛玉",
-  "唱歌",
-] as const;
+const LANGS = AUDIO_LANGS;
+const VOICES = AUDIO_VOICES;
+const ENGINES = AUDIO_ENGINES;
+const ENGINE_LABELS = AUDIO_ENGINE_LABELS;
 
 export function SettingsPage() {
   const [health, setHealth] = useState<Health>({});

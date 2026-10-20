@@ -5,6 +5,22 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ExplainPopover } from "@/features/reading/ExplainPopover";
+import { PassageSpeakBar } from "@/features/reading/PassageSpeakBar";
+import {
+  BROWSER_CHUNK_CHARS,
+  chunkIndexAt,
+  chunkStarts,
+  passageChunks,
+  passageLang,
+  pickBrowserVoice,
+  playChunked,
+  silenceAudio,
+  speakChoiceFromSettings,
+  speakRequestBody,
+  type PassageEngine,
+} from "@/features/reading/passageSpeak";
+import type { AudioVoice } from "@/lib/audioSettings";
+import { browserSpeakRate } from "@/lib/speakRate";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
 import { cn } from "@/lib/utils";
 import { ANALYSIS_LEGEND, renderAnalysisHtml } from "@/lib/analysisMarkdown";
@@ -115,6 +131,21 @@ export function ReadingPage() {
   const [fontSize, setFontSize] = useState<FontSize>(() => readReadingPrefs().fontSize);
   const [splitPercent, setSplitPercent] = useState(() => readReadingPrefs().splitPercent);
   const [analysisOpen, setAnalysisOpen] = useState(false);
+  const [speakEngine, setSpeakEngine] = useState<PassageEngine>("edge");
+  const [voiceEn, setVoiceEn] = useState<AudioVoice>("female");
+  const [voiceZh, setVoiceZh] = useState<AudioVoice>("female");
+  const [mimoStyle, setMimoStyle] = useState("平静");
+  const [readBusy, setReadBusy] = useState(false);
+  const [readError, setReadError] = useState("");
+  const [resumeOffset, setResumeOffset] = useState(0);
+  const readAbort = useRef<AbortController | null>(null);
+  const readGen = useRef(0);
+  const readAudio = useRef<HTMLAudioElement | null>(null);
+  const readUtterance = useRef<SpeechSynthesisUtterance | null>(null);
+  const browserVoices = useRef<SpeechSynthesisVoice[]>([]);
+  const speakTouched = useRef(false);
+  const readPlace = useRef<{ key: string; offset: number } | null>(null);
+  const speakPageKey = `${openId}:${chunk?.chunk_index ?? ""}`;
 
   const loadBooks = useCallback(async () => {
     const data = await apiJson<{ books: Book[] }>("/api/intensive-reading/books");
@@ -124,6 +155,228 @@ export function ReadingPage() {
   useEffect(() => {
     loadBooks().catch((e: Error) => setError(e.message));
   }, [loadBooks]);
+
+  useEffect(() => {
+    apiJson<{
+      audio_engine?: string;
+      audio_voice_en?: string;
+      audio_voice_zh?: string;
+      audio_mimo_style?: string;
+    }>("/api/settings")
+      .then((s) => {
+        const choice = speakChoiceFromSettings(s, speakTouched.current);
+        if (!choice) return;
+        setSpeakEngine(choice.engine === "browser" ? "edge" : choice.engine);
+        setVoiceEn(choice.voiceEn);
+        setVoiceZh(choice.voiceZh);
+        if (choice.style) setMimoStyle(choice.style);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+    const remember = () => {
+      browserVoices.current = synth.getVoices();
+    };
+    remember();
+    synth.addEventListener("voiceschanged", remember);
+    return () => synth.removeEventListener("voiceschanged", remember);
+  }, []);
+
+  const stopRead = useCallback((keepPlace = false) => {
+    const place = readPlace.current;
+    if (keepPlace && place && place.key === speakPageKey && place.offset > 0) {
+      setResumeOffset(place.offset);
+    } else {
+      readPlace.current = null;
+      setResumeOffset(0);
+    }
+    readGen.current += 1;
+    readAbort.current?.abort();
+    readAbort.current = null;
+    if (readAudio.current) {
+      silenceAudio(readAudio.current);
+      readAudio.current = null;
+    }
+    window.speechSynthesis?.cancel();
+    readUtterance.current = null;
+    setReadBusy(false);
+    setReadError("");
+  }, [speakPageKey]);
+
+  useEffect(() => {
+    return () => stopRead();
+  }, [openId, chunk?.chunk_index, stopRead]);
+
+  async function toggleRead() {
+    if (readBusy) {
+      stopRead(true);
+      return;
+    }
+    const text = chunk?.chunk?.text || "";
+    if (!text.trim()) return;
+    const lang = passageLang(text);
+    const gender = lang === "zh" ? voiceZh : voiceEn;
+    setReadError("");
+    if (speakEngine === "browser") {
+      const synth = window.speechSynthesis;
+      if (!synth) {
+        setReadError("浏览器不能朗读");
+        return;
+      }
+      const parts = passageChunks(text, BROWSER_CHUNK_CHARS);
+      if (!parts.length) return;
+      const starts = chunkStarts(text, parts);
+      const startAt = chunkIndexAt(starts, resumeOffset);
+      speakTouched.current = true;
+      const gen = readGen.current + 1;
+      readGen.current = gen;
+      const voices = browserVoices.current.length ? browserVoices.current : synth.getVoices();
+      const voice = pickBrowserVoice(voices, lang, gender);
+      let index = startAt;
+      const speakPart = () => {
+        if (gen !== readGen.current) return;
+        const part = parts[index];
+        if (!part) {
+          readPlace.current = null;
+          setResumeOffset(0);
+          setReadBusy(false);
+          return;
+        }
+        readPlace.current = { key: speakPageKey, offset: starts[index] ?? 0 };
+        index += 1;
+        const utterance = new SpeechSynthesisUtterance(part);
+        utterance.lang = lang === "zh" ? "zh-CN" : "en-US";
+        utterance.rate = browserSpeakRate("slow");
+        if (voice) utterance.voice = voice as SpeechSynthesisVoice;
+        utterance.onend = () => speakPart();
+        utterance.onerror = (event) => {
+          if (gen !== readGen.current) return;
+          if (event.error === "canceled" || event.error === "interrupted") return;
+          setReadError("朗读失败");
+          setReadBusy(false);
+        };
+        readUtterance.current = utterance;
+        synth.speak(utterance);
+        synth.resume();
+      };
+      setReadBusy(true);
+      speakPart();
+      return;
+    }
+    const chunks = passageChunks(text);
+    if (!chunks.length) return;
+    const starts = chunkStarts(text, chunks);
+    const startAt = chunkIndexAt(starts, resumeOffset);
+    const queue = chunks.slice(startAt);
+    let playIndex = startAt;
+    speakTouched.current = true;
+    const gen = readGen.current + 1;
+    readGen.current = gen;
+    const ac = new AbortController();
+    readAbort.current = ac;
+    const audio = new Audio();
+    readAudio.current = audio;
+    let unlocked = false;
+    const finishUnlock = () => {
+      if (unlocked) return;
+      unlocked = true;
+      audio.pause();
+      audio.muted = false;
+    };
+    audio.muted = true;
+    audio.src = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+    void audio.play().then(finishUnlock).catch(finishUnlock);
+    setReadBusy(true);
+    let audioUrl = "";
+    try {
+      await playChunked(
+        queue,
+        async (part, signal) => {
+          const resp = await fetch("/api/intensive-reading/speak", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(
+              speakRequestBody({
+                text: part,
+                engine: speakEngine,
+                lang,
+                gender,
+                style: mimoStyle,
+              }),
+            ),
+            signal,
+          });
+          if (!resp.ok) {
+            let message = "朗读失败";
+            try {
+              const body = (await resp.json()) as { error?: string };
+              if (body?.error) message = body.error;
+            } catch {
+              /* keep the short message */
+            }
+            throw new Error(message);
+          }
+          return resp.blob();
+        },
+        (blob) =>
+          new Promise<void>((resolve, reject) => {
+            if (ac.signal.aborted || gen !== readGen.current) {
+              resolve();
+              return;
+            }
+            finishUnlock();
+            readPlace.current = { key: speakPageKey, offset: starts[playIndex] ?? 0 };
+            playIndex += 1;
+            if (audioUrl) URL.revokeObjectURL(audioUrl);
+            audioUrl = URL.createObjectURL(blob);
+            let live = false;
+            const finish = () => {
+              if (audioUrl) URL.revokeObjectURL(audioUrl);
+              audioUrl = "";
+              resolve();
+            };
+            ac.signal.addEventListener(
+              "abort",
+              () => {
+                silenceAudio(audio);
+                finish();
+              },
+              { once: true },
+            );
+            audio.onended = () => {
+              if (live) finish();
+            };
+            audio.onerror = () => {
+              if (!live) return;
+              if (audioUrl) URL.revokeObjectURL(audioUrl);
+              audioUrl = "";
+              reject(new Error("朗读失败"));
+            };
+            audio.src = audioUrl;
+            void audio.play().then(() => {
+              live = true;
+              if (audio.ended) finish();
+            }).catch(reject);
+          }),
+        ac.signal,
+      );
+      if (gen === readGen.current) {
+        readPlace.current = null;
+        setResumeOffset(0);
+      }
+    } catch (e) {
+      if (gen === readGen.current && !(e instanceof DOMException && e.name === "AbortError")) {
+        setReadError(e instanceof Error ? e.message : "朗读失败");
+        const place = readPlace.current;
+        if (place && place.key === speakPageKey && place.offset > 0) setResumeOffset(place.offset);
+      }
+    } finally {
+      if (gen === readGen.current) setReadBusy(false);
+    }
+  }
 
   useEffect(() => {
     setBookOpen(Boolean(openId));
@@ -508,8 +761,38 @@ export function ReadingPage() {
       {(() => {
         const passage = (
         <section className="border-border reading-paper flex h-full min-h-0 flex-col overflow-hidden rounded-xl border">
-          <div className="text-muted-foreground flex items-center gap-2 border-b px-3 py-2 text-xs">
+          <div className="text-muted-foreground flex flex-wrap items-center gap-2 border-b px-3 py-2 text-xs">
             <span>Passage · 选中词句后点「解释」</span>
+            <PassageSpeakBar
+              engine={speakEngine}
+              voiceEn={voiceEn}
+              voiceZh={voiceZh}
+              style={mimoStyle}
+              speaking={readBusy}
+              canResume={resumeOffset > 0}
+              error={readError}
+              onEngine={(next) => {
+                speakTouched.current = true;
+                stopRead(true);
+                setSpeakEngine(next);
+              }}
+              onVoiceEn={(next) => {
+                speakTouched.current = true;
+                stopRead(true);
+                setVoiceEn(next);
+              }}
+              onVoiceZh={(next) => {
+                speakTouched.current = true;
+                stopRead(true);
+                setVoiceZh(next);
+              }}
+              onStyle={(next) => {
+                speakTouched.current = true;
+                stopRead(true);
+                setMimoStyle(next);
+              }}
+              onToggle={() => void toggleRead()}
+            />
             {toc.length > 0 ? (
               <div className="relative ml-auto">
                 <Button size="xs" variant="outline" onClick={() => setShowToc((v) => !v)}>

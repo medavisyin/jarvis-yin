@@ -9,3 +9,4 @@ pyarrow>=21.0.0,<24.0.0
 apscheduler>=3.10,<4
 langfuse>=4.0.0
 zai-sdk>=0.2.3
+edge-tts>=7.3.1

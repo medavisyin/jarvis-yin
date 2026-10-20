@@ -132,9 +132,16 @@ def _leading_style(text: str) -> str:
     return token[0] if token else ""
 
 
-def voice_for_lang(lang: str, text: str = "") -> str:
-    """Preset voice. China default mimo_default is 冰糖 (female), so male timbre tags use 白桦."""
+def voice_for_lang(lang: str, text: str = "", gender: str | None = None) -> str:
+    """Preset voice. China default mimo_default is 冰糖 (female), so male timbre tags use 白桦.
+
+    An explicit gender wins over the style tag. Omitted gender keeps the style rule.
+    """
     english = (lang or "").lower().startswith("en")
+    if gender in ("male", "female"):
+        if gender == "male":
+            return "Dean" if english else "白桦"
+        return "Mia" if english else "mimo_default"
     if _leading_style(text) in _MALE_STYLES:
         return "Dean" if english else "白桦"
     if english:
@@ -277,12 +284,12 @@ def probe(client) -> str:
     return getattr(message, "content", None) or ""
 
 
-def tts_kwargs(text: str, lang: str = "zh") -> dict:
+def tts_kwargs(text: str, lang: str = "zh", gender: str | None = None) -> dict:
     return {
         "model": TTS_MODEL,
         "messages": [{"role": "assistant", "content": text}],
         "extra_body": {
-            "audio": {"format": "wav", "voice": voice_for_lang(lang, text)},
+            "audio": {"format": "wav", "voice": voice_for_lang(lang, text, gender=gender)},
         },
     }
 
@@ -306,8 +313,8 @@ def _audio_b64(audio) -> str:
     return getattr(audio, "data", None) or ""
 
 
-def synthesize_wav(client, text: str, *, lang: str = "zh") -> bytes:
-    response = client.chat.completions.create(**tts_kwargs(text, lang=lang))
+def synthesize_wav(client, text: str, *, lang: str = "zh", gender: str | None = None) -> bytes:
+    response = client.chat.completions.create(**tts_kwargs(text, lang=lang, gender=gender))
     return decode_audio(response.choices[0].message)
 
 

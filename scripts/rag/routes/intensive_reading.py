@@ -958,15 +958,22 @@ def _global_settings() -> dict:
 
 def _speak_voice_en() -> str:
     gender = "female"
-    try:
-        import agent as agent_mod
-
-        gs = getattr(agent_mod, "_GLOBAL_SETTINGS", None) or {}
-        if isinstance(gs, dict) and gs.get("audio_voice_en"):
-            gender = gs.get("audio_voice_en")
-    except Exception:
-        pass
+    gs = _global_settings()
+    if gs.get("audio_voice_en"):
+        gender = gs.get("audio_voice_en")
     return resolve_tts_voice("en", gender)
+
+
+def _present_choice(data: dict, key: str, allowed: set[str] | frozenset[str], *, lower: bool) -> str | None:
+    if key not in data or data.get(key) in (None, ""):
+        return None
+    raw = data.get(key)
+    if not isinstance(raw, str):
+        raise ValueError(f"invalid {key}")
+    value = raw.strip().lower() if lower else raw.strip()
+    if value not in allowed:
+        raise ValueError(f"invalid {key}")
+    return value
 
 
 @intensive_reading_bp.route("/api/intensive-reading/speak", methods=["POST"])
@@ -974,25 +981,48 @@ def api_speak_selection():
     data = request.get_json(silent=True) or {}
     try:
         text = validate_speak_text(data.get("text"))
+        engine = _present_choice(data, "engine", {"edge", "mimo"}, lower=True)
+        lang = _present_choice(data, "lang", {"en", "zh"}, lower=True)
+        gender = _present_choice(data, "gender", {"female", "male"}, lower=True)
+        import mimo_chat
+        style = _present_choice(data, "style", mimo_chat.STYLES, lower=False)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
     rate = edge_rate_for(data.get("rate"))
-    pad = can_pad_silence()
-    spoken = speak_text_for_tts(text, pad_silence=pad)
+    if data.get("pad") is False:
+        pad = False
+        spoken = text
+    else:
+        pad = can_pad_silence()
+        spoken = speak_text_for_tts(text, pad_silence=pad)
     gs = _global_settings()
+    use_engine = engine or (gs.get("audio_engine") or "edge")
+    if use_engine != "mimo":
+        use_engine = "edge"
+    use_lang = lang or "en"
     try:
-        if (gs.get("audio_engine") or "edge") == "mimo":
-            import mimo_chat
-            style = gs.get("audio_mimo_style") or mimo_chat.DEFAULT_STYLE
+        if use_engine == "mimo":
+            use_style = style or gs.get("audio_mimo_style") or mimo_chat.DEFAULT_STYLE
+            if use_style not in mimo_chat.STYLES:
+                use_style = mimo_chat.DEFAULT_STYLE
             key = mimo_chat.require_key(gs.get("mimo_api_key") or "")
+            wav_kwargs = {"lang": use_lang}
+            if gender:
+                wav_kwargs["gender"] = gender
             wav = mimo_chat.synthesize_wav(
                 mimo_chat.make_client(key),
-                mimo_chat.with_style(spoken, style),
-                lang="en",
+                mimo_chat.with_style(spoken, use_style),
+                **wav_kwargs,
             )
             audio = mimo_chat.wav_to_mp3(wav)
         else:
-            audio = synthesize_speech(text=spoken, voice=_speak_voice_en(), rate=rate)
+            if gender:
+                voice = resolve_tts_voice(use_lang, gender)
+            elif use_lang == "zh":
+                voice = resolve_tts_voice("zh", gs.get("audio_voice_zh"))
+            else:
+                voice = _speak_voice_en()
+            audio = synthesize_speech(text=spoken, voice=voice, rate=rate)
         if pad:
             audio = prepend_silence_mp3(audio)
     except TimeoutError:

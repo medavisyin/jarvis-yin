@@ -159,6 +159,14 @@ def test_with_style_prefixes_only_when_missing():
     assert mimo_chat.with_style("（慵懒）再睡五分钟", "平静") == "（慵懒）再睡五分钟"
 
 
+def test_voice_for_lang_gender_overrides_style():
+    assert mimo_chat.voice_for_lang("en", "(平静)hello", gender="male") == "Dean"
+    assert mimo_chat.voice_for_lang("en", "(磁性)hello", gender="female") == "Mia"
+    assert mimo_chat.voice_for_lang("zh", "(平静)你好", gender="male") == "白桦"
+    assert mimo_chat.voice_for_lang("zh", "(磁性)你好", gender="female") == "mimo_default"
+    assert mimo_chat.voice_for_lang("en", "(磁性)hello") == "Dean"
+
+
 def test_voice_for_lang():
     assert mimo_chat.voice_for_lang("zh") == "mimo_default"
     assert mimo_chat.voice_for_lang("en") == "Mia"
