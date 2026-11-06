@@ -106,6 +106,23 @@ class ShelfStore(private val root: File) {
         writeIndex(index.copy(lastId = last, books = index.books.filter { it.id != id }))
         File(root, "$id.json").delete()
         File(root, "$id.analyses.json").delete()
+        File(root, "$id.pdf").delete()
+        File(root, "$id.epub").delete()
+    }
+
+    fun saveOriginal(id: String, extension: String, bytes: ByteArray) {
+        val ext = extension.removePrefix(".").lowercase()
+        if (ext != "pdf" && ext != "epub") return
+        root.mkdirs()
+        File(root, "$id.$ext").writeBytes(bytes)
+    }
+
+    fun originalFile(id: String): File? {
+        val pdf = File(root, "$id.pdf")
+        if (pdf.isFile) return pdf
+        val epub = File(root, "$id.epub")
+        if (epub.isFile) return epub
+        return null
     }
 
     fun loadRead(id: String): Set<String> {

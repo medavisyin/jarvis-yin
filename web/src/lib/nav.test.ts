@@ -21,7 +21,8 @@ describe("NAV", () => {
     expect(news && isNavGroup(news)).toBe(true);
     expect(stock && isNavGroup(stock)).toBe(true);
     expect(medavis && isNavGroup(medavis)).toBe(true);
-    expect(NAV.filter((n) => !isNavGroup(n)).map((n) => n.label)).toEqual(["Chat", "Reading", "Settings"]);
+    expect(NAV.filter((n) => !isNavGroup(n)).map((n) => n.label)).toEqual(["Chat", "Notes", "Reading", "Settings"]);
+    expect(NAV.find((n) => n.label === "Notes")?.to).toBe("/notes");
     expect(isNavGroup(news!) ? news.children.map((c) => c.label) : []).toEqual(NEWS_TABS.map((t) => t.label));
     expect(isNavGroup(news!) ? news.children.map((c) => c.to) : []).toEqual([
       "/news/daily",
@@ -32,7 +33,6 @@ describe("NAV", () => {
       "/news/trend",
       "/news/finance",
       "/news/learning",
-      "/news/notes",
     ]);
     expect(isNavGroup(stock!) ? stock.children.map((c) => c.to) : []).toEqual([
       "/stock/watch",

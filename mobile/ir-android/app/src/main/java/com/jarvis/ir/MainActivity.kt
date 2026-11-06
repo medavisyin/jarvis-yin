@@ -97,6 +97,7 @@ import com.jarvis.ir.ui.ReaderScreen
 import com.jarvis.ir.ui.SettingsDialog
 import com.jarvis.ir.ui.ShelfScreen
 import com.jarvis.ir.ui.analysisBesidePassage
+import com.jarvis.ir.ui.OriginalDocument
 import com.jarvis.ir.ui.readingInk
 import com.jarvis.ir.ui.readingPaper
 import java.io.File
@@ -123,6 +124,7 @@ class MainActivity : ComponentActivity() {
     private var notes by mutableStateOf(listOf<Note>())
     private lateinit var noteStore: NoteStore
     private var bookTitle by mutableStateOf("样例")
+    private var bookKind by mutableStateOf("txt")
     private var bookId by mutableStateOf<String?>(null)
     private var readKeys by mutableStateOf(setOf<String>())
     private var shelfBooks by mutableStateOf(listOf<ShelfEntry>())
@@ -315,7 +317,48 @@ class MainActivity : ComponentActivity() {
                             val wide = analysisBesidePassage(maxWidth.value.toInt())
                             val passage: @Composable (Modifier) -> Unit = { passageModifier ->
                                 Box(passageModifier) {
-                                    key(bookId ?: "sample") {
+                                    val original = bookId?.let { id ->
+                                        if (bookKind == "pdf" || bookKind == "epub") shelfStore.originalFile(id) else null
+                                    }
+                                    if (original != null) {
+                                        val stored = chunks.getOrElse(chunkIndex) { "" }
+                                        ReaderScreen(
+                                            passage = stored,
+                                            pipeline = pipeline,
+                                            gloss = gloss,
+                                            glossModel = glossModel,
+                                            glossReady = glossReady,
+                                            onNote = { selected, explanation ->
+                                                saveNote(bookTitle, selected, explanation)
+                                            },
+                                            onQuote = { sentence, explanation ->
+                                                saveNote(bookTitle, sentence, explanation)
+                                            },
+                                            onModelRejected = {
+                                                glossReady = false
+                                                glossStatus = GlossSession.NOT_DOWNLOADED
+                                            },
+                                            mimoKey = mimoKey,
+                                            originalBody = {
+                                                OriginalDocument(
+                                                    file = original,
+                                                    kind = bookKind,
+                                                    pipeline = pipeline,
+                                                    chapterTitle = readingPages.getOrNull(chunkIndex)?.article.orEmpty(),
+                                                    chapterExcerpt = chunks.getOrElse(chunkIndex) { "" },
+                                                    chapterIndex = chunkIndex,
+                                                    onChapterSwipe = { delta ->
+                                                        val target = ReadingDisplay.turnedIndex(chunkIndex, delta, chunks.size)
+                                                        if (target != null) moveChunk(target)
+                                                    },
+                                                    onNote = { selected, explanation ->
+                                                        saveNote(bookTitle, selected, explanation)
+                                                    },
+                                                )
+                                            },
+                                            modifier = Modifier.fillMaxSize(),
+                                        )
+                                    } else key(bookId ?: "sample") {
                                         val pagerState = rememberPagerState(
                                             initialPage = chunkIndex.coerceIn(0, chunks.lastIndex),
                                             pageCount = { chunks.size },
@@ -569,8 +612,14 @@ class MainActivity : ComponentActivity() {
                                                     } else {
                                                         Modifier.clickable {
                                                             showChapters = false
-                                                            chapterJump.request(item.index)
-                                                            chapterJumpTick += 1
+                                                            val showingOriginal = (bookKind == "pdf" || bookKind == "epub") &&
+                                                                bookId?.let { shelfStore.originalFile(it) } != null
+                                                            if (showingOriginal) {
+                                                                moveChunk(item.index)
+                                                            } else {
+                                                                chapterJump.request(item.index)
+                                                                chapterJumpTick += 1
+                                                            }
                                                         }
                                                     },
                                                 )
@@ -622,6 +671,7 @@ class MainActivity : ComponentActivity() {
         chunkTitles = shelfStore.loadTitles(last.id)
         chunkIndex = last.chunkIndex.coerceIn(0, loaded.lastIndex)
         bookId = last.id
+        bookKind = last.kind
         bookTitle = last.title
         readKeys = shelfStore.loadRead(last.id)
         showShelf = false
@@ -642,6 +692,7 @@ class MainActivity : ComponentActivity() {
         chunkTitles = shelfStore.loadTitles(entry.id)
         chunkIndex = entry.chunkIndex.coerceIn(0, loaded.lastIndex)
         bookId = entry.id
+        bookKind = entry.kind
         bookTitle = entry.title
         readKeys = shelfStore.loadRead(entry.id)
         shelfStore.updatePosition(entry.id, chunkIndex)
@@ -659,6 +710,7 @@ class MainActivity : ComponentActivity() {
         chunkTitles = emptyList()
         chunkIndex = 0
         bookId = null
+        bookKind = "txt"
         bookTitle = "样例"
         readKeys = emptySet()
         showShelf = false
@@ -859,26 +911,31 @@ class MainActivity : ComponentActivity() {
             return
         }
         try {
-            val imported = contentResolver.openInputStream(uri)?.use { input ->
-                when (kind) {
-                    "epub" -> EpubImporter.importLocal(input)
-                    "pdf" -> PdfImporter.importLocal(input)
-                    else -> TxtImporter.importLocal(input.readBytes())
-                }
+            val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+            if (bytes == null) {
+                importError = EconomistMessages.IMPORT
+                return
+            }
+            val imported = when (kind) {
+                "epub" -> EpubImporter.importLocal(java.io.ByteArrayInputStream(bytes))
+                "pdf" -> PdfImporter.importLocal(java.io.ByteArrayInputStream(bytes))
+                else -> TxtImporter.importLocal(bytes)
             }
             if (imported.isNullOrEmpty()) {
                 importError = EconomistMessages.IMPORT
                 return
             }
             val title = probe.name ?: kind.uppercase()
-            openSaved(
-                shelfStore.save(
-                    title,
-                    kind,
-                    imported.map { it.text },
-                    titles = imported.map { it.title },
-                ),
+            val saved = shelfStore.save(
+                title,
+                kind,
+                imported.map { it.text },
+                titles = imported.map { it.title },
             )
+            if (kind == "pdf" || kind == "epub") {
+                shelfStore.saveOriginal(saved.id, kind, bytes)
+            }
+            openSaved(saved)
             showSettings = false
         } catch (e: Exception) {
             Log.e("Y", "import failed", e)
@@ -893,6 +950,7 @@ class MainActivity : ComponentActivity() {
         chunkTitles = shelfStore.loadTitles(entry.id)
         chunkIndex = 0
         bookId = entry.id
+        bookKind = entry.kind
         bookTitle = entry.title
         readKeys = shelfStore.loadRead(entry.id)
         shelfBooks = shelfStore.list()
@@ -924,6 +982,7 @@ class MainActivity : ComponentActivity() {
         shelfStore.delete(entry.id)
         if (bookId == entry.id) {
             bookId = null
+            bookKind = "txt"
             chunks = emptyList()
             chunkTitles = emptyList()
             chunkIndex = 0

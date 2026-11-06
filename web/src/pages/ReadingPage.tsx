@@ -4,7 +4,11 @@ import { CloudModelSelect, type CloudModel } from "@/components/CloudModelSelect
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { startPageFor } from "@/features/reading/chapterTarget";
+import { PassageBoundary } from "@/features/reading/PassageBoundary";
+import { EpubPassage } from "@/features/reading/EpubPassage";
 import { ExplainPopover } from "@/features/reading/ExplainPopover";
+import { PdfPassage } from "@/features/reading/PdfPassage";
 import { PassageSpeakBar } from "@/features/reading/PassageSpeakBar";
 import {
   BROWSER_CHUNK_CHARS,
@@ -54,10 +58,18 @@ type Book = {
   progress?: { chunk_index?: number; total?: number } | null;
 };
 
-type TocEntry = { title?: string; chunk_index: number };
+type TocEntry = { title?: string; chunk_index: number; start_page?: number };
+
+function passageParagraphs(text: string) {
+  return text.split(/\n\n+/).filter(Boolean).map((paragraph, index) => (
+    <p key={index} className="mb-[1em] indent-[1.25em]">
+      {paragraph}
+    </p>
+  ));
+}
 
 type ChunkResp = {
-  chunk?: { text?: string; is_toc?: boolean };
+  chunk?: { text?: string; is_toc?: boolean; title?: string };
   chunk_index?: number;
   total?: number;
   next_index?: number | null;
@@ -109,6 +121,7 @@ export function ReadingPage() {
   const [bookType, setBookType] = useState("novel");
   const fileRef = useRef<HTMLInputElement>(null);
   const [openId, setOpenId] = useState("");
+  const [format, setFormat] = useState("");
   const [toc, setToc] = useState<TocEntry[]>([]);
   const [showToc, setShowToc] = useState(false);
   const [chunk, setChunk] = useState<ChunkResp | null>(null);
@@ -155,6 +168,16 @@ export function ReadingPage() {
   useEffect(() => {
     loadBooks().catch((e: Error) => setError(e.message));
   }, [loadBooks]);
+
+  const restoredBook = useRef(false);
+  useEffect(() => {
+    if (restoredBook.current) return;
+    restoredBook.current = true;
+    const id = sessionStorage.getItem("jarvis-reading-open");
+    if (id) void openBook(id);
+    // Restore the open book once after a refresh. openBook is stable enough for this first run.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     apiJson<{
@@ -458,27 +481,35 @@ export function ReadingPage() {
   async function openBook(id: string, index?: number) {
     setError("");
     setOpenId(id);
+    sessionStorage.setItem("jarvis-reading-open", id);
+    setFormat("");
     setSlots({});
     setCachedTabs({});
     setSpeakOut("");
     setSpeaking(emptySpeaking());
-    const meta = await apiJson<{
-      book_type?: string;
-      progress?: { chunk_index?: number };
-      title?: string;
-      toc?: TocEntry[];
-    }>(`/api/intensive-reading/books/${id}`);
-    setToc(meta.toc || []);
-    const bt = meta.book_type || "novel";
-    const tabData = await apiJson<{ tabs?: TabInfo[] }>(
-      `/api/intensive-reading/tabs?book_type=${encodeURIComponent(bt)}`,
-    );
-    const kinds = tabData.tabs || [];
-    setTabs(kinds);
-    const first = kinds.find((t) => t.id && t.id !== "speaking")?.id || "vocab";
-    setKind(first);
-    const start = index ?? meta.progress?.chunk_index ?? 0;
-    await loadChunk(id, start, kinds);
+    try {
+      const meta = await apiJson<{
+        book_type?: string;
+        format?: string;
+        progress?: { chunk_index?: number };
+        title?: string;
+        toc?: TocEntry[];
+      }>(`/api/intensive-reading/books/${id}`);
+      setFormat(meta.format || "");
+      setToc(meta.toc || []);
+      const bt = meta.book_type || "novel";
+      const tabData = await apiJson<{ tabs?: TabInfo[] }>(
+        `/api/intensive-reading/tabs?book_type=${encodeURIComponent(bt)}`,
+      );
+      const kinds = tabData.tabs || [];
+      setTabs(kinds);
+      const first = kinds.find((t) => t.id && t.id !== "speaking")?.id || "vocab";
+      setKind(first);
+      const start = index ?? meta.progress?.chunk_index ?? 0;
+      await loadChunk(id, start, kinds);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   async function loadChunk(id: string, index: number, tabList?: TabInfo[]) {
@@ -723,6 +754,7 @@ export function ReadingPage() {
             variant="outline"
             onClick={() => {
               void persistCurrentBeforeLeave().then(() => {
+                sessionStorage.removeItem("jarvis-reading-open");
                 setOpenId("");
                 setChunk(null);
               });
@@ -761,7 +793,7 @@ export function ReadingPage() {
       {(() => {
         const passage = (
         <section className="border-border reading-paper flex h-full min-h-0 flex-col overflow-hidden rounded-xl border">
-          <div className="text-muted-foreground flex flex-wrap items-center gap-2 border-b px-3 py-2 text-xs">
+          <div className="text-muted-foreground relative z-30 flex flex-wrap items-center gap-2 border-b px-3 py-2 text-xs">
             <span>Passage · 选中词句后点「解释」</span>
             <PassageSpeakBar
               engine={speakEngine}
@@ -831,12 +863,26 @@ export function ReadingPage() {
               } as CSSProperties
             }
           >
-            <div className="mx-auto" style={{ maxWidth: metrics.maxWidth }}>
-              {(chunk?.chunk?.text || "").split(/\n\n+/).map((p, i) => (
-                <p key={i} className="mb-[1em] indent-[1.25em]">
-                  {p}
-                </p>
-              ))}
+            <div className="mx-auto" style={{ maxWidth: format === "pdf" ? "100%" : metrics.maxWidth }}>
+              <PassageBoundary resetKey={`${openId}:${format}`} fallback={passageParagraphs(chunk?.chunk?.text || "")}>
+                {format === "pdf" && openId ? (
+                  <PdfPassage
+                    bookId={openId}
+                    chapterTitle={chunk?.chunk?.title}
+                    startPage={startPageFor(toc, chunk?.chunk?.title)}
+                    excerpt={chunk?.chunk?.text}
+                    fallback={passageParagraphs(chunk?.chunk?.text || "")}
+                  />
+                ) : format === "epub" && openId ? (
+                  <EpubPassage
+                    bookId={openId}
+                    chapterTitle={chunk?.chunk?.title}
+                    fallback={passageParagraphs(chunk?.chunk?.text || "")}
+                  />
+                ) : (
+                  passageParagraphs(chunk?.chunk?.text || "")
+                )}
+              </PassageBoundary>
             </div>
           </article>
         </section>

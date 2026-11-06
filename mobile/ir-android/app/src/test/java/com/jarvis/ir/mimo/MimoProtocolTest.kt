@@ -13,7 +13,7 @@ class MimoProtocolTest {
         assertEquals("mimo-v2.6-flash", json.getString("model"))
         assertEquals(false, json.getBoolean("stream"))
         assertEquals(64, json.getInt("max_completion_tokens"))
-        assertFalse(json.has("thinking"))
+        assertEquals("disabled", json.getJSONObject("thinking").getString("type"))
         assertEquals(
             "Say hello in one sentence.",
             json.getJSONArray("messages").getJSONObject(0).getString("content"),
@@ -27,7 +27,7 @@ class MimoProtocolTest {
         assertEquals("mimo-v2.6-flash", json.getString("model"))
         assertEquals(true, json.getBoolean("stream"))
         assertEquals(4096, json.getInt("max_completion_tokens"))
-        assertFalse(json.has("thinking"))
+        assertEquals("disabled", json.getJSONObject("thinking").getString("type"))
         assertEquals("system text", json.getJSONArray("messages").getJSONObject(0).getString("content"))
         assertEquals("user text", json.getJSONArray("messages").getJSONObject(1).getString("content"))
         assertFalse(json.toString().contains("sk-"))

@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { BookOpen, Building2, LineChart, MessageSquare, Newspaper, Settings } from "lucide-react";
+import { BookOpen, Building2, LineChart, MessageSquare, Newspaper, NotebookPen, Settings } from "lucide-react";
 import { MEDAVIS_TABS } from "./medavisTabs";
 import { NEWS_TABS } from "./newsTabs";
 import { STOCK_TABS } from "./stockTabs";
@@ -42,6 +42,7 @@ export function accordionValuesForPath(pathname: string): string[] {
 
 export const NAV: NavItem[] = [
   { kind: "leaf", id: "chat", to: "/", label: "Chat", icon: MessageSquare, end: true },
+  { kind: "leaf", id: "notes", to: "/notes", label: "Notes", icon: NotebookPen },
   {
     kind: "group",
     id: "news",

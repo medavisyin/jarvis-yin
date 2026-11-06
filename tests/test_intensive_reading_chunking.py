@@ -166,6 +166,145 @@ def test_extract_epub_sections(tmp_path: Path):
     assert sections[0].get("title")
 
 
+def test_epub_section_title_uses_body_heading_not_document_title(tmp_path: Path):
+    """Wiley-style EPUBs put the book name in <title> and the chapter in <h1>."""
+    epub_path = tmp_path / "headed.epub"
+    container = (
+        '<?xml version="1.0"?>'
+        '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+        "<rootfiles>"
+        '<rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>'
+        "</rootfiles></container>"
+    )
+    opf = (
+        '<?xml version="1.0"?>'
+        '<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="uid" version="2.0">'
+        '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        "<dc:title>Simply Said</dc:title>"
+        '<dc:identifier id="uid">urn:headed</dc:identifier></metadata>'
+        "<manifest>"
+        '<item id="c1" href="c01.xhtml" media-type="application/xhtml+xml"/>'
+        '<item id="praise" href="praise.xhtml" media-type="application/xhtml+xml"/>'
+        "</manifest>"
+        '<spine><itemref idref="c1"/><itemref idref="praise"/></spine></package>'
+    )
+    chapter = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        "<title>Simply Said: Communicating Better at Work and Beyond</title>"
+        "</head><body>"
+        "<h1>CHAPTER 1 What Do You Mean by That?</h1>"
+        "<p>A clear message starts with one idea and stays with it.</p>"
+        "</body></html>"
+    )
+    praise = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<html xmlns="http://www.w3.org/1999/xhtml"><head>'
+        "<title>Praise for the Book</title>"
+        "</head><body>"
+        "<p>Readers called the advice practical and direct.</p>"
+        "</body></html>"
+    )
+    with zipfile.ZipFile(epub_path, "w") as zf:
+        zf.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        zf.writestr("META-INF/container.xml", container)
+        zf.writestr("OEBPS/content.opf", opf)
+        zf.writestr("OEBPS/c01.xhtml", chapter)
+        zf.writestr("OEBPS/praise.xhtml", praise)
+
+    sections = extract_epub_sections(str(epub_path))
+    assert len(sections) == 2
+    assert sections[0]["title"] == "CHAPTER 1 What Do You Mean by That?"
+    assert sections[1]["title"] == "Praise for the Book"
+
+
+def _epub_with_spine(path: Path, chapters: list[tuple[str, str]]) -> None:
+    container = (
+        '<?xml version="1.0"?>'
+        '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+        "<rootfiles>"
+        '<rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>'
+        "</rootfiles></container>"
+    )
+    manifest = "".join(
+        f'<item id="c{i}" href="{name}" media-type="application/xhtml+xml"/>'
+        for i, (name, _html) in enumerate(chapters)
+    )
+    spine = "".join(f'<itemref idref="c{i}"/>' for i in range(len(chapters)))
+    opf = (
+        '<?xml version="1.0"?>'
+        '<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="uid" version="2.0">'
+        '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+        "<dc:title>Edge Book</dc:title>"
+        '<dc:identifier id="uid">urn:edge</dc:identifier></metadata>'
+        f"<manifest>{manifest}</manifest><spine>{spine}</spine></package>"
+    )
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("mimetype", "application/epub+zip", compress_type=zipfile.ZIP_STORED)
+        zf.writestr("META-INF/container.xml", container)
+        zf.writestr("OEBPS/content.opf", opf)
+        for name, html in chapters:
+            zf.writestr(f"OEBPS/{name}", html)
+
+
+def test_epub_heading_edges(tmp_path: Path):
+    epub_path = tmp_path / "edges.epub"
+    _epub_with_spine(
+        epub_path,
+        [
+            (
+                "spans.xhtml",
+                '<?xml version="1.0"?>'
+                '<html xmlns="http://www.w3.org/1999/xhtml"><head>'
+                "<title>Book Name</title></head><body>"
+                "<h1><span>CHAPTER 1</span><span>Clear Message</span></h1>"
+                "<p>One idea, said plainly.</p></body></html>",
+            ),
+            (
+                "empty.xhtml",
+                '<?xml version="1.0"?>'
+                '<html xmlns="http://www.w3.org/1999/xhtml"><head>'
+                "<title>Fallback Title</title></head><body>"
+                "<h1> </h1><h2>CHAPTER 2 Real</h2>"
+                "<p>The later heading is not the fallback.</p></body></html>",
+            ),
+            (
+                "loose.xhtml",
+                '<?xml version="1.0"?>'
+                "<html><head><title>Loose Title</title></head>"
+                "<h1>Loose Chapter</h1><p>No body tag in the source.</p></html>",
+            ),
+            (
+                "navthen.xhtml",
+                '<?xml version="1.0"?>'
+                '<html xmlns="http://www.w3.org/1999/xhtml"><head>'
+                "<title>Book Name</title></head><body>"
+                "<nav><h1>Landmarks</h1></nav>"
+                "<h2>CHAPTER 1 Real Title</h2>"
+                "<p>The chapter prose starts after the landmarks.</p></body></html>",
+            ),
+            (
+                "navonly.xhtml",
+                '<?xml version="1.0"?>'
+                '<html xmlns="http://www.w3.org/1999/xhtml"><head>'
+                "<title></title></head><body>"
+                "<nav><h1>Contents</h1></nav>"
+                "<nav><h2>Guide</h2></nav>"
+                "<p>A note that sits outside the navigation.</p></body></html>",
+            ),
+        ],
+    )
+    sections = extract_epub_sections(str(epub_path))
+    titles = [s["title"] for s in sections]
+    assert titles == [
+        "CHAPTER 1 Clear Message",
+        "Fallback Title",
+        "Loose Chapter",
+        "CHAPTER 1 Real Title",
+        "Contents",
+    ]
+
+
 def test_extract_epub_allows_large_cover_image(tmp_path: Path):
     """Cover images often exceed 2MB; they must not block text extraction."""
     epub_path = tmp_path / "cover_book.epub"

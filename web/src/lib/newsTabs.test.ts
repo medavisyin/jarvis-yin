@@ -13,7 +13,6 @@ describe("NEWS_TABS", () => {
       "Trend Analysis",
       "Finance News Summary",
       "Learning modes",
-      "My Notes",
     ]);
     expect(labels).not.toContain("Toolbar");
     expect(NEWS_TABS.map((t) => t.path)).toEqual([
@@ -25,7 +24,6 @@ describe("NEWS_TABS", () => {
       "/news/trend",
       "/news/finance",
       "/news/learning",
-      "/news/notes",
     ]);
   });
 });

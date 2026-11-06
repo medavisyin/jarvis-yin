@@ -27,6 +27,8 @@ from intensive_reading.speak import (  # noqa: E402
     validate_speak_text,
 )
 from routes.intensive_reading import intensive_reading_bp  # noqa: E402
+from routes.intensive_reading import _global_settings as _real_global_settings  # noqa: E402
+from routes.intensive_reading import _settings_key as _real_settings_key  # noqa: E402
 
 
 def test_normalize_speak_rate_defaults_to_slow():
@@ -235,6 +237,88 @@ def test_speak_rejects_unknown_engine_lang_gender_and_style(client):
         ):
             r = client.post("/api/intensive-reading/speak", json=body)
             assert r.status_code == 400, body
+
+
+def test_reading_settings_prefer_the_running_app_over_a_stale_agent_import():
+    """Speak must see the key saved in the live process, not an earlier import agent copy."""
+    import types
+
+    from routes.intensive_reading import _settings_from_modules
+
+    live = types.SimpleNamespace(_GLOBAL_SETTINGS={
+        "mimo_api_key": "sk-1234567890abcd",
+        "audio_engine": "mimo",
+        "audio_mimo_style": "平静",
+    })
+    stale = types.SimpleNamespace(_GLOBAL_SETTINGS={"mimo_api_key": ""})
+    found = _settings_from_modules({"__main__": live, "agent": stale})
+    assert found["mimo_api_key"] == "sk-1234567890abcd"
+
+
+def _install_settings_modules(monkeypatch, main, agent):
+    import sys
+    import types
+
+    live = main if isinstance(main, types.ModuleType) else types.ModuleType("live_main")
+    if not isinstance(main, types.ModuleType):
+        live._GLOBAL_SETTINGS = main
+    stale = agent if isinstance(agent, types.ModuleType) else types.ModuleType("stale_agent")
+    if not isinstance(agent, types.ModuleType):
+        stale._GLOBAL_SETTINGS = agent
+    monkeypatch.setitem(sys.modules, "__main__", live)
+    monkeypatch.setitem(sys.modules, "agent", stale)
+
+
+def test_reading_wrappers_read_the_running_app_not_the_stale_import(monkeypatch):
+    _install_settings_modules(
+        monkeypatch,
+        {
+            "mimo_api_key": "sk-1234567890abcd",
+            "audio_engine": "mimo",
+            "audio_mimo_style": "平静",
+        },
+        {"mimo_api_key": "sk-stale-should-not-win", "audio_engine": "edge", "audio_mimo_style": "悲伤"},
+    )
+    found = _real_global_settings()
+    assert found["mimo_api_key"] == "sk-1234567890abcd"
+    assert found["audio_engine"] == "mimo"
+    assert found["audio_mimo_style"] == "平静"
+    assert _real_settings_key("mimo_api_key") == "sk-1234567890abcd"
+
+
+def test_reading_wrappers_keep_an_empty_live_key(monkeypatch):
+    _install_settings_modules(
+        monkeypatch,
+        {"mimo_api_key": ""},
+        {"mimo_api_key": "sk-stale-should-not-win"},
+    )
+    assert _real_settings_key("mimo_api_key") == ""
+    assert _real_global_settings()["mimo_api_key"] == ""
+
+
+def test_reading_wrappers_keep_an_empty_live_dict(monkeypatch):
+    _install_settings_modules(
+        monkeypatch,
+        {},
+        {"mimo_api_key": "sk-stale-should-not-win", "audio_engine": "edge"},
+    )
+    found = _real_global_settings()
+    assert found == {}
+    assert "audio_engine" not in found
+    assert _real_settings_key("mimo_api_key") == ""
+
+
+def test_reading_wrappers_fall_back_to_agent_when_main_has_no_settings(monkeypatch):
+    import types
+
+    main = types.ModuleType("not_the_app")
+    _install_settings_modules(
+        monkeypatch,
+        main,
+        {"mimo_api_key": "sk-from-agent-copy"},
+    )
+    assert _real_settings_key("mimo_api_key") == "sk-from-agent-copy"
+    assert _real_global_settings()["mimo_api_key"] == "sk-from-agent-copy"
 
 
 def test_speak_mimo_gender_overrides_style_and_skips_pad(client):

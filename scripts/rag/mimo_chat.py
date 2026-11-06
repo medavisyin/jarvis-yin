@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 MODEL = "mimo-v2.6-flash"
 TTS_MODEL = "mimo-v2.5-tts"
 BASE_URL = "https://api.xiaomimimo.com/v1"
+# v2.6 defaults thinking to enabled. Text calls turn it off so the token
+# budget stays on the answer. TTS stays on mimo-v2.5-tts and does not send this.
+_THINKING_OFF = {"thinking": {"type": "disabled"}}
 _MISSING_KEY = "No MiMo API key configured"
 DEFAULT_STYLE = "平静"
 _FFMPEG_REQUIRED = "ffmpeg is required for MiMo audio"
@@ -236,6 +239,7 @@ def stream_chat(client, messages, tools=None, max_tokens: int = 4096) -> Iterato
         "messages": messages_for_api(messages),
         "stream": True,
         "max_completion_tokens": max_tokens,
+        "extra_body": dict(_THINKING_OFF),
     }
     if tools:
         kwargs["tools"] = tools
@@ -266,6 +270,7 @@ def complete(client, messages, max_tokens: int = 4096) -> str:
         messages=messages_for_api(messages),
         stream=False,
         max_completion_tokens=max_tokens,
+        extra_body=dict(_THINKING_OFF),
     )
     message = response.choices[0].message
     return getattr(message, "content", None) or ""
@@ -279,6 +284,7 @@ def probe(client) -> str:
         max_completion_tokens=64,
         temperature=1.0,
         top_p=0.95,
+        extra_body=dict(_THINKING_OFF),
     )
     message = response.choices[0].message
     return getattr(message, "content", None) or ""

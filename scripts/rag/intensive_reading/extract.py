@@ -169,6 +169,16 @@ def _opf_spine_hrefs(zf: zipfile.ZipFile, opf_path: str) -> tuple[str, list[tupl
     return title, ordered
 
 
+def _section_heading_text(scope) -> str:
+    """First body heading. Skip a nav heading when a later heading is outside nav."""
+    headings = scope.find_all(["h1", "h2", "h3"])
+    outside = [h for h in headings if h.find_parent("nav") is None]
+    chosen = outside[0] if outside else (headings[0] if headings else None)
+    if chosen is None:
+        return ""
+    return chosen.get_text(" ", strip=True)
+
+
 def extract_epub_sections(filepath: str) -> list[dict[str, Any]]:
     """
     Extract spine-ordered text sections from an EPUB.
@@ -231,10 +241,15 @@ def extract_epub_sections(filepath: str) -> list[dict[str, Any]]:
             text = _html_to_text(html)
             if not text:
                 continue
-            # Prefer first heading as title
+            # Prefer a body heading. <title> sits in <head> and is usually the
+            # book name, so a document-order search hides the chapter h1.
             soup = BeautifulSoup(html, "html.parser")
-            h = soup.find(["h1", "h2", "h3", "title"])
-            title = (h.get_text(strip=True) if h else "") or hint or book_title
+            scope = soup.body if soup.body is not None else soup
+            title = _section_heading_text(scope)
+            if not title:
+                doc_title = soup.find("title")
+                title = doc_title.get_text(" ", strip=True) if doc_title is not None else ""
+            title = title or hint or book_title
             title = normalize_magazine_section_title(title) or title
             sections.append({"title": title, "text": text, "book_title": book_title})
     return sections

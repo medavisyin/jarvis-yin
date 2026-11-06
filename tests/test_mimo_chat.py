@@ -68,7 +68,7 @@ class _Client:
         self.chat = SimpleNamespace(completions=SimpleNamespace(create=create))
 
 
-def test_probe_uses_flash_without_thinking():
+def test_probe_uses_flash_and_disables_thinking():
     message = SimpleNamespace(content="Hello.")
     response = SimpleNamespace(choices=[SimpleNamespace(message=message)])
     captured = {}
@@ -85,11 +85,11 @@ def test_probe_uses_flash_without_thinking():
     assert captured["temperature"] == 1.0
     assert captured["top_p"] == 0.95
     assert captured["stream"] is False
-    assert "thinking" not in captured
+    assert captured["extra_body"]["thinking"] == {"type": "disabled"}
     assert "max_tokens" not in captured
 
 
-def test_complete_uses_max_completion_tokens_without_temperature():
+def test_complete_disables_thinking_without_temperature():
     message = SimpleNamespace(content="A short answer.")
     response = SimpleNamespace(choices=[SimpleNamespace(message=message)])
     captured = {}
@@ -102,7 +102,7 @@ def test_complete_uses_max_completion_tokens_without_temperature():
     client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
     assert mimo_chat.complete(client, [{"role": "user", "content": "hi"}], max_tokens=80) == "A short answer."
     assert captured["max_completion_tokens"] == 80
-    assert "thinking" not in captured
+    assert captured["extra_body"]["thinking"] == {"type": "disabled"}
     assert "temperature" not in captured
 
 
@@ -125,7 +125,7 @@ def test_stream_chat_joins_tool_calls_and_fills_missing_ids():
     assert calls[0].function.name == "rag_search"
     assert calls[0].function.arguments == {}
     assert captured["model"] == "mimo-v2.6-flash"
-    assert "thinking" not in captured
+    assert captured["extra_body"]["thinking"] == {"type": "disabled"}
 
 
 def test_public_error_hides_the_key():

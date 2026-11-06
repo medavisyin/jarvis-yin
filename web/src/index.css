@@ -211,6 +211,29 @@ html[data-theme="reading"] .reading-paper {
   overflow-wrap: break-word;
 }
 
+.reading-epub {
+  width: min(100%, 40rem);
+  margin-inline: auto;
+}
+
+.reading-epub img,
+.reading-epub svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+}
+
+.reading-pdf {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.reading-pdf .react-pdf__Page {
+  margin: 0 auto 12px;
+}
+
 .reading-analysis h2,
 .reading-analysis h3,
 .reading-analysis h4 {

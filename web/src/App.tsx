@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/layouts/AppShell";
 import { ChatPage } from "@/pages/ChatPage";
 import { NewsLayout, NewsToolPage } from "@/pages/NewsPage";
+import { NotesPage } from "@/pages/NotesPage";
 import { ReadingPage } from "@/pages/ReadingPage";
 import { SettingsPage } from "@/pages/SettingsPage";
 import { MedavisLayout, MedavisToolPage } from "@/pages/MedavisPage";
@@ -19,6 +20,8 @@ export default function App() {
       <Routes>
         <Route element={<AppShell />}>
           <Route path="/" element={<ChatPage />} />
+          <Route path="/notes" element={<NotesPage />} />
+          <Route path="/news/notes" element={<Navigate to="/notes" replace />} />
           <Route path="/news" element={<NewsLayout />}>
             <Route index element={<Navigate to="daily" replace />} />
             <Route path=":tab" element={<NewsToolPage />} />

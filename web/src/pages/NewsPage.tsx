@@ -5,7 +5,6 @@ import { AiNewsPanel } from "@/features/news/AiNewsPanel";
 import { AudioKnowledgePanel } from "@/features/news/AudioKnowledgePanel";
 import { ExplainThisForm, LearningModes, TrendAnalysisForm } from "@/features/news/ToolbarPanel";
 import { FinanceNewsSummary } from "@/features/news/FinanceNewsSummary";
-import { NotesPanel } from "@/features/news/NotesPanel";
 import { PageFrame } from "@/layouts/PageFrame";
 import { NEWS_TABS, type NewsTabId } from "@/lib/newsTabs";
 
@@ -38,7 +37,5 @@ export function NewsToolPage() {
       return <FinanceNewsSummary />;
     case "learning":
       return <LearningModes />;
-    case "notes":
-      return <NotesPanel />;
   }
 }

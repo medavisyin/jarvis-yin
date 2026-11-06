@@ -8,6 +8,7 @@ import os
 import sys
 import tempfile
 import traceback
+import zipfile
 
 _ROUTES_DIR = os.path.dirname(os.path.abspath(__file__))
 _RAG_DIR = os.path.dirname(_ROUTES_DIR)
@@ -16,12 +17,20 @@ for _p in (_SCRIPTS_DIR, _RAG_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from web_api import Blueprint, Response, jsonify, request
+from web_api import Blueprint, Response, jsonify, request, send_file
 
 from config import BOOKS_ROOT, JARVIS_ROOT
 
 from intensive_reading.analysis_cache import load_chunk_analysis, save_chunk_analysis
 from intensive_reading.chunking import next_readable_index, prev_readable_index
+from intensive_reading.rendition import (
+    epub_original_path,
+    locate_pdf_page,
+    pdf_original_path,
+    read_epub_asset,
+    render_epub_document,
+    spine_documents,
+)
 from intensive_reading.ingest import (
     BOOK_TYPE_MAGAZINE,
     BOOK_TYPE_NOVEL,
@@ -35,6 +44,7 @@ from intensive_reading.ingest import (
     load_meta,
     load_toc,
     reindex_book,
+    resolve_book_dir,
     save_book_files,
     delete_book,
     update_meta_fields,
@@ -102,13 +112,24 @@ def _reading_llm(value) -> str:
     return "ollama"
 
 
-def _settings_key(field: str) -> str:
+def _settings_from_modules(modules) -> dict:
+    """Settings from the running app. ``import agent`` can be a second copy frozen at first import."""
+    main = modules.get("__main__")
+    live = getattr(main, "_GLOBAL_SETTINGS", None) if main is not None else None
+    if isinstance(live, dict):
+        return live
     try:
-        import agent as agent_mod
-        settings = getattr(agent_mod, "_GLOBAL_SETTINGS", {}) or {}
-        return (settings.get(field) or "").strip()
+        agent_mod = modules.get("agent")
+        if agent_mod is None:
+            import agent as agent_mod
+        gs = getattr(agent_mod, "_GLOBAL_SETTINGS", None) or {}
+        return gs if isinstance(gs, dict) else {}
     except Exception:
-        return ""
+        return {}
+
+
+def _settings_key(field: str) -> str:
+    return (_settings_from_modules(sys.modules).get(field) or "").strip()
 
 
 def _cloud_error_text(llm: str, exc: BaseException) -> str:
@@ -333,6 +354,124 @@ def api_get_book(book_id: str):
     meta["progress"] = prog
     meta["toc"] = load_toc(_books_dir(), book_id)
     return jsonify(meta)
+
+
+def _book_directory(book_id: str):
+    err = _require_book_id(book_id)
+    if err:
+        return None, err
+    try:
+        directory = resolve_book_dir(_books_dir(), book_id)
+    except InvalidBookId:
+        return None, (jsonify({"error": "Invalid book_id"}), 400)
+    if not os.path.isdir(directory):
+        return None, (jsonify({"error": "Book not found"}), 404)
+    return directory, None
+
+
+def _asset_prefix(book_id: str) -> str:
+    return f"/api/intensive-reading/books/{book_id}/rendition/asset"
+
+
+@intensive_reading_bp.route("/api/intensive-reading/books/<book_id>/original", methods=["GET"])
+def api_book_original(book_id: str):
+    """Inline original PDF, or EPUB when the book has no PDF."""
+    directory, err = _book_directory(book_id)
+    if err:
+        return err
+    pdf = pdf_original_path(directory)
+    if pdf:
+        return send_file(pdf, mimetype="application/pdf", download_name="original.pdf")
+    epub = epub_original_path(directory)
+    if epub:
+        return send_file(epub, mimetype="application/epub+zip", download_name="original.epub")
+    return jsonify({"error": "Original file not found"}), 404
+
+
+@intensive_reading_bp.route("/api/intensive-reading/books/<book_id>/rendition", methods=["GET"])
+def api_book_rendition(book_id: str):
+    directory, err = _book_directory(book_id)
+    if err:
+        return err
+    epub = epub_original_path(directory)
+    if not epub:
+        return jsonify({"error": "Original EPUB not found"}), 404
+    try:
+        spine = spine_documents(epub)
+    except (ValueError, FileNotFoundError, zipfile.BadZipFile) as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"format": "epub", "spine": spine})
+
+
+@intensive_reading_bp.route(
+    "/api/intensive-reading/books/<book_id>/rendition/location",
+    methods=["GET"],
+)
+def api_book_rendition_location(book_id: str):
+    """Page index (0-based) of a chapter heading inside the original PDF."""
+    directory, err = _book_directory(book_id)
+    if err:
+        return err
+    pdf = pdf_original_path(directory)
+    if not pdf:
+        return jsonify({"error": "Original PDF not found"}), 404
+    title = (request.args.get("title") or "").strip()
+    excerpt = (request.args.get("excerpt") or "").strip()
+    if not title and not excerpt:
+        return jsonify({"error": "Missing title"}), 400
+    try:
+        page = locate_pdf_page(pdf, title, excerpt)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+    if page is None:
+        return jsonify({"error": "Heading not found"}), 404
+    return jsonify({"page": page})
+
+
+@intensive_reading_bp.route(
+    "/api/intensive-reading/books/<book_id>/rendition/document",
+    methods=["GET"],
+)
+def api_book_rendition_document(book_id: str):
+    directory, err = _book_directory(book_id)
+    if err:
+        return err
+    epub = epub_original_path(directory)
+    if not epub:
+        return jsonify({"error": "Original EPUB not found"}), 404
+    href = (request.args.get("href") or "").strip()
+    if not href:
+        return jsonify({"error": "Missing href"}), 400
+    try:
+        html = render_epub_document(epub, href, _asset_prefix(book_id))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except FileNotFoundError:
+        return jsonify({"error": "Document not found"}), 404
+    return jsonify({"href": href, "html": html})
+
+
+@intensive_reading_bp.route(
+    "/api/intensive-reading/books/<book_id>/rendition/asset",
+    methods=["GET"],
+)
+def api_book_rendition_asset(book_id: str):
+    directory, err = _book_directory(book_id)
+    if err:
+        return err
+    epub = epub_original_path(directory)
+    if not epub:
+        return jsonify({"error": "Original EPUB not found"}), 404
+    path = (request.args.get("path") or "").strip()
+    if not path:
+        return jsonify({"error": "Missing path"}), 400
+    try:
+        body, mime = read_epub_asset(epub, path, _asset_prefix(book_id))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except FileNotFoundError:
+        return jsonify({"error": "Asset not found"}), 404
+    return Response(body, mimetype=mime)
 
 
 @intensive_reading_bp.route("/api/intensive-reading/books/<book_id>", methods=["DELETE"])
@@ -948,12 +1087,7 @@ def api_speaking():
 
 
 def _global_settings() -> dict:
-    try:
-        import agent as agent_mod
-        gs = getattr(agent_mod, "_GLOBAL_SETTINGS", None) or {}
-        return gs if isinstance(gs, dict) else {}
-    except Exception:
-        return {}
+    return _settings_from_modules(sys.modules)
 
 
 def _speak_voice_en() -> str:

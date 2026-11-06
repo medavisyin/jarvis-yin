@@ -13,6 +13,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -83,6 +84,7 @@ fun ReaderScreen(
     heading: String? = null,
     onTurn: ((Int) -> Unit)? = null,
     mimoKey: String = "",
+    originalBody: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     var layout by remember { mutableStateOf<TextLayoutResult?>(null) }
@@ -260,6 +262,9 @@ fun ReaderScreen(
         error = readError,
         onToggle = { startRead() },
     )
+    if (originalBody != null) {
+        Box(Modifier.weight(1f).fillMaxWidth()) { originalBody() }
+    } else {
     Column(
         Modifier
             .weight(1f)
@@ -439,6 +444,7 @@ fun ReaderScreen(
             )
         }
     }
+}
 }
 
 private suspend fun speakUtterance(tts: TextToSpeech, text: String) {

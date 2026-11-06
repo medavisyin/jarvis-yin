@@ -1,5 +1,6 @@
 package com.jarvis.ir.books
 
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -145,6 +146,19 @@ class ShelfStoreTest {
         assertTrue(File(root, "${saved.id}.json").delete())
         store.delete(saved.id)
         assertTrue(ShelfStore(root).list().isEmpty())
+        root.deleteRecursively()
+    }
+
+    @Test
+    fun originalFileRoundTripsAndDeleteRemovesIt() {
+        val root = Files.createTempDirectory("shelf-original").toFile()
+        val store = ShelfStore(root)
+        val saved = store.save("Picture", "pdf", listOf("page"), now = 10)
+        store.saveOriginal(saved.id, "pdf", byteArrayOf(0x25, 0x50, 0x44, 0x46))
+        val again = ShelfStore(root)
+        assertArrayEquals(byteArrayOf(0x25, 0x50, 0x44, 0x46), again.originalFile(saved.id)!!.readBytes())
+        again.delete(saved.id)
+        assertNull(ShelfStore(root).originalFile(saved.id))
         root.deleteRecursively()
     }
 

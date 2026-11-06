@@ -36,7 +36,7 @@ class MimoAnalysisTest {
         assertEquals("mimo-v2.6-flash", json.getString("model"))
         assertEquals(true, json.getBoolean("stream"))
         assertEquals(4096, json.getInt("max_completion_tokens"))
-        assertFalse(json.has("thinking"))
+        assertEquals("disabled", json.getJSONObject("thinking").getString("type"))
         val user = json.getJSONArray("messages").getJSONObject(1).getString("content")
         assertTrue(user.contains("She walked."))
         assertEquals(listOf("句"), parts)
